@@ -27,6 +27,7 @@ namespace OWC
         [[nodiscard]] std::shared_ptr<BaseTLAS>& GetTLAS() override { return m_TLAS; }
         [[nodiscard]] uSize GetDeviceMegaBufferPtr() const override { return m_GPUBuffer->GetDeviceBufferPtr(); }
         [[nodiscard]] uSize GetDeviceGeometryBufferPtr() const override { return m_GPUBuffer->GetDeviceBufferPtr() + m_GeometryBufferOffset; }
+        [[nodiscard]] uSize GetDeviceMaterialBufferPtr() const override { return m_GPUBuffer->GetDeviceBufferPtr() + m_MaterialBufferOffset; }
         [[nodiscard]] uSize GetLightBufferPtr() const override { return m_LightBuffer->GetDeviceBufferPtr(); }
         [[nodiscard]] u32 GetNumberOfLights() const override { return m_numberOfLights; }
 
@@ -40,7 +41,9 @@ namespace OWC
         std::shared_ptr<Graphics::GeneralBuffer> m_LightBuffer;
         std::vector<GPUGLTFData> m_GPUData;
         uSize m_GeometryBufferSize = 0;
+        uSize m_MaterialBufferSize = 0;
         uSize m_GeometryBufferOffset = 0;
+        uSize m_MaterialBufferOffset = 0;
         u32 m_numberOfLights = 0;
     };
 }// OWC

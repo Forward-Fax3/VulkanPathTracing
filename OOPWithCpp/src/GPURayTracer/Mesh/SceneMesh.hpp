@@ -23,6 +23,20 @@ namespace OWC
         u32 _[2] = { 0, 0 }; // pad to 48 bytes
     };
 
+    struct GPUMaterialData
+    {
+        Vec3p baseColourFactor = Vec3p(1.0f);
+        f32 metallicFactor = 1.0f;
+        f32 roughnessFactor = 1.0f;
+        u32 baseColourTextureIndex = ~0u;
+        u32 metallicRoughnessTextureIndex = ~0u;
+        u32 normalTextureIndex = ~0u;
+        u32 occlusionTextureIndex = ~0u;
+        u32 emissiveTextureIndex = ~0u;
+        f32 alphaCutoff = 0.5f;
+        u32 _[1] = { 0 }; // pad to 48 bytes
+    };
+
     struct GPULightData
     {
         Vec3p position = Vec3p(0.0f);

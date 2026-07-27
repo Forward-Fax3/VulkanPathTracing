@@ -54,16 +54,18 @@ namespace OWC
 
         m_GPUData.reserve(numberOfGPUGLTFDatas);
         m_GeometryBufferSize = numberOfGPUGLTFDatas * sizeof(GPUGLTFData);
-        m_GeometryBufferOffset = m_Model.buffers[0].data.count;
+        m_MaterialBufferSize = m_Model.materials_count * sizeof(GPUMaterialData);
+        m_GeometryBufferOffset = alignUp(m_Model.buffers[0].data.count, alignof(GPUGLTFData));
+        m_MaterialBufferOffset = alignUp(m_GeometryBufferOffset, alignof(GPUMaterialData)) + m_GeometryBufferSize;
 
-        const auto bufferSize = m_Model.buffers[0].data.count;
-        const auto totalBufferSize = bufferSize + m_GeometryBufferSize;
-        m_GPUBuffer = Graphics::GeneralBuffer::CreateGeneralBuffer(totalBufferSize);
-        m_GPUBuffer->UpdateBufferData(std::bit_cast<const u8*>(m_Model.buffers[0].data.data), bufferSize);
+        const auto bufferSize = m_MaterialBufferOffset + m_MaterialBufferSize;
+        m_GPUBuffer = Graphics::GeneralBuffer::CreateGeneralBuffer(bufferSize);
+        m_GPUBuffer->UpdateBufferData(std::bit_cast<const u8*>(m_Model.buffers[0].data.data), m_Model.buffers[0].data.count);
 
         const auto sceneIndex = m_Model.default_scene == -1 ? 0 : m_Model.default_scene;
         const auto& scene = m_Model.scenes[sceneIndex];
         u32 customInstancesIndex = 0;
+
         std::vector<GPULightData> lightData;
 
         std::map<i32, std::unique_ptr<SceneMesh>> meshMap;
@@ -78,6 +80,26 @@ namespace OWC
         m_LightBuffer = Graphics::GeneralBuffer::CreateGeneralBuffer(lightData.size() * sizeof(GPULightData));
         m_LightBuffer->UpdateBufferData(std::bit_cast<u8*>(lightData.data()));
         m_numberOfLights = static_cast<u32>(lightData.size());
+
+        std::vector<GPUMaterialData> materialData;
+        materialData.reserve(m_Model.materials_count);
+        for (uSize i = 0; i < m_Model.materials_count; i++)
+        {
+            const tg3_material& mat = m_Model.materials[i];
+            materialData.emplace_back(
+                glm::make_vec3(mat.pbr_metallic_roughness.base_color_factor),
+                static_cast<f32>(mat.pbr_metallic_roughness.metallic_factor),
+                static_cast<f32>(mat.pbr_metallic_roughness.roughness_factor),
+                mat.pbr_metallic_roughness.base_color_texture.index,
+                mat.pbr_metallic_roughness.metallic_roughness_texture.index,
+                mat.normal_texture.index,
+                mat.occlusion_texture.index,
+                mat.emissive_texture.index,
+                static_cast<f32>(mat.alpha_cutoff)
+            );
+        }
+
+        m_GPUBuffer->UpdateBufferData(std::bit_cast<u8*>(materialData.data()), m_MaterialBufferSize, m_MaterialBufferOffset);
 
         tg3_error_stack_free(&errorStack);
     }

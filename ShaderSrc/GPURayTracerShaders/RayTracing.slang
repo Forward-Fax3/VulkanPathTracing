@@ -36,6 +36,7 @@ struct PushConstantData
 {
     uint64_t mainBufferData;
     GeometryDescriptor* geomertyData;
+    MaterialData* materialData;
     LightData* lightsBuffer;
     uint numOfLights;
     uint numberOfBounces;
@@ -287,32 +288,43 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
     // if (payload.depth == PC.numberOfBounces)
     //     payload.radiance += payload.throughput * mat.emissive;
 
-    float epsilon = max(1e-4f, RayTCurrent() * 1e-4f);
-    float3 newRayDirection = DiffuseReflection(WorldRayDirection(), hitNormal, payload.randSeed);
-    payload.newOrigin = hitLocation + hitNormal * epsilon;
-    payload.newDirection = newRayDirection;
-
-    float3 colour = float3(0.8f);
+    float4 colour4 = float4(1.0f);
     if (geometry.coloursOffset != 0xFFFFFFFFFFFFFFFFULL)
-        colour = GetTriangleAttributes<float4>(geometry.coloursOffset, attributeIndex, barycentricCoords).xyz;
-    colour *= oneOverPi;
+        colour4 = GetTriangleAttributes<float4>(geometry.coloursOffset, attributeIndex, barycentricCoords);
 
-    payload.throughput *= colour;
+    // TODO: dont assume a material
+    //MaterialData mat = PC.materialData[geometry.materialIndex];
 
-    GetLightIndexReturn lightIndex = GetLightIndex(payload.newOrigin, hitNormal, Rand(payload.randSeed));
-    LightSample light = SampleLight(PC.lightsBuffer[lightIndex.lightIndex], payload.newOrigin, Rand(payload.randSeed));
-
-    if (light.pdf > 1e-6 && IsVisible(payload.newOrigin, hitNormal, light.direction, light.distance))
+    if (Rand(payload.randSeed) > colour4.w)
     {
-        float normalDotLightDirection = max(dot(hitNormal, light.direction), 0.0f);
-        payload.radiance += payload.throughput * light.radiance * normalDotLightDirection / (light.pdf * lightIndex.pdf);
+        payload.newOrigin = hitLocation + 0.0001f * WorldRayDirection();
     }
-
-    float rrP = min(max(max(payload.throughput.x, payload.throughput.y), payload.throughput.z), 0.95f);
-    if (Rand(payload.randSeed) > rrP)
+    else
     {
-        payload.depth = 0;
-        return;
+        float epsilon = max(1e-4f, RayTCurrent() * 1e-4f);
+        float3 newRayDirection = DiffuseReflection(WorldRayDirection(), hitNormal, payload.randSeed);
+        payload.newOrigin = hitLocation + hitNormal * epsilon;
+        payload.newDirection = newRayDirection;
+
+        float3 colour = colour4.xyz * oneOverPi;
+
+        payload.throughput *= colour;
+
+        GetLightIndexReturn lightIndex = GetLightIndex(payload.newOrigin, hitNormal, Rand(payload.randSeed));
+        LightSample light = SampleLight(PC.lightsBuffer[lightIndex.lightIndex], payload.newOrigin, Rand(payload.randSeed));
+
+        if (light.pdf > 1e-6 && IsVisible(payload.newOrigin, hitNormal, light.direction, light.distance))
+        {
+            float normalDotLightDirection = max(dot(hitNormal, light.direction), 0.0f);
+            payload.radiance += payload.throughput * light.radiance * normalDotLightDirection / (light.pdf * lightIndex.pdf);
+        }
+
+        float rrP = min(max(max(payload.throughput.x, payload.throughput.y), payload.throughput.z), 0.95f);
+        if (Rand(payload.randSeed) > rrP)
+        {
+            payload.depth = 0;
+            return;
+        }
     }
 
     payload.depth--;

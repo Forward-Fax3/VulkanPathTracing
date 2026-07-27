@@ -243,6 +243,7 @@ namespace OWC
 		{
 			uSize megaBuffer;
 			uSize GeometryBuffer;
+			uSize MaterialBuffer;
 			uSize LightsBuffer;
 			u32 numberOfLights;
 			u32 numberOfBounces;
@@ -251,6 +252,7 @@ namespace OWC
 		const PushConstantData pushConstantData = {
 			.megaBuffer = m_Scene->GetDeviceMegaBufferPtr(),
 			.GeometryBuffer = m_Scene->GetDeviceGeometryBufferPtr(),
+			.MaterialBuffer = m_Scene->GetDeviceMaterialBufferPtr(),
 			.LightsBuffer = m_Scene->GetLightBufferPtr(),
 			.numberOfLights = m_Scene->GetNumberOfLights(),
 			.numberOfBounces = static_cast<u32>(m_NumberOfBounces)
