@@ -100,7 +100,6 @@ static bool SSE4_2Supported()
 
 int main(int argc, char** argv)
 {
-//	std::u8string path(u8"./Bin/linux/Debug-Optimized/clang/" OOP_WITH_CPP);
 	std::u8string path(u8"./../" OOP_WITH_CPP);
 
 	std::println("{}", std::filesystem::current_path().string());
@@ -140,9 +139,9 @@ int main(int argc, char** argv)
 	}
 
 #if defined(_WIN32) || defined(_WIN64)
-	auto EntryPoint = std::bit_cast<Start>(GetProcAddress(dll, "EntryPoint"));
+	const auto EntryPoint = std::bit_cast<Start>(GetProcAddress(dll, "EntryPoint"));
 #else
-	auto EntryPoint = std::bit_cast<Start>(dlsym(dll, "EntryPoint"));
+	const auto EntryPoint = std::bit_cast<Start>(dlsym(dll, "EntryPoint"));
 #endif
 
 	if (EntryPoint == nullptr)
