@@ -10,7 +10,7 @@
 	url = https://github.com/nothings/stb.git
 [submodule "OOPWithCpp/3rdParty/HeaderOnly/git/GLM"]
 	path = OOPWithCpp/3rdParty/HeaderOnly/git/GLM
-	url = https://github.com/Forward-Fax3/glm.git
+	url = https://github.com/g-truc/glm.git
 [submodule "OOPWithCpp/3rdParty/HeaderOnly/git/VMAhpp"]
 	path = OOPWithCpp/3rdParty/HeaderOnly/git/VMAhpp
 	url = https://github.com/YaaZ/VulkanMemoryAllocator-Hpp.git
