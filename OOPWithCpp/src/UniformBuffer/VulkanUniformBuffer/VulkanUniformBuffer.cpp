@@ -54,7 +54,7 @@ namespace OWC::Graphics
 			.setFlags(vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped);
 
 		vma::AllocationInfo stagingBufferAllocationInfo;
-		vma::raii::Buffer stagingBuffer(allocator, bufferCreateInfo, allocCreateInfo, &stagingBufferAllocationInfo);
+		vma::raii::Buffer stagingBuffer(allocator, bufferCreateInfo, allocCreateInfo, vk::Optional(stagingBufferAllocationInfo));
 
 		std::memcpy(stagingBufferAllocationInfo.pMappedData, data.data(), dataSize);
 
@@ -177,7 +177,7 @@ namespace OWC::Graphics
 			.setFlags(vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped);
 
 		vma::AllocationInfo stagingBufferAllocationInfo;
-		vma::raii::Buffer stagingBuffer(allocator, bufferInfo, allocCreateInfo, stagingBufferAllocationInfo);
+		vma::raii::Buffer stagingBuffer(allocator, bufferInfo, allocCreateInfo, vk::Optional(stagingBufferAllocationInfo));
 
 		if (stagingBufferAllocationInfo.pMappedData == nullptr || stagingBufferAllocationInfo.size != imageSize)
 		{
@@ -489,7 +489,7 @@ namespace OWC::Graphics
 		.setFlags(vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped);
 
 		vma::AllocationInfo allocInfo;
-		vma::raii::Buffer stagingBuffer(allocator, bufferCreateInfo, allocationCreateInfo, allocInfo);
+		vma::raii::Buffer stagingBuffer(allocator, bufferCreateInfo, allocationCreateInfo, vk::Optional(allocInfo));
 
 		std::memcpy(allocInfo.pMappedData, data.data(), imageSize);
 
@@ -689,7 +689,7 @@ namespace OWC::Graphics
 			.setFlags(vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped);
 
 		vma::AllocationInfo allocInfo;
-		vma::raii::Buffer stagingBuffer(allocator, bufferCreateInfo, allocationCreateInfo, allocInfo);
+		vma::raii::Buffer stagingBuffer(allocator, bufferCreateInfo, allocationCreateInfo, vk::Optional(allocInfo));
 
 		std::memcpy(allocInfo.pMappedData, data, bufferSize);
 

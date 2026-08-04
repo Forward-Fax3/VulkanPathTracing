@@ -645,7 +645,7 @@ namespace OWC::Graphics
 			.setFlags(vma::AllocationCreateFlagBits::eMapped | vma::AllocationCreateFlagBits::eHostAccessRandom);
 
 		vma::AllocationInfo allocationInfo;
-		m_SBTBuffer = vma::raii::Buffer(allocator, bufferInfo, allocInfo, allocationInfo);
+		m_SBTBuffer = vma::raii::Buffer(allocator, bufferInfo, allocInfo, vk::Optional(allocationInfo));
 
 		const auto pData = static_cast<u8*>(allocationInfo.pMappedData);
 
