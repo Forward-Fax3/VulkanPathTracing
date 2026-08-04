@@ -1,8 +1,8 @@
-﻿# GraphicsProgrammingWithCpp
+﻿# Vulkan Path Tracing
 
-This project is a continued evolution of my previous [OOPWithCpp](https://github.com/Forward-Fax3/OOP-with-Cpp) repository, now named `GraphicsProgrammingWithCpp` to better reflect its focus to now become a GPU Ray Tracer learning project for a different module of my second year university course.
+This project is a continued evolution of my previous [OOPWithCpp](https://github.com/Forward-Fax3/OOP-with-Cpp) repository, now named ~~`GraphicsProgrammingWithCpp`~~ `Vulkan Path Tracing` to better reflect its focus to now become a GPU Ray Tracer learning project for a different module of my second year university course. The second rename is to decribe what the project has become after finishing my 2nd as I have decided not to create a new repoitory.
 
-C++ sandbox/learning project focused on OOP-style architecture with a Vulkan renderer and an SDL3 + Dear ImGui application layer. Then a CPU Ray Tracer implementation as the main rendering backend which sends renderd Images to the Vulkan renderer for display.
+This is a C++ sandbox/learning project focused on OOP-style architecture with a Vulkan renderer and an SDL3 + Dear ImGui application layer. Then a CPU Ray Tracer implementation as the main rendering backend which sends renderd Images to the Vulkan renderer for display.
 The project uses Cmake to generate Ninja build files with multiple SIMD builds (SSE4.2, AVX2, AVX512). All SIMD builds must be built as the StartProj will link against them based on CPU detection at runtime.
 The new additions have been to add GPU Ray-Tracer using the Vulkan ray tracing extensions.
 
@@ -50,16 +50,16 @@ The new additions have been to add GPU Ray-Tracer using the Vulkan ray tracing e
 
 ## Requirements
 - for linux:
-    - Wayland compile libraries (e.g. `libwayland-dev` on Debian-based distros) this is not required to run the program, but it is required to build the SDL3 backend, so if you want to build the project you will need it.
+	- Wayland compile libraries (e.g. `libwayland-dev` on Debian-based distros) this is not required to run the program, but it is required to build the SDL3 backend, so if you want to build the project you will need it.
 - for windows:
 	- Vulkan SDK (e.g. from LunarG)
-    - Visual Studio backend for clang
+	- Visual Studio backend for clang
 - for both:
 	- Vulkan SDK
 	- a clang version that supports C++23
 	- CMake 4.1+
 	- Ninja
-    - A GPU that supports Vulkan ray tracing extensions (e.g. NVIDIA RTX series, AMD RX 6000 series, Intel Arc series)
+	- A GPU that supports Vulkan ray tracing extensions (e.g. NVIDIA RTX series, AMD RX 6000 series, Intel Arc series) at the moment vulkan ray tracing are require to start the project this is some i would like to change at some point. 
 
 ## Getting Started (Cmake)
 - Clone the repository with `git clone --recurse-submodules https://github.com/Forward-Fax3/GraphicsProgrammingWithCpp.git`
@@ -74,11 +74,10 @@ The new additions have been to add GPU Ray-Tracer using the Vulkan ray tracing e
 	- `cmake -S . -B Build -G Ninja -DCMAKE_BUILD_TYPE=Release` (for clang_Dist)
 
 ## Problems
-- If you resize the window before you have enabled the ray tracer, it will not update the ray tracer's resolution. Therefor making the image look distorted, this can be fixed by resizing the window again after enabling the ray tracer.
-- sometimes when moving the camera the whole program will soft lock up, this is due to a deadlock in the ray tracer's multi-threading implementation.
+- Sometimes when moving the camera of the CPU ray tracer the whole program will soft lock up, this is due to a deadlock in the ray tracer's multi-threading implementation.
 - the GPU ray tracer is currently very basic and only supports a single lambertian material, there is no support for textures, normal maps, or any other material types yet. This is something that I plan to add in the future, but for now it is just a proof of concept.
 - Textures are not supported in the GPU ray tracer yet, this is something that I plan to add in the future.
-- There's some kind of wall anomalies which means the walls don't look right at the moment.
+- ~~There's some kind of wall anomalies which means the walls don't look right at the moment.~~ These are decals that can be seen in an application like blender or maya.
 - If you point the camera in the right spots it looks like the accumulation is not working correctly and individual pixels just get stuck this is probably an issue with not have the normal maps yet.
 
 ## Notes
