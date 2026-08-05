@@ -48,22 +48,6 @@ namespace OWC
 	{
 		using namespace OWC::Graphics;
 
-		if (m_RenderImageNeedsRecreating)
-		{
-			m_RenderImageNeedsRecreating = false;
-			SetUpRenderImage();
-			m_RayTracingShader->BindTexture(0, m_RenderTarget);
-			m_DisplayShader->BindTexture(1, m_RenderTarget);
-			goto RecreateRenderPass;
-		}
-
-		if (m_RenderPassNeedsRecreating)
-		{
-			RecreateRenderPass:
-			SetupRenderPass();
-			m_ScreenNeedsRefreshing = true;
-		}
-
 		if (glm::length2(m_KeyPressedOnVec3) > 0.0f) // length squared instead of length to avoid unnecessary square root
 		{
 			const auto& app = Application::GetConstInstance();
@@ -151,9 +135,14 @@ namespace OWC
 			{
 				m_RayTracingWidth = Application::GetConstInstance().GetPixelWidth();
 				m_RayTracingHeight = Application::GetConstInstance().GetPixelHeight();
-				m_RenderImageNeedsRecreating = true;
-				Graphics::Renderer::AddToEndOfFrameCleanUp([rayTracingRenderPass = std::move(m_RayTracingRenderPass), displayRenderPass = std::move(m_DisplayRenderPass), imageReleaseRenderPass = std::move(m_ImageReleaseRenderPass)]()
-				{}); // extend the life of the command buffers so that they get destroyed outside of use
+				m_ScreenNeedsRefreshing = true;
+				Graphics::Renderer::AddToEndOfFrameCleanUp([this]()
+				{
+					this->SetUpRenderImage();
+					this->m_RayTracingShader->BindTexture(0, m_RenderTarget);
+					this->m_DisplayShader->BindTexture(1, m_RenderTarget);
+					this->SetupRenderPass();
+				});
 			}
         }
 		if (!m_UseWindowResolution)
@@ -164,9 +153,14 @@ namespace OWC
 			static_assert(sizeof(m_RayTracingHeight) == sizeof(u32));
 			if (ImGui::OWC::SliderInt2WithAlignedText("Ray Tracing Resolution", "Width", "Height", &m_RayTracingWidth, 1, 8192, ImGuiSliderFlags_ClampOnInput))
 			{
-				m_RenderImageNeedsRecreating = true;
-				Graphics::Renderer::AddToEndOfFrameCleanUp([rayTracingRenderPass = std::move(m_RayTracingRenderPass), displayRenderPass = std::move(m_DisplayRenderPass), imageReleaseRenderPass = std::move(m_ImageReleaseRenderPass)]()
-				{}); // extend the life of the command buffers so that they get destroyed outside of use
+				m_ScreenNeedsRefreshing = true;
+				Graphics::Renderer::AddToEndOfFrameCleanUp([this]()
+				{
+					this->SetUpRenderImage();
+					this->m_RayTracingShader->BindTexture(0, m_RenderTarget);
+					this->m_DisplayShader->BindTexture(1, m_RenderTarget);
+					this->SetupRenderPass();
+				});
 			}
 		}
 		ImGui::End();
@@ -197,6 +191,11 @@ namespace OWC
 			});
 
 		dispatcher.Dispatch<WindowResize>([this](const WindowResize& /*event*/) {
+			if (m_UseWindowResolution == false)
+			{
+				this->SetupRenderPass();
+				return false;
+			}
 			this->SetUpRenderImage();
 			this->SetupPipeline();
 			this->SetupRenderPass();

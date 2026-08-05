@@ -1,7 +1,7 @@
 ﻿#include "Core.hpp"
 #include "Application.hpp"
 #include "CPURayTracer.hpp"
-#include "ImageLoader.hpp"
+#include "ImGuiHelpers.hpp"
 
 #include "BaseEvent.hpp"
 #include "WindowResize.hpp"
@@ -125,14 +125,10 @@ namespace OWC
 		if (!m_UseWindowResolution)
 		{
 			Vec2i customResolution(m_InterLayerData->imageScreenSize);
-			useCustomResolutionUpdated |= ImGui::InputInt2("Image Resolution", glm::value_ptr(customResolution));
+			useCustomResolutionUpdated |= ImGui::OWC::SliderInt2WithAlignedText("Custom Resolution", "Width", "Height", glm::value_ptr(customResolution), 1, 8192, ImGuiSliderFlags_ClampOnInput);
 
 			if (useCustomResolutionUpdated)
 			{
-				// scope ordered to reduce number of instructions
-				customResolution = glm::max(customResolution, Vec2i(1));
-				customResolution = glm::min(customResolution, Vec2i(8192)); // Arbitrary max resolution to avoid OOM
-
 				m_InterLayerData->imageScreenSize = customResolution;
 				m_Camera->GetSettings().ScreenSize = Vec2(customResolution);
 

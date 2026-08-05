@@ -69,8 +69,6 @@ namespace OWC
         u32 m_RayTracingHeight = 0;
         u8 m_CameraNeedsRefreshing = false;
         bool m_ScreenNeedsRefreshing = false;
-        bool m_RenderImageNeedsRecreating = false;
-        bool m_RenderPassNeedsRecreating = false;
 
         bool m_UseWindowResolution = true;
 

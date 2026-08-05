@@ -46,10 +46,7 @@ namespace ImGui::OWC
         }
 
         PopID();
-
         EndGroup();
         return value_changed;
     }
 }
-
-//
