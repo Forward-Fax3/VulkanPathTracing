@@ -29,7 +29,7 @@ namespace OWC::Graphics
 		void BindTexture(const BaseShader& shader, u32 binding, u32 textureID) override;
 		void BindDynamicTexture(const BaseShader& shader, u32 binding, u32 textureID) override;
 		void Draw(u32 vertexCount, u32 instanceCount = 1, u32 firstVertex = 0, u32 firstInstance = 0) override;
-		void RayTrace(const BaseShader& shader, u32 depth) override;
+		void RayTrace(const BaseShader& shader, u32 width, u32 height, u32 depth) override;
 		void EndRenderPass() override;
 		void EndPass() override;
 		void submitRenderPass(std::span<std::string_view> waitSemaphoreNames, std::span<std::string_view> startSemaphore, bool waitForLastFrameToFinish) override;

@@ -2,7 +2,6 @@
 // Created by forwardfax3 on 15/03/2026.
 //
 #pragma once
-#include <list>
 #include <memory>
 
 #include "Layer.hpp"
@@ -61,13 +60,19 @@ namespace OWC
         std::shared_ptr<Graphics::UniformBuffer> m_RayTracingGPUDataBuffer = nullptr;
         uSize m_NumberOfSamples = 0;
 
-        float m_HFOV = 90.0f;
+        float m_HFOV = 140.0f;
         Vec3 m_CameraPosition = Vec3(0.0f, 1.5f, 0.0f);
         Vec3 m_CameraRotation = Vec3(0.0f);
         float m_MoveSpeed = 1.0f;
         i32 m_NumberOfBounces = 8;
+        u32 m_RayTracingWidth = 0;
+        u32 m_RayTracingHeight = 0;
         u8 m_CameraNeedsRefreshing = false;
         bool m_ScreenNeedsRefreshing = false;
+        bool m_RenderImageNeedsRecreating = false;
+        bool m_RenderPassNeedsRecreating = false;
+
+        bool m_UseWindowResolution = true;
 
         Vec3 m_KeyPressedOnVec3 = Vec3(0.0f);
 

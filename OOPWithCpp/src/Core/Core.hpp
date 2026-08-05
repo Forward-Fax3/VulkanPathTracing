@@ -145,9 +145,9 @@ namespace OWC
 	using Vec3us = Vec3uSize;
 	using Vec4us = Vec4uSize;
 
-	using vec2is = Vec2iSize;
-	using vec3is = Vec3iSize;
-	using vec4is = Vec4iSize;
+	using Vec2is = Vec2iSize;
+	using Vec3is = Vec3iSize;
+	using Vec4is = Vec4iSize;
 
 	using Mat2 = Mat2f32;
 	using Mat3 = Mat3f32;

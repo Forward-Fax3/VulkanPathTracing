@@ -101,9 +101,9 @@ namespace OWC::Graphics
 		data->Draw(vertexCount, instanceCount, firstVertex, firstInstance);
 	}
 
-	void Renderer::RayTrace(const std::shared_ptr<RenderPassData>& data, const BaseShader& shader, u32 depth)
+	void Renderer::RayTrace(const std::shared_ptr<RenderPassData>& data, const BaseShader& shader, u32 width, u32 height, u32 depth)
 	{
-		data->RayTrace(shader, depth);
+		data->RayTrace(shader, width, height, depth);
 	}
 
 	void Renderer::PipelineBind(const std::shared_ptr<RenderPassData>& data, const BaseShader& shader)

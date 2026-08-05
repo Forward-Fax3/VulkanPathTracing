@@ -295,7 +295,7 @@ namespace OWC::Graphics
 				cmdBuf.draw(vertexCount, instanceCount, firstVertex, firstInstance);
 	}
 
-	void VulkanRenderPass::RayTrace(const BaseShader& shader, u32 depth)
+	void VulkanRenderPass::RayTrace(const BaseShader& shader, const u32 width, const u32 height, const u32 depth)
 	{
 		if (!testBitMask(GetRenderPassType(), RenderPassType::RayTracingBit))
 		{
@@ -311,8 +311,8 @@ namespace OWC::Graphics
 				vulkanShader.GetMissGroupSBTEntry(),
 				vulkanShader.GetHitGroupSBTEntry(),
 				vulkanShader.GetCallableGroupSBTEntry(),
-				Application::GetConstInstance().GetPixelWidth(),
-				Application::GetConstInstance().GetPixelHeight(),
+				width,
+				height,
 				depth
 			);
 		else
@@ -322,8 +322,8 @@ namespace OWC::Graphics
 					vulkanShader.GetMissGroupSBTEntry(),
 					vulkanShader.GetHitGroupSBTEntry(),
 					vulkanShader.GetCallableGroupSBTEntry(),
-					Application::GetConstInstance().GetPixelWidth(),
-					Application::GetConstInstance().GetPixelHeight(),
+					width,
+					height,
 					depth
 				);
 	}

@@ -5,7 +5,6 @@
 #include "Window.hpp"
 #include "BaseEvent.hpp"
 #include "LayerStack.hpp"
-#include "BaseShader.hpp"
 
 #include "ImGuiLayer.hpp"
 

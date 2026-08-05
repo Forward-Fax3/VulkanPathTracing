@@ -1,5 +1,4 @@
 ﻿#pragma once
-#include "Core.hpp"
 #include "Layer.hpp"
 #include "Renderer.hpp"
 

@@ -23,6 +23,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/trigonometric.hpp>
 
+#include "ImGuiHelpers.hpp"
 #include "glm/gtx/euler_angles.hpp"
 #include "glm/gtx/norm.inl"
 
@@ -30,12 +31,13 @@
 namespace OWC
 {
 	GPURayTracerRenderer::GPURayTracerRenderer()
+		: m_UniformBuffer(Graphics::UniformBuffer::CreateUniformBuffer(sizeof(UniformBufferObject))),
+		  m_RayTracingGPUDataBuffer(Graphics::UniformBuffer::CreateUniformBuffer(sizeof(GeneralGPUData))),
+		  m_RayTracingWidth(Application::GetConstInstance().GetPixelWidth()),
+		  m_RayTracingHeight(Application::GetConstInstance().GetPixelHeight()),
+		  m_ScreenNeedsRefreshing(true),
+		  m_Scene(std::make_shared<SponzaPalace>())
 	{
-		m_Scene = std::make_shared<SponzaPalace>();
-		m_UniformBuffer = Graphics::UniformBuffer::CreateUniformBuffer(sizeof(UniformBufferObject));
-		m_RayTracingGPUDataBuffer = Graphics::UniformBuffer::CreateUniformBuffer(sizeof(GeneralGPUData));
-		m_ScreenNeedsRefreshing = true;
-
 		SetUpRenderImage();
 		SetupPipeline();
 		SetupRenderPass();
@@ -45,6 +47,22 @@ namespace OWC
 	void GPURayTracerRenderer::OnUpdate()
 	{
 		using namespace OWC::Graphics;
+
+		if (m_RenderImageNeedsRecreating)
+		{
+			m_RenderImageNeedsRecreating = false;
+			SetUpRenderImage();
+			m_RayTracingShader->BindTexture(0, m_RenderTarget);
+			m_DisplayShader->BindTexture(1, m_RenderTarget);
+			goto RecreateRenderPass;
+		}
+
+		if (m_RenderPassNeedsRecreating)
+		{
+			RecreateRenderPass:
+			SetupRenderPass();
+			m_ScreenNeedsRefreshing = true;
+		}
 
 		if (glm::length2(m_KeyPressedOnVec3) > 0.0f) // length squared instead of length to avoid unnecessary square root
 		{
@@ -124,10 +142,32 @@ namespace OWC
 			m_NumberOfBounces = glm::clamp(m_NumberOfBounces, 0, 128);
 			m_ScreenNeedsRefreshing = true;
 			Graphics::Renderer::AddToEndOfFrameCleanUp([rayTracingRenderPass = std::move(m_RayTracingRenderPass), displayRenderPass = std::move(m_DisplayRenderPass), imageReleaseRenderPass = std::move(m_ImageReleaseRenderPass)]()
-			{
-					//Graphics::Renderer::WaitTillIdle();
-			}); // extend the life of the command buffers so that they get destroyed outside of use
+			{}); // extend the life of the command buffers so that they get destroyed outside of use
 			SetupRenderPass();
+		}
+		if (ImGui::Checkbox("Use Window Resolution", &m_UseWindowResolution))
+        {
+			if (m_UseWindowResolution == true)
+			{
+				m_RayTracingWidth = Application::GetConstInstance().GetPixelWidth();
+				m_RayTracingHeight = Application::GetConstInstance().GetPixelHeight();
+				m_RenderImageNeedsRecreating = true;
+				Graphics::Renderer::AddToEndOfFrameCleanUp([rayTracingRenderPass = std::move(m_RayTracingRenderPass), displayRenderPass = std::move(m_DisplayRenderPass), imageReleaseRenderPass = std::move(m_ImageReleaseRenderPass)]()
+				{}); // extend the life of the command buffers so that they get destroyed outside of use
+			}
+        }
+		if (!m_UseWindowResolution)
+		{
+			// some static asserts to asure the position and size of ray tracing width and height will or with the short cuts ive set up
+			static_assert(offsetof(GPURayTracerRenderer, m_RayTracingWidth) + sizeof(m_RayTracingWidth) == offsetof(GPURayTracerRenderer, m_RayTracingHeight));
+			static_assert(sizeof(m_RayTracingWidth) == sizeof(u32));
+			static_assert(sizeof(m_RayTracingHeight) == sizeof(u32));
+			if (ImGui::OWC::SliderInt2WithAlignedText("Ray Tracing Resolution", "Width", "Height", &m_RayTracingWidth, 1, 8192, ImGuiSliderFlags_ClampOnInput))
+			{
+				m_RenderImageNeedsRecreating = true;
+				Graphics::Renderer::AddToEndOfFrameCleanUp([rayTracingRenderPass = std::move(m_RayTracingRenderPass), displayRenderPass = std::move(m_DisplayRenderPass), imageReleaseRenderPass = std::move(m_ImageReleaseRenderPass)]()
+				{}); // extend the life of the command buffers so that they get destroyed outside of use
+			}
 		}
 		ImGui::End();
 
@@ -231,10 +271,9 @@ namespace OWC
 			});
 	}
 
-	void GPURayTracerRenderer::SetUpRenderImage()
+	void GPURayTracerRenderer::SetUpRenderImage() // used in a few places
 	{
-		auto& app = Application::GetConstInstance();
-		m_RenderTarget = Graphics::TextureBuffer::CreateTextureBuffer(app.GetPixelWidth(), app.GetPixelHeight());
+		m_RenderTarget = Graphics::TextureBuffer::CreateTextureBuffer(m_RayTracingWidth, m_RayTracingHeight);
 	}
 
 	void GPURayTracerRenderer::SetupRenderPass()
@@ -265,7 +304,7 @@ namespace OWC
 		Renderer::PushConstant(m_RayTracingRenderPass, *m_RayTracingShader, sizeof(PushConstantData), &pushConstantData);
 		Renderer::BindUniform(m_RayTracingRenderPass, *m_RayTracingShader);
 		Renderer::BindTexture(m_RayTracingRenderPass, *m_RayTracingShader, 0, 0);
-		Renderer::RayTrace(m_RayTracingRenderPass, *m_RayTracingShader, 1);
+		Renderer::RayTrace(m_RayTracingRenderPass, *m_RayTracingShader, m_RayTracingWidth, m_RayTracingHeight, 1);
 		Renderer::EndPass(m_RayTracingRenderPass);
 
 		m_DisplayRenderPass = Renderer::GetStaticRenderPass();
@@ -410,7 +449,7 @@ namespace OWC
 			.randSeed = Rand::LinearFastRandValue(0u, std::numeric_limits<u32>::max())
 		};
 
-		constexpr uSize size = sizeof(GeneralGPUData::InvProjection) + sizeof(GeneralGPUData::InvViewMatrix) + sizeof(GeneralGPUData::randSeed);
+		constexpr uSize size = offsetof(GeneralGPUData, GPURefreshScreen); // better for to make sure that there isn't any alignment issues
 
 		m_RayTracingGPUDataBuffer->UpdateBufferData(std::as_bytes(std::span<const GeneralGPUData>(&generalGPUData, 1)), size);
 		m_ScreenNeedsRefreshing = true;
