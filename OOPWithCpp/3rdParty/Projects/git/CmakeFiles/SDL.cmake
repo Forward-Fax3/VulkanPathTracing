@@ -18,6 +18,16 @@ endif ()
 set(SDL_OPENGLES OFF CACHE BOOL "" FORCE)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/Projects/git/SDL)
 
+# --- Filter out GameInput sources from SDL3 (MinGW only) ---
+# The Windows GameInput SDK (gameinput.h) is unavailable on MinGW.
+# On MSVC, the real GameInput sources compile fine with the Windows SDK.
+# We provide stubs in SDL_gameinput_stubs.cpp for the symbols that other
+# SDL source files reference unconditionally.
+get_target_property(SDL3_SOURCES SDL3::SDL3 SOURCES)
+if(MINGW AND SDL3_SOURCES)
+    list(FILTER SDL3_SOURCES EXCLUDE REGEX ".*[/\\\\](gameinput|SDL_gameinput|SDL_windowsgameinput|SDL_gameinputjoystick).*")
+endif()
+
 if (UNIX)
     find_path(XKBCOMMON_INCLUDE_DIR NAMES xkbcommon/xkbcommon.h)
     find_library(XKBCOMMON_LIB NAMES xkbcommon)
@@ -76,8 +86,14 @@ string(TOLOWER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_LOWER)
 foreach (Target SDL3_SSE4_2 SDL3_AVX2 SDL3_AVX512)
     add_library(${Target} STATIC)
     target_sources(${Target} PRIVATE
-            $<TARGET_PROPERTY:SDL3::SDL3,SOURCES>
+            ${SDL3_SOURCES}
     )
+    if (MINGW)
+        target_sources(${Target} PRIVATE
+                ${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/Projects/git/CmakeFiles/SDL_gameinput_stubs.cpp
+        )
+    endif()
+
     target_include_directories(${Target} PUBLIC
             ${CMAKE_CURRENT_BINARY_DIR}/OOPWithCpp/3rdParty/Projects/git/SDL/include-config-${CMAKE_BUILD_TYPE_LOWER}/build_config
             $<TARGET_PROPERTY:SDL3::SDL3,INTERFACE_INCLUDE_DIRECTORIES>
@@ -85,6 +101,7 @@ foreach (Target SDL3_SSE4_2 SDL3_AVX2 SDL3_AVX512)
             ${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/Projects/git/SDL/src
             ${TargetDirectories}
     )
+
     set_target_properties(${Target} PROPERTIES
             POSITION_INDEPENDENT_CODE True
             INTERPROCEDURAL_OPTIMIZATION ${LTO_ENABLED}
@@ -93,9 +110,7 @@ foreach (Target SDL3_SSE4_2 SDL3_AVX2 SDL3_AVX512)
             LIBRARY_OUTPUT_DIRECTORY ${OUTPUT_DIR}/SDL
             RUNTIME_OUTPUT_DIRECTORY ${OUTPUT_DIR}/SDL
     )
-    target_link_libraries(${Target} PUBLIC
-            ${TargetLinks}
-    )
+    target_link_libraries(${Target} PUBLIC ${TargetLinks})
 endforeach()
 
 target_compile_options(SDL3_SSE4_2 PRIVATE
