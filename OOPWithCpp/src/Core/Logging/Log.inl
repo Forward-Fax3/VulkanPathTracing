@@ -76,7 +76,7 @@ namespace OWC
 #if defined(_WIN32) || defined(_WIN64)
 				SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 192);
 #endif
-				std::cout << "[Critical]: " << std::format(str, std::forward<Args>(args)...);
+				std::cout << "[Critical]: " << std::format(str, std::forward<Args>(args)...) << std::flush;
 
 #if defined(_WIN32) || defined(_WIN64)
 				SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 8);
