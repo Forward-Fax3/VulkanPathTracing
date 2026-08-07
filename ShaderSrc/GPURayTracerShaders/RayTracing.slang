@@ -58,6 +58,9 @@ static constexpr uint directionalLight = 2;
 static constexpr float pi = 3.14159265f;
 static constexpr float oneOverPi = 1.0f / pi;
 
+static constexpr uint CANDIDATE_AABB = 1;
+static constexpr uint CANDIDATE_TRIANGLE = 2;
+
 float Rand(inout uint rngState)
 {
     // Condensed version of pcg_output_rxs_m_xs_32_32, with simple conversion to floating-point [0,1].
@@ -198,7 +201,17 @@ bool IsVisible(float3 position, float3 normal, float3 lightDirection, float ligh
     ray.TMax = lightDistance - 1e-3;
 
     rayQuery.TraceRayInline(sceneBVH, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xFF, ray);
-    rayQuery.Proceed();
+    while (rayQuery.Proceed())
+    {
+        uint candType = rayQuery.CandidateType();
+        if (candType == CANDIDATE_TRIANGLE)
+        {
+            if (candType == CANDIDATE_NON_OPAQUE_TRIANGLE)
+                return false;
+            else // for now just continue
+                continue;
+        }
+    }
 
     return rayQuery.CommittedStatus() == COMMITTED_NOTHING;
 }
