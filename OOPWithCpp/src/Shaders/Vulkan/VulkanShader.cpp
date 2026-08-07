@@ -361,13 +361,13 @@ namespace OWC::Graphics
 
 				if (it != poolSize.end())
 				{
-					it->descriptorCount += bindingDescription.descriptorCount * static_cast<u32>(vkCore.GetNumberOfFramesInFlight()) * 2;
+					it->descriptorCount += bindingDescription.descriptorCount * static_cast<u32>(vkCore.GetNumberOfFramesInFlight());
 				}
 				else
 				{
 					poolSize.emplace_back(
 						descriptorType,
-						bindingDescription.descriptorCount * static_cast<u32>(vkCore.GetNumberOfFramesInFlight()) * 2
+						bindingDescription.descriptorCount * static_cast<u32>(vkCore.GetNumberOfFramesInFlight())
 					);
 				}
 			}
@@ -557,13 +557,13 @@ namespace OWC::Graphics
 
 				if (it != poolSize.end())
 				{
-					it->descriptorCount += bindingDescription.descriptorCount * static_cast<u32>(vkCore.GetNumberOfFramesInFlight()) * 2;
+					it->descriptorCount += bindingDescription.descriptorCount * static_cast<u32>(vkCore.GetNumberOfFramesInFlight());
 				}
 				else
 				{
 					poolSize.emplace_back(
 						descriptorType,
-						bindingDescription.descriptorCount * static_cast<u32>(vkCore.GetNumberOfFramesInFlight()) * 2
+						bindingDescription.descriptorCount * static_cast<u32>(vkCore.GetNumberOfFramesInFlight())
 					);
 				}
 			}
