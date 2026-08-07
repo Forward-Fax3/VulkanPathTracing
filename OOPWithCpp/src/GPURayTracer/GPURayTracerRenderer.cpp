@@ -196,8 +196,11 @@ namespace OWC
 				this->SetupRenderPass();
 				return false;
 			}
+			m_RayTracingWidth = Application::GetConstInstance().GetPixelWidth();
+			m_RayTracingHeight = Application::GetConstInstance().GetPixelHeight();
 			this->SetUpRenderImage();
-			this->SetupPipeline();
+			this->m_RayTracingShader->BindTexture(0, m_RenderTarget);
+			this->m_DisplayShader->BindTexture(1, m_RenderTarget);
 			this->SetupRenderPass();
 			m_ScreenNeedsRefreshing = true;
 			return false;
