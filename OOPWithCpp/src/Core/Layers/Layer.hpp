@@ -14,11 +14,11 @@ namespace OWC
 		Layer&& operator=(Layer&&) = delete;
 
 		virtual void OnUpdate() { /* default empty implementation */ };
-			virtual void ImGuiRender() { /* default empty implementation */ };
+		virtual void ImGuiRender() { /* default empty implementation */ };
 		virtual void OnEvent(class BaseEvent&) { /* default empty implementation */ };
 
-		[[nodiscard]] bool IsActive() const { return m_Active; }
-		void SetActiveState(bool active) { m_Active = active; }
+		[[nodiscard]] OWC_FORCE_INLINE bool IsActive() const { return m_Active; }
+		OWC_FORCE_INLINE void SetActiveState(const bool active) { m_Active = active; }
 
 	private:
 		bool m_Active = true;

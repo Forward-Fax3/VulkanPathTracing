@@ -8,7 +8,7 @@
 
 namespace ImGui::OWC
 {
-    bool SliderIntNWithAlignedText(const char* label, const ImGuiDataType data_type, const char* const* text, void* values, const int components, const int v_min, const int v_max, const char* format, const ImGuiSliderFlags flags)
+    bool SliderScalerNWithAlignedText(const char* label, const ImGuiDataType data_type, const char* const* text, void* values, const int components, const void* v_min, const void* v_max, const char* format, const ImGuiSliderFlags flags)
     {
         ImGuiWindow* window = GetCurrentWindow();
         if (window->SkipItems)
@@ -18,7 +18,7 @@ namespace ImGui::OWC
 
         BeginGroup();
         PushID(label);
-        PushID("SliderIntNWithAlignedText_Text");
+        PushID("SliderScalerNWithAlignedText_Text");
         float offset = 0.0f;
 
         for (int i = 0; i < components; i++)
@@ -34,8 +34,8 @@ namespace ImGui::OWC
         }
         PopID();
 
-        PushID("SliderIntNWithAlignedText_Slider");
-        const bool value_changed = SliderScalarN("", data_type, values, components, &v_min, &v_max, format, flags);
+        PushID("SliderScalerNWithAlignedText_Slider");
+        const bool value_changed = SliderScalarN("", data_type, values, components, v_min, v_max, format, flags);
         PopID();
 
         const char* label_end = FindRenderedTextEnd(label);

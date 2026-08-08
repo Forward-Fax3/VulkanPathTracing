@@ -24,5 +24,7 @@ namespace OWC
         [[nodiscard]] virtual uSize GetDeviceMaterialBufferPtr() const = 0;
         [[nodiscard]] virtual uSize GetLightBufferPtr() const = 0;
         [[nodiscard]] virtual u32 GetNumberOfLights() const = 0;
+
+        [[nodiscard]] virtual bool GetNeedScreenRefresh() const { return false; }
     };
 }

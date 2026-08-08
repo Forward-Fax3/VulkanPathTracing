@@ -15,6 +15,7 @@ namespace OWC
 		OWC_FORCE_INLINE LayerStack() = default;
 		OWC_FORCE_INLINE ~LayerStack()
 		{
+			m_IsShuttingDown = true;
 			m_Layers.clear();
 		}
 
@@ -34,6 +35,9 @@ namespace OWC
 		
 		OWC_FORCE_INLINE void PopLayer(const std::shared_ptr<Layer>& layer)
 		{
+			if (m_IsShuttingDown)
+				return;
+
 			m_Layers.erase(std::ranges::find(m_Layers, layer));
 			m_LayerInsertIndex--;
 		}
@@ -45,7 +49,9 @@ namespace OWC
 
 		OWC_FORCE_INLINE void ClearLayers()
 		{
+			m_IsShuttingDown = true;
 			m_Layers.clear();
+			m_IsShuttingDown = false;
 		}
 
 		void OnUpdate() const;
@@ -55,5 +61,6 @@ namespace OWC
 	private:
 		std::list<std::shared_ptr<Layer>> m_Layers;
 		i32 m_LayerInsertIndex = 0;
+		bool m_IsShuttingDown = false;
 	};
 }

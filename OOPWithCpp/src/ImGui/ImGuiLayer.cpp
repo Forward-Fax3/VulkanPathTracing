@@ -88,6 +88,7 @@ namespace OWC
 	{
 		Application::GetInstance().GetWindow().ImGuiNewFrame();
 		ImGui::NewFrame();
+		ImGui::DockSpaceOverViewport(0, nullptr, ImGuiDockNodeFlags_PassthruCentralNode);
 	}
 	
 	void ImGuiLayer::End() const

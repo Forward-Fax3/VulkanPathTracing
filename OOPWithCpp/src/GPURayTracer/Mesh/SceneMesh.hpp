@@ -39,6 +39,14 @@ namespace OWC
 
     struct GPULightData
     {
+        OWC_FORCE_INLINE GPULightData() = default;
+        OWC_FORCE_INLINE GPULightData(const Vec3p& pos, const u32 t, const Vec3p& dir, const f32 inten, const Vec3p& col, const f32 r, const f32 innerConeAngle, const f32 outerConeAngle)
+            : position(pos), type(t), direction(dir), intensity(inten), Colour(col), range(r), innerConeAngle(innerConeAngle), outerConeAngle(outerConeAngle) {}
+        OWC_FORCE_INLINE GPULightData(const Vec3p& pos, const u32 t, const Vec3p& dir, const f32 inten, const Vec3p& col, const f32 r, const float rad)
+            : position(pos), type(t), direction(dir), intensity(inten), Colour(col), range(r), radius(rad) {}
+        OWC_FORCE_INLINE GPULightData(const Vec3p& pos, const u32 t, const Vec3p& dir, const f32 inten, const Vec3p& col, const f32 r)
+            : position(pos), type(t), direction(dir), intensity(inten), Colour(col), range(r) {}
+
         Vec3p position = Vec3p(0.0f);
         u32 type = ~0u;
         Vec3p direction = Vec3p(0.0f);
@@ -47,7 +55,8 @@ namespace OWC
         f32 range = 0.0f;
         f32 innerConeAngle = 0.0f;
         f32 outerConeAngle = 0.0f;
-        u32 _[2] = { 0, 0 }; // pad to 64 bytes
+        float radius = 0.0f; // 0.0f for point light radius > 0.0f for sphere
+        u32 _[1] = { 0 }; // pad to 64 bytes
     };
 
     struct AttributeData

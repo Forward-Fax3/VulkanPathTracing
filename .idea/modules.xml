@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/GraphicsProgrammingWithCpp.iml" filepath="$PROJECT_DIR$/.idea/GraphicsProgrammingWithCpp.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/VulkanPathTracing.iml" filepath="$PROJECT_DIR$/.idea/VulkanPathTracing.iml" />
     </modules>
   </component>
 </project>

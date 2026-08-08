@@ -28,7 +28,9 @@ namespace OWC
             Mat4 InvProjection = 0.0f;
             Mat4 InvViewMatrix = 0.0f;
             u32 randSeed = 0;
+            u32 stratifiedGridPosition = 0;
             u32 GPURefreshScreen = false;
+            u32 stratifiedGridSize = 0;
         };
 
     public:
@@ -67,6 +69,8 @@ namespace OWC
         i32 m_NumberOfBounces = 8;
         u32 m_RayTracingWidth = 0;
         u32 m_RayTracingHeight = 0;
+        u32 m_StratifiedGridSize = 8;
+        u32 m_StratifiedPosition = 0;
         u8 m_CameraNeedsRefreshing = false;
         bool m_ScreenNeedsRefreshing = false;
 

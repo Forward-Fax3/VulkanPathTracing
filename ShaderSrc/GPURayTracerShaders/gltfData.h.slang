@@ -33,5 +33,6 @@ struct LightData
     float range;
     float innerConeAngle;
     float outerConeAngle;
-    uint pad[2];
+    float radius;
+    uint pad[1];
 }

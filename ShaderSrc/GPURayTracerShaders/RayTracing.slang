@@ -19,7 +19,9 @@ struct GeneralData
     float4x4 InvProjectionMatrix;
     float4x4 InvViewMatrix;
     uint randSeed;
+    uint stratifiedGridPosition;
     uint imageReset; // bool
+    uint stratifiedGridSize;
 };
 
 struct [raypayload] RayPayload
@@ -52,7 +54,7 @@ RaytracingAccelerationStructure sceneBVH;
 ConstantBuffer<GeneralData> PerFrameData;
 
 static constexpr uint spotLight = 0;
-static constexpr uint pointLinght = 1;
+static constexpr uint pointLight = 1;
 static constexpr uint directionalLight = 2;
 
 static constexpr float pi = 3.14159265f;
@@ -181,13 +183,51 @@ LightSample SampleLight(LightData light, float3 position, float randVal)
     float distance = length(positionDelta);
     float3 direction = positionDelta / distance;
     float3 radiance = light.colour * light.intensity * GetRangeAttenuation(light.range, distance);
-    if (light.type == pointLinght)
+    if (light.type == pointLight)
         return { direction, distance, radiance, 1.0f };
 
     if (light.type == spotLight)
         return { direction, distance, radiance * GetSpotAttenuation(light, direction), 1.0f };
 
     return { { 0.0f, 0.0f, 0.0f }, 0.0f, { 0.0f, 0.0f, 0.0f }, 0.0f };
+}
+
+LightSample SampleSphereLight(LightData light, float3 position, inout uint rngState)
+{
+    float z = 2.0 * Rand(rngState) - 1.0;
+    float t = 2.0 * pi * Rand(rngState);
+    float w = sqrt(1.0 - z * z);
+    float3 localDir = float3(w * cos(t), w * sin(t), z);
+
+    float3 samplePt = light.position + light.radius * localDir;
+    float3 lightNormal = normalize(samplePt - light.position);
+
+    float3 toLight = samplePt - position;
+    float dist = length(toLight);
+    float3 Ldir = toLight / dist;
+
+    float cosLight = dot(-Ldir, lightNormal);
+    if (cosLight <= 0.0)
+    { // miss/invalid
+        LightSample invalid;
+        invalid.direction = float3(0,0,0);
+        invalid.distance = 0;
+        invalid.radiance = float3(0,0,0);
+        invalid.pdf = 0.0;
+        return invalid;
+    }
+
+    float3 emittedRadiance = light.colour * light.intensity
+                           * GetRangeAttenuation(light.range, dist);
+
+    float pdfArea = 1.0 / (4.0 * pi * light.radius * light.radius);
+
+    LightSample result;
+    result.direction = Ldir;
+    result.distance = dist;
+    result.radiance = emittedRadiance * cosLight;
+    result.pdf = pdfArea;
+    return result;
 }
 
 bool IsVisible(float3 position, float3 normal, float3 lightDirection, float lightDistance)
@@ -198,9 +238,13 @@ bool IsVisible(float3 position, float3 normal, float3 lightDirection, float ligh
     ray.Origin = position + normal * 1e-3;
     ray.Direction = lightDirection;
     ray.TMin = 0.0f;
-    ray.TMax = lightDistance - 1e-3;
 
-    rayQuery.TraceRayInline(sceneBVH, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xFF, ray);
+    float tMax = lightDistance - 1e-3;
+    if (tMax < 1e-4)
+        tMax = 0.0f;
+    ray.TMax = tMax;
+
+    rayQuery.TraceRayInline(sceneBVH, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_CULL_NON_OPAQUE, 0xFF, ray);
     while (rayQuery.Proceed())
     {
         uint candType = rayQuery.CandidateType();
@@ -216,16 +260,48 @@ bool IsVisible(float3 position, float3 normal, float3 lightDirection, float ligh
     return rayQuery.CommittedStatus() == COMMITTED_NOTHING;
 }
 
+float3 SampleSunDisk(float3 sunDir, float cosAngularRadius, inout uint rngState)
+{
+    float r1 = Rand(rngState);
+    float r2 = Rand(rngState);
+    float cosTheta = 1.0f + r1 * (cosAngularRadius - 1.0f); // uniform in cos(theta)
+    float sinTheta = sqrt(1.0f - cosTheta * cosTheta);
+    float phi = 2.0f * pi * r2;
+
+    // Build orthonormal basis around sunDir
+    float3 w = sunDir;
+    float3 u = (abs(w.x) > 0.1f ? float3(0.0f, 1.0f, 0.0f) : float3(1.0f, 0.0f, 0.0f));
+    u = normalize(cross(u, w));
+    float3 v = cross(w, u);
+
+    return normalize(sinTheta * cos(phi) * u + sinTheta * sin(phi) * v + cosTheta * w);
+}
+
 [shader("raygeneration")]
 void RayGenShader()
 {
     const uint2 intThreadIdx = DispatchRaysIndex().xy;
-    const uint2 intScreanSize = DispatchRaysDimensions().xy;
-
-    uint randVal = PerFrameData.randSeed + intThreadIdx.x + intScreanSize.x * intThreadIdx.y;
+    const uint2 intScreenSize = DispatchRaysDimensions().xy;
 
     const float2 threadIdx = (float2)intThreadIdx;
-    const float2 screenSize = (float2)intScreanSize;
+    const float2 screenSize = (float2)intScreenSize;
+
+    /*uint pixelX = intThreadIdx.x;
+    uint pixelY = intThreadIdx.y;
+
+    uint randVal  = PerFrameData.randSeed + pixelX + intScreenSize.x * pixelY;
+
+    uint stratumX = (pixelX + PerFrameData.stratifiedGridPosition * 0x9E3779B9u) % PerFrameData.stratifiedGridSize;
+    uint stratumY = (pixelY + PerFrameData.stratifiedGridPosition * 0x6D6A7EA1u) % PerFrameData.stratifiedGridSize;
+
+    float jitterX = (float(stratumX) + Rand(randVal)) / float(PerFrameData.stratifiedGridSize);
+    float jitterY = (float(stratumY) + Rand(randVal)) / float(PerFrameData.stratifiedGridSize);
+
+    const float2 screenCoords = (threadIdx + float2(jitterX, jitterY)) / screenSize * 2.0 - 1.0;
+
+    const float4 viewCoords = mul(float4(screenCoords, 1.0, 1.0), PerFrameData.InvProjectionMatrix);*/
+
+    uint randVal = PerFrameData.randSeed + intThreadIdx.x + intScreenSize.x * intThreadIdx.y;
 
     const float2 screenCoords = (threadIdx + float2(Rand(randVal), Rand(randVal)) - 0.5f) / screenSize * 2.0 - 1.0;
 
@@ -324,7 +400,21 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
         payload.throughput *= colour;
 
         GetLightIndexReturn lightIndex = GetLightIndex(payload.newOrigin, hitNormal, Rand(payload.randSeed));
-        LightSample light = SampleLight(PC.lightsBuffer[lightIndex.lightIndex], payload.newOrigin, Rand(payload.randSeed));
+        LightData lightData = PC.lightsBuffer[lightIndex.lightIndex];
+
+        LightSample light;
+        if (lightData.type == pointLight && lightData.radius > 0.0)
+        {
+            light = SampleSphereLight(lightData, payload.newOrigin, payload.randSeed);
+
+            if (light.pdf <= 0.0)
+            {
+                payload.depth--;
+                return;
+            }
+        }
+        else
+            light = SampleLight(lightData, payload.newOrigin, Rand(payload.randSeed));
 
         if (light.pdf > 1e-6 && IsVisible(payload.newOrigin, hitNormal, light.direction, light.distance))
         {

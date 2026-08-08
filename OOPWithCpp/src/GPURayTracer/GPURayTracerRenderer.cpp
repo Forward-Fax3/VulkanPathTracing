@@ -38,6 +38,8 @@ namespace OWC
 		  m_ScreenNeedsRefreshing(true),
 		  m_Scene(std::make_shared<SponzaPalace>())
 	{
+		m_RayTracingGPUDataBuffer->UpdateBufferData(std::as_bytes(std::span<const u32>(&m_StratifiedGridSize, 1)), sizeof(GeneralGPUData::stratifiedGridSize), offsetof(GeneralGPUData, stratifiedGridSize));
+
 		SetUpRenderImage();
 		SetupPipeline();
 		SetupRenderPass();
@@ -63,12 +65,12 @@ namespace OWC
 		}
 		else // CalculateCamera already creates a new random but camera may not be moved so do it on its own
 		{
-			u32 newRand = Rand::LinearFastRandValue(0u, std::numeric_limits<u32>::max());
-			m_RayTracingGPUDataBuffer->UpdateBufferData(std::as_bytes(std::span<const u32>(&newRand, 1)), sizeof(GeneralGPUData::randSeed), offsetof(GeneralGPUData, randSeed));
+			std::array newRandAndStratifiedPos{ Rand::LinearFastRandValue(0u, std::numeric_limits<u32>::max()), m_StratifiedPosition++ % (m_StratifiedGridSize * m_StratifiedGridSize) };
+			m_RayTracingGPUDataBuffer->UpdateBufferData(std::as_bytes(std::span<const u32>(newRandAndStratifiedPos.data(), newRandAndStratifiedPos.size())), newRandAndStratifiedPos.size(), offsetof(GeneralGPUData, randSeed));
 		}
 
 		u32 GPURefreshScreen = false;
-		if (m_ScreenNeedsRefreshing)
+		if (m_ScreenNeedsRefreshing || m_Scene->GetNeedScreenRefresh())
 		{
 			m_ScreenNeedsRefreshing = false;
 			m_NumberOfSamples = 0;
@@ -163,6 +165,12 @@ namespace OWC
 				});
 			}
 		}
+		/*constexpr u32 minStratifiedGridSize = 1;
+		constexpr u32 maxStratifiedGridSize = 32;
+		if (ImGui::SliderScalar("Stratified Grid Size", ImGuiDataType_U32, &m_StratifiedGridSize, &minStratifiedGridSize, &maxStratifiedGridSize, "%d", ImGuiSliderFlags_ClampOnInput))
+		{
+			m_StratifiedPosition = 0;
+		}*/
 		ImGui::End();
 
 		if (cameraMoved)
@@ -448,7 +456,8 @@ namespace OWC
 		GeneralGPUData generalGPUData {
 			.InvProjection = glm::inverse(projectionMatrix),
 			.InvViewMatrix = glm::transpose(invView),
-			.randSeed = Rand::LinearFastRandValue(0u, std::numeric_limits<u32>::max())
+			.randSeed = Rand::LinearFastRandValue(0u, std::numeric_limits<u32>::max()),
+			.stratifiedGridPosition = m_StratifiedPosition++ % (m_StratifiedGridSize * m_StratifiedGridSize),
 		};
 
 		constexpr uSize size = offsetof(GeneralGPUData, GPURefreshScreen); // better for to make sure that there isn't any alignment issues

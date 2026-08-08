@@ -4,6 +4,7 @@
 
 
 #include "SponzaPalace.hpp"
+#include "Application.hpp"
 #include "Log.hpp"
 
 #include "SceneMesh.hpp"
@@ -79,7 +80,10 @@ namespace OWC
         m_GPUBuffer->UpdateBufferData(std::bit_cast<u8*>(m_GPUData.data()), m_GeometryBufferSize, m_GeometryBufferOffset);
         m_LightBuffer = Graphics::GeneralBuffer::CreateGeneralBuffer(lightData.size() * sizeof(GPULightData));
         m_LightBuffer->UpdateBufferData(std::bit_cast<u8*>(lightData.data()));
-        m_numberOfLights = static_cast<u32>(lightData.size());
+        m_NumberOfLights = static_cast<u32>(lightData.size());
+
+        m_SponzaPalaceLayer = std::make_shared<SponzaPalaceLayer>(m_LightBuffer, std::move(lightData));
+        Application::GetInstance().PushLayer(m_SponzaPalaceLayer);
 
         std::vector<GPUMaterialData> materialData;
         materialData.reserve(m_Model.materials_count);
@@ -107,6 +111,7 @@ namespace OWC
     SponzaPalace::~SponzaPalace()
     {
         tg3_model_free(&m_Model);
+        Application::GetInstance().PopLayer(m_SponzaPalaceLayer);
     }
 
     void SponzaPalace::IterateThroughNodes(const u32 nodeIndex, Mat4 parentTransform, u32& customInstancesIndex, std::vector<GPULightData>& lightData, std::map<i32, std::unique_ptr<SceneMesh>>& meshes, std::vector<std::pair<Mat4, i32>>& meshIndexes)
@@ -146,39 +151,43 @@ namespace OWC
 
             Log<LogLevel::Trace>("Found light of type {} with a range of {} and with intensity {} and colour ({}, {}, {})", lightType, light.range, light.intensity, colour.x, colour.y, colour.z);
 
-            if (lightType == "spot")
+            if (tg3_str_equals_cstr(light.type, "spot"))
             {
                 lightData.emplace_back(
                     Vec3p(parentTransform[3]), // position
                     0, // type (0 for spot)
                     glm::normalize(Vec3p(-parentTransform[2])), // direction
-                    light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 1.0f, // intensity
+                    light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 10.0f, // intensity
                     colour, // colour
                     static_cast<f32>(light.range), // range
                     static_cast<f32>(light.spot.inner_cone_angle), // inner cone angle
                     static_cast<f32>(light.spot.outer_cone_angle)  // outer cone angle
                 );
             }
-            else if (lightType == "point")
+            else if (tg3_str_equals_cstr(light.type, "point"))
             {
+                //const auto radius = (glm::length(Vec3p(parentTransform[0])) + glm::length(Vec3p(parentTransform[1])) + glm::length(Vec3p(parentTransform[2]))) / 3.0f;
+                constexpr auto radius = 0.1f;
+
                 lightData.emplace_back(
                     Vec3p(parentTransform[3]), // position
                     1, // type (1 for point)
                     glm::normalize(Vec3p(-parentTransform[2])), // direction
-                    light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 1.0f, // intensity
+                    light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 100.0f, // intensity
                     colour, // colour
-                    static_cast<f32>(light.range)
+                    static_cast<f32>(light.range), // range
+                    radius < 1e-4 ? 0.0f : radius// radius
                 );
             }
-            else if (lightType == "directional")
+            else if (tg3_str_equals_cstr(light.type, "directional"))
             {
                 lightData.emplace_back(
                     Vec3p(parentTransform[3]), // position
                     2, // type (2 for directional)
                     glm::normalize(Vec3p(-parentTransform[2])), // direction
-                    light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 1.0f, // intensity
+                    light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 10.0f, // intensity
                     colour, // colour
-                    static_cast<f32>(light.range)
+                    static_cast<f32>(light.range) // range
                 );
             }
             else
