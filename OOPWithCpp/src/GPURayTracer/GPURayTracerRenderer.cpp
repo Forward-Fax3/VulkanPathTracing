@@ -38,8 +38,6 @@ namespace OWC
 		  m_ScreenNeedsRefreshing(true),
 		  m_Scene(std::make_shared<SponzaPalace>())
 	{
-		m_RayTracingGPUDataBuffer->UpdateBufferData(std::as_bytes(std::span<const u32>(&m_StratifiedGridSize, 1)), sizeof(GeneralGPUData::stratifiedGridSize), offsetof(GeneralGPUData, stratifiedGridSize));
-
 		SetUpRenderImage();
 		SetupPipeline();
 		SetupRenderPass();
@@ -65,57 +63,46 @@ namespace OWC
 		}
 		else // CalculateCamera already creates a new random but camera may not be moved so do it on its own
 		{
-			std::array newRandAndStratifiedPos{ Rand::LinearFastRandValue(0u, std::numeric_limits<u32>::max()), m_StratifiedPosition++ % (m_StratifiedGridSize * m_StratifiedGridSize) };
+			m_StratifiedPosition = (m_StratifiedPosition + m_NumberOfSamples) % (m_StratifiedGridSize * m_StratifiedGridSize);
+			std::array newRandAndStratifiedPos{ Rand::LinearFastRandValue(0u, std::numeric_limits<u32>::max()), m_StratifiedPosition };
 			m_RayTracingGPUDataBuffer->UpdateBufferData(std::as_bytes(std::span<const u32>(newRandAndStratifiedPos.data(), newRandAndStratifiedPos.size())), newRandAndStratifiedPos.size(), offsetof(GeneralGPUData, randSeed));
 		}
 
 		u32 GPURefreshScreen = false;
-		if (m_ScreenNeedsRefreshing || m_Scene->GetNeedScreenRefresh())
+		if (m_ScreenNeedsRefreshing || m_Scene->GetNeedScreenRefresh() || !m_AccumulationOn)
 		{
 			m_ScreenNeedsRefreshing = false;
-			m_NumberOfSamples = 0;
+			m_NumberOfAccumulatedSamples = 0;
 			GPURefreshScreen = true;
 		}
 
 		m_RayTracingGPUDataBuffer->UpdateBufferData(std::as_bytes(std::span<const u32>(&GPURefreshScreen, 1)), sizeof(GeneralGPUData::GPURefreshScreen), offsetof(GeneralGPUData, GPURefreshScreen));
 
-		m_NumberOfSamples++;
+		m_NumberOfAccumulatedSamples = m_AccumulationOn ? m_NumberOfAccumulatedSamples + m_NumberOfSamples : m_NumberOfSamples;
 
 		UniformBufferObject ubo{
-			.divider = 1.0f / static_cast<f32>(m_NumberOfSamples),
+			.divider = 1.0f / static_cast<f32>(m_NumberOfAccumulatedSamples),
 			.invGammaValue = 1.0f / 2.2f
 		};
 
 		m_UniformBuffer->UpdateBufferData(std::as_bytes(std::span<const UniformBufferObject>(&ubo, 1)));
 
-		if (!Application::GetConstInstance().IsFirstFrame())
-		{
-			std::array<std::string_view, 1> releaseWaitSemaphoreNames = { "ImageReady" };
-			std::array<std::string_view, 1> releaseSignalSemaphoreNames = { "ImageRelease" };
-			std::array<std::string_view, 1> rayTracerWaitSemaphoreNames = { "ImageRelease" };
-			std::array<std::string_view, 1> rayTracerSignalSemaphoreNames = { "RayTracerDone" };
-			std::array<std::string_view, 1> displayWaitSemaphoreNames = { "RayTracerDone" };
+		std::array<std::string_view, 1> releaseWaitSemaphoreNames = { "ImageReady" };
+		std::array<std::string_view, 1> releaseSignalSemaphoreNames = { "ImageRelease" };
+		std::array<std::string_view, 1> rayTracerWaitSemaphoreNames = { "ImageRelease" };
+		std::array<std::string_view, 1> rayTracerSignalSemaphoreNames = { "RayTracerDone" };
+		std::array<std::string_view, 1> displayWaitSemaphoreNames = { "RayTracerDone" };
 
-			Renderer::SubmitRenderPass(m_ImageReleaseRenderPass, releaseWaitSemaphoreNames, releaseSignalSemaphoreNames);
-			Renderer::SubmitRenderPass(m_RayTracingRenderPass, rayTracerWaitSemaphoreNames, rayTracerSignalSemaphoreNames);
-			Renderer::SubmitRenderPass(m_DisplayRenderPass, displayWaitSemaphoreNames);
-		}
-		else
-		{
-			std::array<std::string_view, 1> rayTracerWaitSemaphoreNames = { "ImageReady" };
-			std::array<std::string_view, 1> rayTracerSignalSemaphoreNames = { "RayTracerDone" };
-			std::array<std::string_view, 1> displayWaitSemaphoreNames = { "RayTracerDone" };
-
-			Renderer::SubmitRenderPass(m_RayTracingRenderPass, rayTracerWaitSemaphoreNames, rayTracerSignalSemaphoreNames);
-			Renderer::SubmitRenderPass(m_DisplayRenderPass, displayWaitSemaphoreNames);
-		}
+		Renderer::SubmitRenderPass(m_ImageReleaseRenderPass, releaseWaitSemaphoreNames, releaseSignalSemaphoreNames);
+		Renderer::SubmitRenderPass(m_RayTracingRenderPass, rayTracerWaitSemaphoreNames, rayTracerSignalSemaphoreNames);
+		Renderer::SubmitRenderPass(m_DisplayRenderPass, displayWaitSemaphoreNames);
 	}
 
 	void GPURayTracerRenderer::ImGuiRender()
 	{
 		bool cameraMoved = false;
 		ImGui::Begin("GPU Renderer");
-		ImGui::Text("Number of samples: %zu", m_NumberOfSamples);
+		ImGui::Text("Number of samples: %zu", m_NumberOfAccumulatedSamples);
 		ImGui::Text("Ray tracer");
 		ImGui::Text("Use W, A, S, D, R and F to move camera.");
 		ImGui::Text("Camera Position: (%.2f, %.2f, %.2f)", m_CameraPosition.x, m_CameraPosition.y, m_CameraPosition.z);
@@ -127,9 +114,10 @@ namespace OWC
 		{
 			m_NumberOfBounces = glm::clamp(m_NumberOfBounces, 0, 128);
 			m_ScreenNeedsRefreshing = true;
-			Graphics::Renderer::AddToEndOfFrameCleanUp([rayTracingRenderPass = std::move(m_RayTracingRenderPass), displayRenderPass = std::move(m_DisplayRenderPass), imageReleaseRenderPass = std::move(m_ImageReleaseRenderPass)]()
-			{}); // extend the life of the command buffers so that they get destroyed outside of use
-			SetupRenderPass();
+			Graphics::Renderer::AddToEndOfFrameCleanUp([this]()
+			{
+				this->SetupRenderPass();
+			});
 		}
 		if (ImGui::Checkbox("Use Window Resolution", &m_UseWindowResolution))
         {
@@ -165,12 +153,33 @@ namespace OWC
 				});
 			}
 		}
-		/*constexpr u32 minStratifiedGridSize = 1;
+		constexpr u32 minStratifiedGridSize = 1;
 		constexpr u32 maxStratifiedGridSize = 32;
 		if (ImGui::SliderScalar("Stratified Grid Size", ImGuiDataType_U32, &m_StratifiedGridSize, &minStratifiedGridSize, &maxStratifiedGridSize, "%d", ImGuiSliderFlags_ClampOnInput))
 		{
+			Graphics::Renderer::AddToEndOfFrameCleanUp([this]()
+			{
+				this->SetupRenderPass();
+			});
 			m_StratifiedPosition = 0;
-		}*/
+			m_ScreenNeedsRefreshing = true;
+		}
+		constexpr u32 minNumberOfSamples = 1;
+		constexpr u32 maxNumberOfSamples = 16;
+		if (ImGui::SliderScalar("Number Of Samples", ImGuiDataType_U32, &m_NumberOfSamples, &minNumberOfSamples, &maxNumberOfSamples, "%d", ImGuiSliderFlags_ClampOnInput))
+		{
+			m_ScreenNeedsRefreshing = true;
+			m_NumberOfAccumulatedSamples = 0;
+			Graphics::Renderer::AddToEndOfFrameCleanUp([this]()
+			{
+				this->SetupRenderPass();
+			});
+		}
+		if (ImGui::Checkbox("Accumulation On", &m_AccumulationOn))
+		{
+			m_ScreenNeedsRefreshing = true;
+			m_NumberOfAccumulatedSamples = 0;
+		}
 		ImGui::End();
 
 		if (cameraMoved)
@@ -296,6 +305,8 @@ namespace OWC
 			uSize LightsBuffer;
 			u32 numberOfLights;
 			u32 numberOfBounces;
+			u32 numberOfSamples;
+			u32 StratifiedGridSize;
 		};
 
 		const PushConstantData pushConstantData = {
@@ -304,7 +315,9 @@ namespace OWC
 			.MaterialBuffer = m_Scene->GetDeviceMaterialBufferPtr(),
 			.LightsBuffer = m_Scene->GetLightBufferPtr(),
 			.numberOfLights = m_Scene->GetNumberOfLights(),
-			.numberOfBounces = static_cast<u32>(m_NumberOfBounces)
+			.numberOfBounces = static_cast<u32>(m_NumberOfBounces),
+			.numberOfSamples = m_NumberOfSamples,
+			.StratifiedGridSize = m_StratifiedGridSize
 		};
 
 		using namespace OWC::Graphics;
@@ -453,11 +466,12 @@ namespace OWC
 		const Mat4 posMat = glm::translate(Mat4(1.0f), m_CameraPosition);
 		const Mat4 invView = posMat * rotMat;
 
+		m_StratifiedPosition = m_NumberOfSamples;
 		GeneralGPUData generalGPUData {
 			.InvProjection = glm::inverse(projectionMatrix),
 			.InvViewMatrix = glm::transpose(invView),
 			.randSeed = Rand::LinearFastRandValue(0u, std::numeric_limits<u32>::max()),
-			.stratifiedGridPosition = m_StratifiedPosition++ % (m_StratifiedGridSize * m_StratifiedGridSize),
+			.stratifiedGridPosition = m_StratifiedPosition
 		};
 
 		constexpr uSize size = offsetof(GeneralGPUData, GPURefreshScreen); // better for to make sure that there isn't any alignment issues

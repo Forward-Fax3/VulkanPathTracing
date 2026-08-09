@@ -30,7 +30,6 @@ namespace OWC
             u32 randSeed = 0;
             u32 stratifiedGridPosition = 0;
             u32 GPURefreshScreen = false;
-            u32 stratifiedGridSize = 0;
         };
 
     public:
@@ -60,7 +59,7 @@ namespace OWC
         std::shared_ptr<Graphics::UniformBuffer> m_UniformBuffer = nullptr;
         std::shared_ptr<Graphics::TextureBuffer> m_RenderTarget = nullptr;
         std::shared_ptr<Graphics::UniformBuffer> m_RayTracingGPUDataBuffer = nullptr;
-        uSize m_NumberOfSamples = 0;
+        uSize m_NumberOfAccumulatedSamples = 0;
 
         float m_HFOV = 140.0f;
         Vec3 m_CameraPosition = Vec3(0.0f, 1.5f, 0.0f);
@@ -71,8 +70,10 @@ namespace OWC
         u32 m_RayTracingHeight = 0;
         u32 m_StratifiedGridSize = 8;
         u32 m_StratifiedPosition = 0;
+        u32 m_NumberOfSamples = 1;
         u8 m_CameraNeedsRefreshing = false;
         bool m_ScreenNeedsRefreshing = false;
+        bool m_AccumulationOn = false;
 
         bool m_UseWindowResolution = true;
 
