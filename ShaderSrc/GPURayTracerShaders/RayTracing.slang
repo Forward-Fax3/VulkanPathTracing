@@ -37,11 +37,13 @@ struct [raypayload] RayPayload
 struct PushConstantData
 {
     uint64_t mainBufferData;
-    GeometryDescriptor* geomertyData;
+    GeometryDescriptor* geometryData;
     MaterialData* materialData;
     LightData* lightsBuffer;
     uint numOfLights;
     uint numberOfBounces;
+    uint numberOfSamples;
+    uint stratifiedGridSize;
 };
 
 [[push_constant]] ConstantBuffer<PushConstantData> PC;
@@ -286,49 +288,62 @@ void RayGenShader()
     const float2 threadIdx = (float2)intThreadIdx;
     const float2 screenSize = (float2)intScreenSize;
 
-    /*uint pixelX = intThreadIdx.x;
+    uint pixelX = intThreadIdx.x;
     uint pixelY = intThreadIdx.y;
 
     uint randVal  = PerFrameData.randSeed + pixelX + intScreenSize.x * pixelY;
 
-    uint stratumX = (pixelX + PerFrameData.stratifiedGridPosition * 0x9E3779B9u) % PerFrameData.stratifiedGridSize;
-    uint stratumY = (pixelY + PerFrameData.stratifiedGridPosition * 0x6D6A7EA1u) % PerFrameData.stratifiedGridSize;
+    uint imageNeedsResetting = PerFrameData.imageReset;
+    uint stratifiedGridPosition = PerFrameData.stratifiedGridPosition;
 
-    float jitterX = (float(stratumX) + Rand(randVal)) / float(PerFrameData.stratifiedGridSize);
-    float jitterY = (float(stratumY) + Rand(randVal)) / float(PerFrameData.stratifiedGridSize);
-
-    const float2 screenCoords = (threadIdx + float2(jitterX, jitterY)) / screenSize * 2.0 - 1.0;
-
-    const float4 viewCoords = mul(float4(screenCoords, 1.0, 1.0), PerFrameData.InvProjectionMatrix);*/
-
-    uint randVal = PerFrameData.randSeed + intThreadIdx.x + intScreenSize.x * intThreadIdx.y;
-
-    const float2 screenCoords = (threadIdx + float2(Rand(randVal), Rand(randVal)) - 0.5f) / screenSize * 2.0 - 1.0;
-
-    const float4 viewCoords = mul(float4(screenCoords, 1.0, 1.0), PerFrameData.InvProjectionMatrix);
-
-    RayDesc ray;
-    ray.TMin = 0.001;
-    ray.TMax = 10000.0;
-    RayPayload payload;
-    payload.radiance = float3(0.0f);
-    payload.throughput = float3(1.0f);
-    payload.randSeed = randVal;
-    payload.depth = PC.numberOfBounces;
-    payload.newOrigin = mul(float4(0.0f, 0.0f, 0.0f, 1.0f), PerFrameData.InvViewMatrix).xyz;
-    payload.newDirection = mul(float4(normalize(viewCoords.xyz), 0.0f), PerFrameData.InvViewMatrix).xyz;
-
-    while (payload.depth != 0)
+    for (uint i = 0; i < PC.numberOfSamples; i++)
     {
-        ray.Origin = payload.newOrigin;
-        ray.Direction = payload.newDirection;
-        TraceRay(sceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, ray, payload);
-    }
+        float rx = Rand(randVal);
+        float ry = Rand(randVal);
 
-    if (PerFrameData.imageReset == 1)
-        resultTexture[intThreadIdx.xy] = float4(payload.radiance, 1.0f);
-    else
-        resultTexture[intThreadIdx.xy] += float4(payload.radiance, 1.0f);
+        uint rotX = min(uint(rx * PC.stratifiedGridSize), PC.stratifiedGridSize - 1);
+        uint rotY = min(uint(ry * PC.stratifiedGridSize), PC.stratifiedGridSize - 1);
+
+        uint baseStratumX = stratifiedGridPosition % PC.stratifiedGridSize;
+        uint baseStratumY = stratifiedGridPosition / PC.stratifiedGridSize;
+
+        uint stratumX = (baseStratumX + rotX) % PC.stratifiedGridSize;
+        uint stratumY = (baseStratumY + rotY) % PC.stratifiedGridSize;
+
+        float jitterX = (float(stratumX) + Rand(randVal)) / float(PC.stratifiedGridSize);
+        float jitterY = (float(stratumY) + Rand(randVal)) / float(PC.stratifiedGridSize);
+        const float2 screenCoords = (threadIdx + float2(jitterX, jitterY) - 0.5f) / screenSize * 2.0 - 1.0;
+        const float4 viewCoords = mul(float4(screenCoords, 1.0, 1.0), PerFrameData.InvProjectionMatrix);
+
+        RayDesc ray;
+        ray.TMin = 0.001;
+        ray.TMax = 10000.0;
+        RayPayload payload;
+        payload.radiance = float3(0.0f);
+        payload.throughput = float3(1.0f);
+        payload.randSeed = randVal;
+        payload.depth = PC.numberOfBounces;
+        payload.newOrigin = mul(float4(0.0f, 0.0f, 0.0f, 1.0f), PerFrameData.InvViewMatrix).xyz;
+        payload.newDirection = mul(float4(normalize(viewCoords.xyz), 0.0f), PerFrameData.InvViewMatrix).xyz;
+
+        while (payload.depth != 0)
+        {
+            ray.Origin = payload.newOrigin;
+            ray.Direction = payload.newDirection;
+            TraceRay(sceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, ray, payload);
+        }
+
+        if (imageNeedsResetting == 1)
+        {
+            resultTexture[intThreadIdx.xy] = float4(payload.radiance, 1.0f);
+            imageNeedsResetting = 0;
+        }
+        else
+            resultTexture[intThreadIdx.xy] += float4(payload.radiance, 1.0f);
+
+        randVal = payload.randSeed;
+        stratifiedGridPosition++;
+    }
 }
 
 [shader("miss")]
@@ -351,7 +366,7 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
     uint geometryIndex = GeometryIndex();
     uint primitiveIndex = PrimitiveIndex();
 
-    GeometryDescriptor geometry = PC.geomertyData[instanceID + geometryIndex];
+    GeometryDescriptor geometry = PC.geometryData[instanceID + geometryIndex];
 
     uint3 attributeIndex;
     if (geometry.is16BitIndices == 1)
