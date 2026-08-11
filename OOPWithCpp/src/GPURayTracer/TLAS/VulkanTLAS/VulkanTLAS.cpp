@@ -384,6 +384,7 @@ namespace OWC
     vk::TransformMatrixKHR VulkanTLAS::ConvertMat4ToVulkanTransform(const Mat4& transform)
     {
         static_assert(sizeof(Mat4) >= sizeof(vk::TransformMatrixKHR), "Mat4 must be at least as large as vk::TransformMatrixKHR to safely copy the data.");
+        static_assert(std::is_same_v<Mat4::value_type, std::remove_cvref_t<decltype(vk::TransformMatrixKHR::matrix[0][0])>>, "Value types of Mat4 and vk::TransformMatrixKHR are not compatible.");
 
         // Vulkan expects row-major order, so we need to transpose the matrix
         const Mat4 transposed = glm::transpose(transform);

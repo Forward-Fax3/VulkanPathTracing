@@ -128,7 +128,7 @@ float LightWeight(LightData light, float3 position, float3 normal)
 
 GetLightIndexReturn GetLightIndex(float3 position, float3 normal, float randVal)
 {
-    float weights[64]; // max number of light is 64, hardcoded for now possibly, in feuture implement something like ReSTIR
+    float weights[64]; // max number of light is 64, hardcoded for now possibly, in future implement something like ReSTIR
     float total = 0.0f;
 
     for (uint i = 0; i < PC.numOfLights; i++)
@@ -399,27 +399,34 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
 
         payload.throughput *= colour;
 
-        GetLightIndexReturn lightIndex = GetLightIndex(payload.newOrigin, hitNormal, Rand(payload.randSeed));
-        LightData lightData = PC.lightsBuffer[lightIndex.lightIndex];
-
-        LightSample light;
-        if (lightData.type == pointLight && lightData.radius > 0.0)
+        if (PC.numOfLights > 0)
         {
-            light = SampleSphereLight(lightData, payload.newOrigin, payload.randSeed);
+            GetLightIndexReturn lightIndex = GetLightIndex(payload.newOrigin, hitNormal, Rand(payload.randSeed));
+            LightData lightData = PC.lightsBuffer[lightIndex.lightIndex];
 
-            if (light.pdf <= 0.0)
+            LightSample light;
+            if (lightData.type == pointLight && lightData.radius > 0.0)
             {
-                payload.depth--;
-                return;
+                light = SampleSphereLight(lightData, payload.newOrigin, payload.randSeed);
+
+                if (light.pdf <= 0.0)
+                {
+                    payload.depth--;
+                    return;
+                }
+            }
+            else
+                light = SampleLight(lightData, payload.newOrigin, Rand(payload.randSeed));
+
+            if (light.pdf > 1e-6 && IsVisible(payload.newOrigin, hitNormal, light.direction, light.distance))
+            {
+                float normalDotLightDirection = max(dot(hitNormal, light.direction), 0.0f);
+                payload.radiance += payload.throughput * light.radiance * normalDotLightDirection / (light.pdf * lightIndex.pdf);
             }
         }
         else
-            light = SampleLight(lightData, payload.newOrigin, Rand(payload.randSeed));
-
-        if (light.pdf > 1e-6 && IsVisible(payload.newOrigin, hitNormal, light.direction, light.distance))
         {
-            float normalDotLightDirection = max(dot(hitNormal, light.direction), 0.0f);
-            payload.radiance += payload.throughput * light.radiance * normalDotLightDirection / (light.pdf * lightIndex.pdf);
+            payload.radiance += payload.throughput * float3(0.5f, 0.7f, 1.0f) * oneOverPi;
         }
 
         float rrP = min(max(max(payload.throughput.x, payload.throughput.y), payload.throughput.z), 0.95f);

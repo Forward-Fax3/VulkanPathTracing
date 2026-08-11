@@ -15,9 +15,7 @@
 #include <algorithm>
 #include <cstring>
 
-
-#define DEFAULT_TRIANGLES static_cast<u32>(-1)
-
+static constexpr OWC::u32 DEFAULT_TRIANGLES = 0xFFFFFFFFul;
 
 namespace OWC
 {
@@ -25,27 +23,6 @@ namespace OWC
         : m_CustomInstanceIndex(customInstancesIndex)
     {
         const tg3_mesh& mesh = model.meshes[meshIndex];
-
-        auto extractAttribute = [&model](const tg3_primitive& prim, const std::string& attributeName) -> AttributeData
-        {
-            for (u32 i = 0; i < prim.attributes_count; i++)
-            {
-                if (const auto& [key, accessorIndex] = prim.attributes[i]; tg3_str_equals_cstr(key, attributeName.c_str()))
-                {
-                    const tg3_accessor& acc = model.accessors[accessorIndex];
-                    const tg3_buffer_view& bv = model.buffer_views[acc.buffer_view];
-
-                    return {
-                        .offset = static_cast<u32>(bv.byte_offset + acc.byte_offset),
-                        .count = static_cast<u32>(acc.count),
-                        .byteStride = (bv.byte_stride ? static_cast<u32>(bv.byte_stride) : 0 /* FIXME: 0 for now */),
-                        .bufferIndex = static_cast<u32>(bv.buffer),
-                        .hasData = true
-                    };
-                }
-            }
-            return {};
-        };
 
         auto computeMaxIndex = [&model](const tg3_accessor& indexAccessor, const u32 fallbackMaxVertex) -> u32
         {
@@ -152,17 +129,10 @@ namespace OWC
                 continue;
             }
 
-            AttributeData positionData = extractAttribute(prim, "POSITION");
+            AttributeData positionData = extractAttribute(prim, "POSITION", model);
 
             auto& accessor = model.accessors[prim.indices];
-            auto& bufferView = model.buffer_views[accessor.buffer_view];
-            AttributeData indexData = {
-                .offset = static_cast<u32>(bufferView.byte_offset + accessor.byte_offset),
-                .count = static_cast<u32>(accessor.count),
-                .byteStride = (bufferView.byte_stride ? static_cast<u32>(bufferView.byte_stride) : 0 /* FIXME: 0 for now */),
-                .bufferIndex = static_cast<u32>(bufferView.buffer),
-                .hasData = true
-            };
+            AttributeData indexData = extractAttribute(accessor, model);
 
             const u32 fallbackMaxVertex = positionData.count > 0 ? positionData.count - 1 : 0;
             const u32 maxIndex = computeMaxIndex(accessor, fallbackMaxVertex);
@@ -193,11 +163,11 @@ namespace OWC
             m_PrimitiveCount.emplace_back(indexData.count / 3);
             m_BuildRanges.emplace_back(indexData.count / 3, 0, 0, 0);
 
-            auto normalData = extractAttribute(prim, "NORMAL");
-            auto colourData = extractAttribute(prim, "COLOR_0");
+            const auto normalData = extractAttribute(prim, "NORMAL", model);
+            const auto colourData = extractAttribute(prim, "COLOR_0", model);
             assert((normalData.byteStride == 12 || normalData.hasData == false) && (colourData.byteStride == 16 || colourData.hasData == false));
-            if (accessor.component_type != TG3_COMPONENT_TYPE_UNSIGNED_SHORT)
-                OWCDebugBreak();
+            /*if (accessor.component_type != TG3_COMPONENT_TYPE_UNSIGNED_SHORT)
+                OWCDebugBreak();*/
 
             /*auto texCoordsdata = extractAttribute(prim, "TEXCOORD_0");
             auto Tangentsdata = extractAttribute(prim, "TANGENT");*/

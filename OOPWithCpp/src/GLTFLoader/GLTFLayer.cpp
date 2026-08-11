@@ -2,7 +2,7 @@
 // Created by forwardfax3 on 07/08/2026.
 //
 
-#include "SponzaPalaceLayer.hpp"
+#include "GLTFLayer.hpp"
 
 #include "imgui.h"
 #include "ImGuiHelpers.hpp"
@@ -10,14 +10,14 @@
 
 namespace OWC
 {
-    SponzaPalaceLayer::SponzaPalaceLayer(const std::shared_ptr<Graphics::GeneralBuffer>& lightBuffer, std::vector<GPULightData>&& lightData)
-        : m_LightBuffer(lightBuffer), m_LightData(std::move(lightData)) {}
+    GLTFLayer::GLTFLayer(const std::shared_ptr<Graphics::GeneralBuffer>& lightBuffer, std::vector<GPULightData>&& lightData, const std::string_view& layerName)
+        : m_LightBuffer(lightBuffer), m_LightData(std::move(lightData)), layerName(layerName) {}
 
-    void SponzaPalaceLayer::ImGuiRender()
+    void GLTFLayer::ImGuiRender()
     {
         m_ScreenNeedRefresh = false;
 
-        ImGui::Begin("Sponza Palace Layer");
+        ImGui::Begin(layerName.data());
 
         ImGui::Checkbox("Show Lights", &m_ShowLights);
 

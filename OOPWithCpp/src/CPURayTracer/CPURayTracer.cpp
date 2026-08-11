@@ -91,7 +91,7 @@ namespace OWC
 
 		if (ImGui::Combo("Scene", &m_CurrentSceneIndex, sceneNames.data(), static_cast<i32>(sceneNames.size())))
 		{
-			auto selectedScene = static_cast<Scene>(m_CurrentSceneIndex);
+			const auto selectedScene = static_cast<Scene>(m_CurrentSceneIndex);
 			m_Scene = BaseScene::CreateScene(selectedScene);
 			m_Scene->SetBaseCameraSettings(m_Camera->GetSettings());
 			m_CameraSettingsUpdated = true;
@@ -105,7 +105,7 @@ namespace OWC
 
 		if (ImGui::Combo("Gamma Correction", &m_CurrentGammaIndex, gammaCorrectionNames.data(), static_cast<i32>(gammaCorrectionNames.size())))
 		{
-			auto gamma = static_cast<GammaCorrection>(m_CurrentGammaIndex);
+			const auto gamma = static_cast<GammaCorrection>(m_CurrentGammaIndex);
 			if (gamma != GammaCorrection::custom)
 				UpdateGammaValue(gamma);
 			else

@@ -83,7 +83,7 @@ namespace OWC
 		m_GraphicsContext->Restore();
 	}
 
-	void Window::ToggleFullScreen()
+	void Window::ToggleFullScreen() const
 	{
 		if (m_Window)
 		{

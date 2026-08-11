@@ -31,14 +31,14 @@ namespace OWC
 #if defined(_WIN32) || defined(_WIN64)
 			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 8);
 #endif
-			std::cout << "[Trace]: " << std::format(str, std::forward<Args>(args)...) << '\n';
+			std::cout << "[Trace]: " << std::format(str, std::forward<Args>(args)...) << '\n' << std::flush;
 		}
 		else if constexpr (level == Debug)
 		{
 #if defined(_WIN32) || defined(_WIN64)
 			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 232);
 #endif
-			std::cout << "[Debug]: " << std::format(str, std::forward<Args>(args)...);
+			std::cout << "[Debug]: " << std::format(str, std::forward<Args>(args)...) << std::flush;
 
 #if defined(_WIN32) || defined(_WIN64)
 			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 8);
@@ -50,7 +50,7 @@ namespace OWC
 #if defined(_WIN32) || defined(_WIN64)
 			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 14);
 #endif
-			std::cout << "[Warning]: " << std::format(str, std::forward<Args>(args)...);
+			std::cout << "[Warning]: " << std::format(str, std::forward<Args>(args)...) << std::flush;
 
 #if defined(_WIN32) || defined(_WIN64)
 			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 8);
@@ -62,7 +62,7 @@ namespace OWC
 #if defined(_WIN32) || defined(_WIN64)
 			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 13);
 #endif
-			std::cout << "[Error]: " << std::format(str, std::forward<Args>(args)...);
+			std::cout << "[Error]: " << std::format(str, std::forward<Args>(args)...) << std::flush;
 
 #if defined(_WIN32) || defined(_WIN64)
 			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 8);
@@ -92,6 +92,10 @@ namespace OWC
 #endif
 			
 			exit(EXIT_FAILURE);
+		}
+		else if constexpr (level == NewLine)
+		{
+			static_assert(false, "Log function called with NewLine LogLevel but with a string this can not be done!");
 		}
 		else // compile-time safeguard
 		{

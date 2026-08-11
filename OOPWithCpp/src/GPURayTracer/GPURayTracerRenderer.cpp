@@ -17,6 +17,8 @@
 #include "SDL3/SDL_keycode.h"
 
 #include "SponzaPalace.hpp"
+#include "EXTMeshGPUInstancingExample.hpp"
+#include "MeshReuseInstancingExample.hpp"
 
 #include <array>
 
@@ -113,10 +115,54 @@ namespace OWC
 
 	void GPURayTracerRenderer::ImGuiRender()
 	{
+		constexpr std::array scenes = { "Sponza Palace", "EXT_mesh_gpu_instancing Example", "mesh Reuse Instancing Example" };
+
 		bool cameraMoved = false;
 		ImGui::Begin("GPU Renderer");
 		ImGui::Text("Number of samples: %zu", m_NumberOfSamples);
 		ImGui::Text("Ray tracer");
+
+		if (ImGui::Combo("Scene", &m_SceneIndex, scenes.data(), scenes.size()))
+		{
+			Graphics::Renderer::AddToEndOfFrameCleanUp([this]()
+			{
+				Vec3 newPosition{ 0.0f };
+				Vec3 newRotation { 0.0f };
+				switch (m_SceneIndex)
+				{
+				case 0:
+				{
+					this->m_Scene = std::make_shared<SponzaPalace>();
+					newPosition = Vec3(0.0f, 1.5f, 0.0f);
+					break;
+				}
+				case 1:
+					this->m_Scene = std::make_shared<EXTMeshGPUInstancingExample>();
+					newPosition = Vec3(-25.0f, 15.0f, 15.0f);
+					newRotation = Vec3(-20.0f, 105.0f, 0.0f);
+					break;
+				case 2:
+					this->m_Scene = std::make_shared<MeshReuseInstancingExample>();
+					newPosition = Vec3(-1.0f, 0.2f, 0.0f);
+					newRotation = Vec3(0.0f, 90.0f, 0.0f);
+					break;
+				default:
+				{
+					this->m_Scene = std::make_shared<SponzaPalace>();
+					newPosition = Vec3(0.0f, 1.5f, 0.0f);
+					this->m_SceneIndex = 0;
+					Log<LogLevel::Warn>("Invalid scene index selected, defaulting to Sponza Palace");
+				}
+				}
+				this->m_CameraRotation = newRotation;
+				this->m_CameraPosition = newPosition;
+				this->SetupPipeline();
+				this->SetupRenderPass();
+			});
+			cameraMoved = true;
+		}
+
+		ImGui::Separator();
 		ImGui::Text("Use W, A, S, D, R and F to move camera.");
 		ImGui::Text("Camera Position: (%.2f, %.2f, %.2f)", m_CameraPosition.x, m_CameraPosition.y, m_CameraPosition.z);
 		ImGui::SliderFloat("Move Speed", &m_MoveSpeed, 0.1f, 10.0f);

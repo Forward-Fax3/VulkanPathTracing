@@ -68,6 +68,84 @@ namespace OWC
         bool hasData = false;
     };
 
+    OWC_FORCE_INLINE u32 GetElementByteSize(const tg3_accessor& acc)
+    {
+        switch (acc.type)
+        {
+        case TG3_TYPE_SCALAR:
+            return 1;
+        case TG3_TYPE_VEC2:
+            return 2;
+        case TG3_TYPE_VEC3:
+            return 3;
+        case TG3_TYPE_VEC4:
+            return 4;
+        default:
+            return 0;
+        }
+    };
+
+    OWC_FORCE_INLINE u32 componentTypeToSize(const tg3_accessor& acc)
+    {
+        switch (acc.component_type)
+        {
+        case TG3_COMPONENT_TYPE_UNSIGNED_BYTE:
+            return sizeof(uint8_t);
+        case TG3_COMPONENT_TYPE_UNSIGNED_SHORT:
+            return sizeof(uint16_t);
+        case TG3_COMPONENT_TYPE_UNSIGNED_INT:
+            return sizeof(uint32_t);
+        case TG3_COMPONENT_TYPE_FLOAT:
+            return sizeof(float);
+        default:
+            return 0;
+        }
+    };
+
+    inline AttributeData extractAttribute(const tg3_primitive& prim, const std::string& attributeName, const tg3_model& model)
+    {
+        for (u32 i = 0; i < prim.attributes_count; i++)
+        {
+            if (const auto& [key, accessorIndex] = prim.attributes[i]; tg3_str_equals_cstr(key, attributeName.c_str()))
+            {
+                const tg3_accessor& acc = model.accessors[accessorIndex];
+                const tg3_buffer_view& bv = model.buffer_views[acc.buffer_view];
+
+                return {
+                    .offset = static_cast<u32>(bv.byte_offset + acc.byte_offset),
+                    .count = static_cast<u32>(acc.count),
+                    .byteStride = (bv.byte_stride ? static_cast<u32>(bv.byte_stride) : componentTypeToSize(acc) * GetElementByteSize(acc)),
+                    .bufferIndex = static_cast<u32>(bv.buffer),
+                    .hasData = true
+                };
+            }
+        }
+        return {};
+    }
+
+    inline AttributeData extractAttribute(const tg3_accessor& acc, const tg3_model& model)
+    {
+        const tg3_buffer_view& bv = model.buffer_views[acc.buffer_view];
+
+        return {
+            .offset = static_cast<u32>(bv.byte_offset + acc.byte_offset),
+            .count = static_cast<u32>(acc.count),
+            .byteStride = (bv.byte_stride ? static_cast<u32>(bv.byte_stride) : componentTypeToSize(acc) * GetElementByteSize(acc)),
+            .bufferIndex = static_cast<u32>(bv.buffer),
+            .hasData = true
+        };
+    }
+
+    inline std::optional<tg3_value> doesGLTFExtensionExist(const tg3_node& node, const std::string& extensionName)
+    {
+        for (u32 i = 0; i < node.ext.extensions_count; i++)
+            if (const auto& [name, value] = node.ext.extensions[i];
+                tg3_str_equals_cstr(name, extensionName.c_str()))
+                return value;
+
+        return std::nullopt;
+    }
+
     class SceneMesh
     {
     public:

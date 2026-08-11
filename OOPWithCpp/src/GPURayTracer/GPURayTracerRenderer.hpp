@@ -71,6 +71,7 @@ namespace OWC
         u32 m_RayTracingHeight = 0;
         u32 m_StratifiedGridSize = 8;
         u32 m_StratifiedPosition = 0;
+        i32 m_SceneIndex = 0;
         u8 m_CameraNeedsRefreshing = false;
         bool m_ScreenNeedsRefreshing = false;
 

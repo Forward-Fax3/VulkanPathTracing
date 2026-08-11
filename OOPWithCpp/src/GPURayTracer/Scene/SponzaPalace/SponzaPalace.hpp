@@ -1,17 +1,10 @@
 //
-// Created by forwardfax3 on 17/04/2026.
+// Created by Cat God on 11/08/2026.
 //
 
 #pragma once
-#include <memory>
-#include <map>
-
-#include "Scene/BaseGPUScene.hpp"
-#include "SceneMesh.hpp"
-#include "BaseTLAS.hpp"
-#include "UniformBuffer.hpp"
-
-#include "SponzaPalaceLayer.hpp"
+#include "BaseGPUScene.hpp"
+#include "GLTFLoader.hpp"
 
 
 namespace OWC
@@ -20,35 +13,18 @@ namespace OWC
     {
     public:
         SponzaPalace();
-        ~SponzaPalace() override;
-        SponzaPalace(SponzaPalace&) = delete;
-        SponzaPalace& operator=(SponzaPalace&) = delete;
-        SponzaPalace(SponzaPalace&&) noexcept = delete;
-        SponzaPalace& operator=(SponzaPalace&&) noexcept = delete;
+        ~SponzaPalace() override = default;
 
-        [[nodiscard]] std::shared_ptr<BaseTLAS>& GetTLAS() override { return m_TLAS; }
-        [[nodiscard]] uSize GetDeviceMegaBufferPtr() const override { return m_GPUBuffer->GetDeviceBufferPtr(); }
-        [[nodiscard]] uSize GetDeviceGeometryBufferPtr() const override { return m_GPUBuffer->GetDeviceBufferPtr() + m_GeometryBufferOffset; }
-        [[nodiscard]] uSize GetDeviceMaterialBufferPtr() const override { return m_GPUBuffer->GetDeviceBufferPtr() + m_MaterialBufferOffset; }
-        [[nodiscard]] uSize GetLightBufferPtr() const override { return m_LightBuffer->GetDeviceBufferPtr(); }
-        [[nodiscard]] u32 GetNumberOfLights() const override { return m_NumberOfLights; }
+        [[nodiscard]] OWC_FORCE_INLINE std::shared_ptr<BaseTLAS>& GetTLAS() override { return m_SponzaPalaceLoader.GetTLAS(); }
+        [[nodiscard]] OWC_FORCE_INLINE uSize GetDeviceMegaBufferPtr() const override { return m_SponzaPalaceLoader.GetDeviceMegaBufferPtr(); }
+        [[nodiscard]] OWC_FORCE_INLINE uSize GetDeviceGeometryBufferPtr() const override { return m_SponzaPalaceLoader.GetDeviceGeometryBufferPtr(); }
+        [[nodiscard]] OWC_FORCE_INLINE uSize GetDeviceMaterialBufferPtr() const override { return m_SponzaPalaceLoader.GetDeviceMaterialBufferPtr(); }
+        [[nodiscard]] OWC_FORCE_INLINE uSize GetLightBufferPtr() const override { return m_SponzaPalaceLoader.GetLightBufferPtr(); }
+        [[nodiscard]] OWC_FORCE_INLINE u32 GetNumberOfLights() const override { return m_SponzaPalaceLoader.GetNumberOfLights(); }
 
-        [[nodiscard]] bool GetNeedScreenRefresh() const override { return m_SponzaPalaceLayer->GetNeedScreenRefresh(); }
+        [[nodiscard]] OWC_FORCE_INLINE bool GetNeedScreenRefresh() const override { return m_SponzaPalaceLoader.GetNeedScreenRefresh(); }
 
     private:
-        void IterateThroughNodes(u32 nodeIndex, Mat4 parentTransform, u32& customInstancesIndex, std::vector<GPULightData>& lightData, std::map<i32, std::unique_ptr<SceneMesh>>& meshes, std::vector<std::pair<Mat4, i32>>& meshIndexes);
-
-    private:
-        tg3_model m_Model = {};
-        std::shared_ptr<BaseTLAS> m_TLAS;
-        std::shared_ptr<Graphics::GeneralBuffer> m_GPUBuffer;
-        std::shared_ptr<Graphics::GeneralBuffer> m_LightBuffer;
-        std::shared_ptr<SponzaPalaceLayer> m_SponzaPalaceLayer;
-        std::vector<GPUGLTFData> m_GPUData;
-        uSize m_GeometryBufferSize = 0;
-        uSize m_MaterialBufferSize = 0;
-        uSize m_GeometryBufferOffset = 0;
-        uSize m_MaterialBufferOffset = 0;
-        u32 m_NumberOfLights = 0;
+        GLTFLoader m_SponzaPalaceLoader;
     };
-}// OWC
+} // OWC
