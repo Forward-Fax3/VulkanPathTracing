@@ -18,9 +18,11 @@ namespace OWC
         u64 indicesOffset = 0;
         u64 normalsOffset = 0;
         u64 coloursOffset = 0;
-        u32 materialIndex = 0 ;
+        u64 tangentOffset = 0;
+        u64 texCoordsOffset = 0;
+        u32 materialIndex = 0;
         u32 is16BitIndices = 0; // bool
-        u32 _[2] = { 0, 0 }; // pad to 48 bytes
+        u32 _[2] = { 0, 0 }; // pad to 64 bytes
     };
 
     struct GPUMaterialData

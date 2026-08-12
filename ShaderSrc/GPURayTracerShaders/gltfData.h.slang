@@ -4,9 +4,11 @@ struct GeometryDescriptor
     uint64_t indicesOffset;
     uint64_t normalsOffset;
     uint64_t coloursOffset;
+    uint64_t tangentOffset;
+    uint64_t texCoordsOffset;
     uint materialIndex;
     uint is16BitIndices; // boolean
-    uint pad[2]; // 48 bytes
+    uint pad[2]; // 64 bytes
 }
 
 struct MaterialData

@@ -1,4 +1,6 @@
+#include "../GeneralHelperShaders/Core.slang"
 #include "gltfData.h.slang"
+#include "../GeneralHelperShaders/BRDF.slang"
 
 struct GetLightIndexReturn
 {
@@ -55,16 +57,6 @@ RaytracingAccelerationStructure sceneBVH;
 [[vk::binding(2, 0)]]
 ConstantBuffer<GeneralData> PerFrameData;
 
-static constexpr uint spotLight = 0;
-static constexpr uint pointLight = 1;
-static constexpr uint directionalLight = 2;
-
-static constexpr float pi = 3.14159265f;
-static constexpr float oneOverPi = 1.0f / pi;
-
-static constexpr uint CANDIDATE_AABB = 1;
-static constexpr uint CANDIDATE_TRIANGLE = 2;
-
 float Rand(inout uint rngState)
 {
     // Condensed version of pcg_output_rxs_m_xs_32_32, with simple conversion to floating-point [0,1].
@@ -74,7 +66,21 @@ float Rand(inout uint rngState)
     return float(word) / 4294967295.0f;
 }
 
-float3 DiffuseReflection(float3 inRay, float3 normal, inout uint rngState)
+float3 DiffuseReflection(float3 inRay, float3 normal, float3 tangent, float3 bitangent, inout uint rngState)
+{
+    // Cosine-weighted hemisphere sampling: generate a random direction
+    // centered around the normal with PDF = cos(theta) / pi.
+    const float theta = 2.0 * pi * Rand(rngState); // Random in [0, 2pi]
+    const float u = Rand(rngState);                 // Random in [0, 1]
+    const float r = sqrt(u);
+    const float x = r * cos(theta);
+    const float y = r * sin(theta);
+    const float z = sqrt(1.0 - u);
+
+    return normalize(tangent * x + bitangent * y + normal * z);
+}
+
+/*float3 DiffuseReflection(float3 inRay, float3 normal, inout uint rngState)
 {
     // For a random diffuse bounce direction, we follow the approach of
     // Ray Tracing in One Weekend, and generate a random point on a sphere
@@ -90,7 +96,7 @@ float3 DiffuseReflection(float3 inRay, float3 normal, inout uint rngState)
         return normal;
 
     return normalize(direction);
-}
+}*/
 
 __generic<T : IFloat> T GetTriangleAttributes(uint64_t bufferOffset, uint3 attributeIndex, float3 barycentricCoords)
 {
@@ -383,21 +389,55 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
 
     float3 hitLocation = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
     float3 hitNormal = float3(0.0f, 1.0f, 0.0f);
+    float3x3 normalMatrix = (float3x3)ObjectToWorld3x4();
     if (geometry.normalsOffset != 0xFFFFFFFFFFFFFFFFULL)
-        hitNormal = normalize(GetTriangleAttributes<float3>(geometry.normalsOffset, attributeIndex, barycentricCoords));
-    //bool frontFace = dot(WorldRayDirection(), hitNormal) <= 0.0f;
-    //hitNormal = frontFace ? hitNormal : -hitNormal;
+        hitNormal = normalize(mul(normalMatrix, GetTriangleAttributes<float3>(geometry.normalsOffset, attributeIndex, barycentricCoords)));
+    else
+    {
+        float3 p2 = GetTriangleAttributes<float3>(geometry.positionsOffset, attributeIndex, float3(1.0f, 0.0f, 0.0f));
+        float3 p1 = GetTriangleAttributes<float3>(geometry.positionsOffset, attributeIndex, float3(0.0f, 1.0f, 0.0f));
+        float3 p0 = GetTriangleAttributes<float3>(geometry.positionsOffset, attributeIndex, float3(0.0f, 0.0f, 1.0f));
+
+        hitNormal = normalize(mul(normalMatrix, cross(p1 - p0, p2 - p0)));
+    }
+
+    /*payload.radiance = hitNormal * 0.5f + 0.5f;
+    payload.depth = 0;
+    return;*/
+
+    bool frontFace = dot(WorldRayDirection(), hitNormal) <= 0.0f;
+    hitNormal = frontFace ? hitNormal : -hitNormal;
+
+    float3 tangent = float3(1.0f, 0.0f, 0.0f);
+    float3 bitangent = float3(0.0f, 0.0f, 1.0f);
+    if (geometry.tangentOffset != 0xFFFFFFFFFFFFFFFFULL)
+    {
+        float4 tangent4 = normalize(GetTriangleAttributes<float4>(geometry.tangentOffset, attributeIndex, barycentricCoords));
+        tangent = normalize(tangent4.xyz - hitNormal * dot(tangent4.xyz, hitNormal));
+        bitangent = cross(hitNormal, tangent) * tangent4.w;
+    }
+    else
+        BuildOrthonormalBasis(hitNormal, tangent, bitangent);
 
     // TODO: add materials
-    // if (payload.depth == PC.numberOfBounces)
-    //     payload.radiance += payload.throughput * mat.emissive;
+    // TODO: dont assume a material
+    MaterialData mat;
+    if (geometry.materialIndex != 0xFFFFFFFFUL)
+    {
+        mat = PC.materialData[geometry.materialIndex];
+    }
+    else
+    {
+        mat.baseColourFactor = float3(1.0f, 1.0f, 1.0f);
+        mat.metallicFactor = 0.0f;
+        mat.roughnessFactor = 0.5f;
+    }
+    /*if (payload.depth == PC.numberOfBounces)
+        payload.radiance += payload.throughput * mat.emissive;*/
 
     float4 colour4 = float4(1.0f);
     if (geometry.coloursOffset != 0xFFFFFFFFFFFFFFFFULL)
         colour4 = GetTriangleAttributes<float4>(geometry.coloursOffset, attributeIndex, barycentricCoords);
-
-    // TODO: dont assume a material
-    //MaterialData mat = PC.materialData[geometry.materialIndex];
 
     if (Rand(payload.randSeed) > colour4.w)
     {
@@ -405,14 +445,48 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
     }
     else
     {
-        float epsilon = max(1e-4f, RayTCurrent() * 1e-4f);
+        /*float epsilon = max(1e-4f, RayTCurrent() * 1e-4f);
         float3 newRayDirection = DiffuseReflection(WorldRayDirection(), hitNormal, payload.randSeed);
         payload.newOrigin = hitLocation + hitNormal * epsilon;
         payload.newDirection = newRayDirection;
 
         float3 colour = colour4.xyz * oneOverPi;
 
-        payload.throughput *= colour;
+        payload.throughput *= colour;*/
+
+        float3 albedo = colour4.xyz * (1.0f - mat.metallicFactor);
+        float3 F0 = lerp(float3(0.04f), colour4.xyz, mat.metallicFactor);
+
+        float diffuseWeight = 0.5f;
+        float3 newRayDirection;
+
+        if (Rand(payload.randSeed) < diffuseWeight)
+        {
+            newRayDirection = DiffuseReflection(WorldRayDirection(), hitNormal, tangent, bitangent, payload.randSeed);
+        }
+        else
+        {
+            BRDFSample gs = SampleGGX(hitNormal, -WorldRayDirection(), mat.roughnessFactor, F0,
+                                       float2(Rand(payload.randSeed), Rand(payload.randSeed)),
+                                       tangent, bitangent);
+            newRayDirection = gs.direction;
+        }
+
+        float NdotV = max(dot(hitNormal, -WorldRayDirection()), 0.0f);
+        float3 Fview = FresnelSchlick(NdotV, F0);
+        float3 kD = (1.0f - Fview) * (1.0f - mat.metallicFactor);
+
+        float3 diffuseValue = kD * albedo * oneOverPi;
+        GGXResult evalResult = EvalGGXSpecular(hitNormal, -WorldRayDirection(), newRayDirection, mat.roughnessFactor, F0);
+
+        float3 brdfValue = diffuseValue + evalResult.value;
+        float NDotL = max(dot(hitNormal, newRayDirection), 0.0f);
+        float cosinePdf = NDotL * oneOverPi;
+        float brdfpdf = diffuseWeight * cosinePdf + (1.0f - diffuseWeight) * evalResult.pdf;
+
+        payload.newOrigin = hitLocation + hitNormal * 0.00001f;
+        payload.newDirection = newRayDirection;
+        payload.throughput *= (brdfpdf > 0.0f) ? (brdfValue * NDotL / brdfpdf) : float3(0.0f);
 
         if (PC.numOfLights > 0)
         {
@@ -435,14 +509,19 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
 
             if (light.pdf > 1e-6 && IsVisible(payload.newOrigin, hitNormal, light.direction, light.distance))
             {
-                float normalDotLightDirection = max(dot(hitNormal, light.direction), 0.0f);
-                payload.radiance += payload.throughput * light.radiance * normalDotLightDirection / (light.pdf * lightIndex.pdf);
+                float NdotL_light = max(dot(hitNormal, light.direction), 0.0f);
+
+                float3 diffuseValLight = kD * albedo * oneOverPi;
+                GGXResult specEvalLight = EvalGGXSpecular(hitNormal, -WorldRayDirection(), light.direction, mat.roughnessFactor, F0);
+                float3 brdfValueLight = diffuseValLight + specEvalLight.value;
+
+                payload.radiance += payload.throughput * brdfValueLight * NdotL_light * light.radiance / (light.pdf * lightIndex.pdf);
             }
         }
-        else
+        /*else
         {
             payload.radiance += payload.throughput * float3(0.5f, 0.7f, 1.0f) * oneOverPi;
-        }
+        }*/
 
         float rrP = min(max(max(payload.throughput.x, payload.throughput.y), payload.throughput.z), 0.95f);
         if (Rand(payload.randSeed) > rrP)

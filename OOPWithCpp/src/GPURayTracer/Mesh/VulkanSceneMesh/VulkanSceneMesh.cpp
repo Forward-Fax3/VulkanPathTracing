@@ -166,16 +166,17 @@ namespace OWC
             const auto normalData = extractAttribute(prim, "NORMAL", model);
             const auto colourData = extractAttribute(prim, "COLOR_0", model);
             assert((normalData.byteStride == 12 || normalData.hasData == false) && (colourData.byteStride == 16 || colourData.hasData == false));
-            /*if (accessor.component_type != TG3_COMPONENT_TYPE_UNSIGNED_SHORT)
-                OWCDebugBreak();*/
 
-            /*auto texCoordsdata = extractAttribute(prim, "TEXCOORD_0");
-            auto Tangentsdata = extractAttribute(prim, "TANGENT");*/
+            const auto tangentData = extractAttribute(prim, "TANGENT", model);
+            const auto texCoordsData = extractAttribute(prim, "TEXCOORD_0", model);
+
             GPUData.emplace_back(
                 positionData.offset,
                 indexData.offset,
                 normalData.hasData ? static_cast<u64>(normalData.offset) : ~0ULL,
                 colourData.hasData ? static_cast<u64>(colourData.offset) : ~0ULL,
+                tangentData.hasData ? static_cast<u64>(tangentData.offset) : ~0ULL,
+                texCoordsData.hasData ? static_cast<u64>(texCoordsData.offset) : ~0ULL,
                 prim.material,
                 accessor.component_type == TG3_COMPONENT_TYPE_UNSIGNED_SHORT ? static_cast<u32>(true) : static_cast<u32>(false)
             );
