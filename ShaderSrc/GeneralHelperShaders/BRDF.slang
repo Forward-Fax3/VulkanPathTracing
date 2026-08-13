@@ -20,7 +20,7 @@ struct BRDFSample
 float TR_GGX(float NDotH, float alpha2)
 {
     float denom = NDotH * NDotH * (alpha2 - 1.0f) + 1.0f;
-    return alpha2 / (pi * denom * denom);
+    return alpha2 / max(pi * denom * denom, 1e-9f);
 }
 
 float V_SmithGGXCorrelated(float NDotV, float NDotL, float alpha2)
@@ -33,6 +33,13 @@ float V_SmithGGXCorrelated(float NDotV, float NDotL, float alpha2)
 float3 FresnelSchlick(float VDotH, float3 F0)
 {
     return F0 + (1.0f - F0) * pow(1.0f - VDotH, 5.0f);
+}
+
+float PowerHeuristic(float pdfA, float pdfB)
+{
+    float a2 = pdfA * pdfA;
+    float b2 = pdfB * pdfB;
+    return a2 / max(a2 + b2, 1e-9f);
 }
 
 
@@ -51,13 +58,14 @@ GGXResult EvalGGXSpecular(float3 n, float3 v, float3 l, float roughness, float3 
     float NDotH = saturate(dot(n, h));
     float VDotH = saturate(dot(v, h));
 
-    float alpha2 = max(roughness * roughness, 1e-4);
+    float alpha = max(roughness * roughness, 1e-4f);
+    float alpha2 = alpha * alpha;
     float D = TR_GGX(NDotH, alpha2);
     float V = V_SmithGGXCorrelated(NDotV, NDotL, alpha2);
     float3 F = FresnelSchlick(VDotH, F0);
 
     result.value = (D * V) * F;
-    result.pdf = D * NDotH / max(4.0f * VDotH, 1e-4f);
+    result.pdf = D * NDotH / max(4.0f * VDotH, 1e-9f);
     return result;
 }
 

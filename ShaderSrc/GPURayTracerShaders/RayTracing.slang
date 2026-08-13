@@ -252,7 +252,7 @@ bool IsVisible(float3 position, float3 normal, float3 lightDirection, float ligh
         tMax = 0.0f;
     ray.TMax = tMax;
 
-    rayQuery.TraceRayInline(sceneBVH, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_CULL_NON_OPAQUE, 0xFF, ray);
+    rayQuery.TraceRayInline(sceneBVH, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xFF, ray);
     while (rayQuery.Proceed())
     {
         uint candType = rayQuery.CandidateType();
@@ -445,19 +445,13 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
     }
     else
     {
-        /*float epsilon = max(1e-4f, RayTCurrent() * 1e-4f);
-        float3 newRayDirection = DiffuseReflection(WorldRayDirection(), hitNormal, payload.randSeed);
-        payload.newOrigin = hitLocation + hitNormal * epsilon;
-        payload.newDirection = newRayDirection;
-
-        float3 colour = colour4.xyz * oneOverPi;
-
-        payload.throughput *= colour;*/
-
         float3 albedo = colour4.xyz * (1.0f - mat.metallicFactor);
         float3 F0 = lerp(float3(0.04f), colour4.xyz, mat.metallicFactor);
 
-        float diffuseWeight = 0.5f;
+        //float diffuseWeight = 0.9f;
+        float diffuseLum = dot(albedo, float3(0.2126f, 0.7152f, 0.0722f));
+        float specularLum = dot(F0, float3(0.2126f, 0.7152f, 0.0722f));
+        float diffuseWeight = clamp(diffuseLum / max(diffuseLum + specularLum, 1e-4f), 0.05f, 0.95f);
         float3 newRayDirection;
 
         if (Rand(payload.randSeed) < diffuseWeight)
@@ -515,13 +509,15 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
                 GGXResult specEvalLight = EvalGGXSpecular(hitNormal, -WorldRayDirection(), light.direction, mat.roughnessFactor, F0);
                 float3 brdfValueLight = diffuseValLight + specEvalLight.value;
 
-                payload.radiance += payload.throughput * brdfValueLight * NdotL_light * light.radiance / (light.pdf * lightIndex.pdf);
+                float cosinePdfLight = NdotL_light * oneOverPi;
+                float brdfPdfLight = diffuseWeight * cosinePdfLight + (1.0f - diffuseWeight) * specEvalLight.pdf;
+
+                float lightCombinedPDF = light.pdf * lightIndex.pdf;
+                float MISWeight = PowerHeuristic(lightCombinedPDF, brdfPdfLight);
+
+                payload.radiance += payload.throughput * brdfValueLight * NdotL_light * light.radiance * MISWeight / (light.pdf * lightIndex.pdf);
             }
         }
-        /*else
-        {
-            payload.radiance += payload.throughput * float3(0.5f, 0.7f, 1.0f) * oneOverPi;
-        }*/
 
         float rrP = min(max(max(payload.throughput.x, payload.throughput.y), payload.throughput.z), 0.95f);
         if (Rand(payload.randSeed) > rrP)
@@ -529,6 +525,8 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
             payload.depth = 0;
             return;
         }
+
+        payload.throughput /= rrP;
     }
 
     payload.depth--;
