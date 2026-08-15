@@ -418,7 +418,12 @@ namespace OWC
 				}
 			};
 
-			auto shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/GPURayTracerShaders/RayTracing.spv");
+			std::vector<u32> shaderSrc;
+
+			if (Renderer::HasShaderExecutionSupport())
+				shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/GPURayTracerShaders/RayTracing_SER.spv");
+			else
+				shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/GPURayTracerShaders/RayTracing.spv");
 
 			std::vector<ShaderData> shaderDatas = {
 				{

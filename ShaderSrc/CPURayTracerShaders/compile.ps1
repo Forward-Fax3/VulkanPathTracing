@@ -1,0 +1,1 @@
+./../../Slang/bin/slangc.exe CPUShader.slang -target spirv -o CPUShader.spv

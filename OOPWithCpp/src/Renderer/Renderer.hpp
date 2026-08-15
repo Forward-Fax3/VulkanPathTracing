@@ -176,6 +176,8 @@ namespace OWC::Graphics
 
 		[[nodiscard]] static uSize GetNumberOfFramesInFlight(const std::shared_ptr<RenderPassData>& data);
 
+		[[nodiscard]] static bool HasShaderExecutionSupport();
+
 		static inline RendererAPI GetAPI() { return s_API; }
 
 	private:

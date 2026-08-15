@@ -59,7 +59,7 @@ namespace OWC::Graphics
 #endif
 		static void SurfaceInit(SDL_Window& windowHandle);
 		static void SelectPhysicalDevice();
-		static std::pair<bool, u32> IsPhysicalDeviceSuitable(const vk::PhysicalDevice& device);
+		static std::tuple<bool, u32, std::vector<vk::ExtensionProperties>> IsPhysicalDeviceSuitable(const vk::PhysicalDevice& device);
 		void FindQueueFamilies();
 		void CheckQueueFamilyValidity(const std::vector<vk::QueueFamilyProperties>& queueFamilies);
 		void GetAndStoreGlobalQueueFamilies() const;

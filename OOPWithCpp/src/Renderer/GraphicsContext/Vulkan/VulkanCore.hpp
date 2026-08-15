@@ -143,6 +143,8 @@ namespace OWC::Graphics
 
 		[[nodiscard]] OWC_FORCE_INLINE vk::Semaphore GetLastFrameFinishedSemaphore() const { return m_LastFrameWaitSemaphore; }
 
+		[[nodiscard]] OWC_FORCE_INLINE bool HasSERSupport() const { return hasSERSupport; }
+
 		OWC_FORCE_INLINE void SetInstance(vk::raii::Instance&& instance) { m_Instance = std::move(instance); }
 #ifndef DIST
 		OWC_FORCE_INLINE void SetDebugCallback(vk::raii::DebugUtilsMessengerEXT&& debugCallback) { m_DebugCallback = std::move(debugCallback); }
@@ -169,6 +171,8 @@ namespace OWC::Graphics
 		OWC_FORCE_INLINE void AddVulkanEndOfFrameCleanUpFunction(std::move_only_function<void()>&& func) { m_EndOfFrameCleanUp[m_CurrentFrameIndex].emplace_back(std::move(func)); }
 
 		OWC_FORCE_INLINE void SetLastFrameWaitSemaphore(const vk::Semaphore semaphore) { m_LastFrameWaitSemaphore = semaphore; }
+
+		OWC_FORCE_INLINE void SetSERSupport(const bool support) { hasSERSupport = support; }
 
 		OWC_FORCE_INLINE void SetRTPhysicalDeviceProperties(const vk::PhysicalDeviceRayTracingPipelinePropertiesKHR& rayTracingPipelineProperties, const vk::PhysicalDeviceAccelerationStructurePropertiesKHR& accelerationStructureProperties)
 		{
@@ -245,6 +249,8 @@ namespace OWC::Graphics
 		std::vector<u32> m_UniqueQueueFamilyIndices{};
 
 		vk::Semaphore m_LastFrameWaitSemaphore = vk::Semaphore();
+
+		bool hasSERSupport = false;
 
 		static std::unique_ptr<VulkanCore> s_Instance;
 	};

@@ -255,7 +255,7 @@ VKAPI_ATTR void VKAPI_CALL vkCmdTraceRaysKHR(
 
 namespace OWC::Graphics
 {
-	std::array g_DeviceExtensions = {
+	static std::array g_DeviceExtensions = {
 #if defined(_WIN32) || defined(_WIN64)
 		vk::EXTPageableDeviceLocalMemoryExtensionName,
 		vk::EXTMemoryPriorityExtensionName,
@@ -268,6 +268,23 @@ namespace OWC::Graphics
 		vk::KHRShaderNonSemanticInfoExtensionName,
 		vk::KHRRayQueryExtensionName,
 		vk::KHRRayTracingMaintenance1ExtensionName
+	};
+
+
+	static std::array g_DeviceExtensionsWithSER = {
+#if defined(_WIN32) || defined(_WIN64)
+		vk::EXTPageableDeviceLocalMemoryExtensionName,
+		vk::EXTMemoryPriorityExtensionName,
+#endif
+		vk::KHRSwapchainExtensionName,
+		vk::KHRAccelerationStructureExtensionName,
+		vk::KHRRayTracingPipelineExtensionName,
+		vk::KHRBufferDeviceAddressExtensionName,
+		vk::KHRDeferredHostOperationsExtensionName,
+		vk::KHRShaderNonSemanticInfoExtensionName,
+		vk::KHRRayQueryExtensionName,
+		vk::KHRRayTracingMaintenance1ExtensionName,
+		vk::EXTRayTracingInvocationReorderExtensionName
 	};
 
 	VulkanContext::VulkanContext(SDL_Window& windowHandle, const WindowProperties& properties)
@@ -591,12 +608,17 @@ namespace OWC::Graphics
 		u32 highestScore = 0;
 		for (auto& device : physicalDevices)
 		{
-			if (auto [isSuitable, score] = IsPhysicalDeviceSuitable(device); isSuitable && score > highestScore)
+			if (auto [isSuitable, score, supportedExtensions] = IsPhysicalDeviceSuitable(device);
+				isSuitable && score > highestScore)
 			{
 				highestScore = score;
 				VulkanCore::GetInstance().SetPhysicalDevice(device);
+				const bool extensionsAvailable = IsExtensionAvailable(supportedExtensions, vk::EXTRayTracingInvocationReorderExtensionName);
+				VulkanCore::GetInstance().SetSERSupport(extensionsAvailable);
 			}
 		}
+
+		VulkanCore::GetInstance().SetSERSupport(false);
 
 		if (const auto pDevice = VulkanCore::GetConstInstance().GetPhysicalDev(); pDevice == nullptr)
 			Log<LogLevel::Critical>("Failed to find a suitable GPU");
@@ -622,7 +644,7 @@ namespace OWC::Graphics
 		}
 	}
 
-	std::pair<bool, u32> VulkanContext::IsPhysicalDeviceSuitable(const vk::PhysicalDevice& device)
+	std::tuple<bool, u32, std::vector<vk::ExtensionProperties>> VulkanContext::IsPhysicalDeviceSuitable(const vk::PhysicalDevice& device)
 	{
 		u32 score = 0;
 		auto deviceProperties = device.getProperties2();
@@ -638,10 +660,10 @@ namespace OWC::Graphics
 			Log<LogLevel::Warn>("Physical device {} is missing required extension: {}",
 				deviceProperties.properties.deviceName.data(),
 				missingExtension);
-			return { false, 0 };
+			return { false, 0, {} };
 		}
 
-		return { true, score };
+		return { true, score, std::move(supportedExtensions) };
 	}
 
 	void VulkanContext::FindQueueFamilies()
@@ -825,8 +847,12 @@ namespace OWC::Graphics
 			.setPNext(&pageableDeviceLocalMemoryFeature)
 			.setShaderObject(vk::True);
 
-		auto rayTracingMaintenance1 = vk::PhysicalDeviceRayTracingMaintenance1FeaturesKHR()
+		auto shaderExecutionReordering = vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT()
 			.setPNext(&shaderObjectFeature)
+			.setRayTracingInvocationReorder(VulkanCore::GetConstInstance().HasSERSupport() ? vk::True : vk::False);
+
+		auto rayTracingMaintenance1 = vk::PhysicalDeviceRayTracingMaintenance1FeaturesKHR()
+			.setPNext(&shaderExecutionReordering)
 			.setRayTracingMaintenance1(vk::True);
 
 		auto rayQueryFeature = vk::PhysicalDeviceRayQueryFeaturesKHR()
@@ -891,12 +917,17 @@ namespace OWC::Graphics
 				.setFragmentStoresAndAtomics(vk::True)
 				.setShaderImageGatherExtended(vk::True));
 
-
-		VulkanCore::GetInstance().SetDevice(vk::raii::Device(VulkanCore::GetConstInstance().GetPhysicalDev(), vk::DeviceCreateInfo()
+		auto deviceCreateInfo = vk::DeviceCreateInfo()
 			.setQueueCreateInfos(deviceQueueCreateInfos)
-			.setPEnabledExtensionNames(g_DeviceExtensions)
-			.setPNext(&enabledFeatures)
-		));
+			//.setPEnabledExtensionNames(VulkanCore::GetConstInstance().HasSERSupport() ? g_DeviceExtensionsWithSER : g_DeviceExtensions)
+			.setPNext(&enabledFeatures);
+
+		if (VulkanCore::GetConstInstance().HasSERSupport())
+			deviceCreateInfo.setPEnabledExtensionNames(g_DeviceExtensionsWithSER);
+		else
+			deviceCreateInfo.setPEnabledExtensionNames(g_DeviceExtensions);
+
+		VulkanCore::GetInstance().SetDevice(vk::raii::Device(VulkanCore::GetConstInstance().GetPhysicalDev(), deviceCreateInfo));
 
 		m_QueueFamilyIndices.UniqueIndices.reserve(uniqueQueueFamiliesMap.size());
 		for (const auto& familyIndex : std::views::keys(uniqueQueueFamiliesMap))

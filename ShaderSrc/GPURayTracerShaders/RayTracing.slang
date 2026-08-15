@@ -109,7 +109,7 @@ __generic<T : IFloat> T GetTriangleAttributes(uint64_t bufferOffset, uint3 attri
 
 float LightWeight(LightData light, float3 position, float3 normal)
 {
-    constexpr float3 BT709Weights = { 0.2126f, 0.7152f, 0.0722 };
+    const float3 BT709Weights = { 0.2126f, 0.7152f, 0.0722 };
     float luminosity = dot(light.colour, BT709Weights) * light.intensity;
 
     if (light.type == directionalLight)
@@ -334,9 +334,18 @@ void RayGenShader()
 
         while (payload.depth != 0)
         {
+            uint rayFlags = RAY_FLAG_NONE;
             ray.Origin = payload.newOrigin;
             ray.Direction = payload.newDirection;
-            TraceRay(sceneBVH, RAY_FLAG_NONE, 0xFF, 0, 0, 0, ray, payload);
+
+#ifdef SER
+            HitObject hit = HitObject::TraceRay(sceneBVH, rayFlags, 0xFF, 0, 0, 0, ray, payload);
+
+            ReorderThread(hit);
+            HitObject::Invoke(sceneBVH, hit, payload);
+#else
+            TraceRay(sceneBVH, rayFlags, 0xFF, 0, 0, 0, ray, payload);
+#endif
         }
 
         if (imageNeedsResetting == 1)

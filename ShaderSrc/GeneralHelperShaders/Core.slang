@@ -1,17 +1,17 @@
 #pragma once
 
 
-static constexpr uint spotLight = 0;
-static constexpr uint pointLight = 1;
-static constexpr uint directionalLight = 2;
+static const uint spotLight = 0;
+static const uint pointLight = 1;
+static const uint directionalLight = 2;
 
-static constexpr float pi = 3.14159265f;
-static constexpr float pi2 = pi * pi;
-static constexpr float oneOverPi = 1.0f / pi;
-static constexpr float oneOverPi2 = 1.0f / pi2;
+static const float pi = 3.14159265f;
+static const float pi2 = pi * pi;
+static const float oneOverPi = 1.0f / pi;
+static const float oneOverPi2 = 1.0f / pi2;
 
-static constexpr uint CANDIDATE_AABB = 1;
-static constexpr uint CANDIDATE_TRIANGLE = 2;
+static const uint CANDIDATE_AABB = 1;
+static const uint CANDIDATE_TRIANGLE = 2;
 
 void BuildOrthonormalBasis(float3 n, out float3 tangent, out float3 bitangent)
 {

@@ -1,6 +1,7 @@
 ﻿#include "Application.hpp"
 #include "Renderer.hpp"
 
+#include "VulkanCore.hpp"
 #include "VulkanRenderPass.hpp"
 
 
@@ -175,5 +176,16 @@ namespace OWC::Graphics
 	OWC::uSize Renderer::GetNumberOfFramesInFlight(const std::shared_ptr<RenderPassData>& data)
 	{
 		return data->GetNumberOfFramesInFlight();
+	}
+
+	bool Renderer::HasShaderExecutionSupport()
+	{
+		switch (s_API) // Switch statement for future APIs
+		{
+		case OWC::Graphics::RendererAPI::Vulkan:
+			return VulkanCore::GetConstInstance().HasSERSupport();
+		default:
+			return false;
+		}
 	}
 };
