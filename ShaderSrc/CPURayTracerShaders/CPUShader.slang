@@ -13,12 +13,15 @@ struct VertexData
     };
 };
 
+[[vk::binding(0, 0)]]
 cbuffer image
 {
     float invNumberOfSamples;
     float invGamma;
-    Sampler2D<float4> texture;
 };
+
+[[vk::binding(1, 0)]]
+Sampler2D<float4> texture;
 
 struct VertexStageOutput
 {

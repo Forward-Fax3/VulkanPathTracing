@@ -139,7 +139,7 @@ namespace OWC
 			}
 		};
 
-		auto shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/CPURayTracerShaders/Image.spv");
+		auto shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/CPURayTracerShaders/CPUShader.spv");
 
 		std::vector<ShaderData> shaderDatas = {
 			{

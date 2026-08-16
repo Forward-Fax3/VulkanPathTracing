@@ -14,6 +14,7 @@ struct LightSample
     float distance;
     float3 radiance;
     float pdf;
+    float cosineLight;
 }
 
 struct GeneralData
@@ -80,24 +81,6 @@ float3 DiffuseReflection(float3 inRay, float3 normal, float3 tangent, float3 bit
     return normalize(tangent * x + bitangent * y + normal * z);
 }
 
-/*float3 DiffuseReflection(float3 inRay, float3 normal, inout uint rngState)
-{
-    // For a random diffuse bounce direction, we follow the approach of
-    // Ray Tracing in One Weekend, and generate a random point on a sphere
-    // of radius 1 centered at the normal. This uses the random_unit_vector
-    // function from chapter 8.5:
-
-    const float theta = 2.0 * pi * Rand(rngState); // Random in [0, 2pi]
-    const float u = 2.0 * Rand(rngState) - 1.0;    // Random in [-1, 1]
-    const float r = sqrt(1.0 - u * u);
-    const float3 direction = reflect(inRay, normal) + float3(r * cos(theta), r * sin(theta), u);
-
-    if (dot(direction, direction) < 1e-8)
-        return normal;
-
-    return normalize(direction);
-}*/
-
 __generic<T : IFloat> T GetTriangleAttributes(uint64_t bufferOffset, uint3 attributeIndex, float3 barycentricCoords)
 {
     T* attr = reinterpret<T*>(PC.mainBufferData + bufferOffset);
@@ -131,7 +114,11 @@ float LightWeight(LightData light, float3 position, float3 normal)
 
     float attenuation = light.range > 0.0 ? saturate(1.0f - pow(distance / light.range, 4.0)) : 1.0f;
 
-    return luminosity * normalDotDelta * attenuation / max(distance2, 1e-4);
+    float approxSolidAngle = 1.0f;
+    if (light.radius > 0.0f)
+        approxSolidAngle = pi * light.radius * light.radius;
+
+    return luminosity * normalDotDelta * attenuation * approxSolidAngle / max(distance2, 1e-4);
 }
 
 GetLightIndexReturn GetLightIndex(float3 position, float3 normal, float randVal)
@@ -222,11 +209,11 @@ LightSample SampleSphereLight(LightData light, float3 position, inout uint rngSt
         invalid.distance = 0;
         invalid.radiance = float3(0,0,0);
         invalid.pdf = 0.0;
+        invalid.cosineLight = 0.0f;
         return invalid;
     }
 
-    float3 emittedRadiance = light.colour * light.intensity
-                           * GetRangeAttenuation(light.range, dist);
+    float3 emittedRadiance = light.colour * light.intensity * GetRangeAttenuation(light.range, dist);
 
     float pdfArea = 1.0 / (4.0 * pi * light.radius * light.radius);
 
@@ -235,6 +222,7 @@ LightSample SampleSphereLight(LightData light, float3 position, inout uint rngSt
     result.distance = dist;
     result.radiance = emittedRadiance * cosLight;
     result.pdf = pdfArea;
+    result.cosineLight = cosLight;
     return result;
 }
 
@@ -521,8 +509,22 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
                 float cosinePdfLight = NdotL_light * oneOverPi;
                 float brdfPdfLight = diffuseWeight * cosinePdfLight + (1.0f - diffuseWeight) * specEvalLight.pdf;
 
-                float lightCombinedPDF = light.pdf * lightIndex.pdf;
-                float MISWeight = PowerHeuristic(lightCombinedPDF, brdfPdfLight);
+                bool isDeltaLight = lightData.type == directionalLight || lightData.type == spotLight || (lightData.type == pointLight && lightData.radius <= 0.0);
+
+                float lightPdfForMIS = light.pdf;
+
+                if (lightData.type == pointLight && lightData.radius > 0.0)
+                {
+                    lightPdfForMIS = light.pdf * (light.distance * light.distance) / max(light.cosineLight, 1e-6f);
+                }
+
+                float lightCombinedPDF = lightPdfForMIS * lightIndex.pdf;
+
+                float MISWeight;
+                if (isDeltaLight)
+                    MISWeight = 1.0;
+                else
+                    MISWeight = PowerHeuristic(lightCombinedPDF, brdfPdfLight);
 
                 payload.radiance += payload.throughput * brdfValueLight * NdotL_light * light.radiance * MISWeight / (light.pdf * lightIndex.pdf);
             }
