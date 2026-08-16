@@ -35,8 +35,7 @@ namespace OWC
 	GPURayTracerRenderer::GPURayTracerRenderer()
 		: m_UniformBuffer(Graphics::UniformBuffer::CreateUniformBuffer(sizeof(UniformBufferObject))),
 		  m_RayTracingGPUDataBuffer(Graphics::UniformBuffer::CreateUniformBuffer(sizeof(GeneralGPUData))),
-		  m_RayTracingWidth(Application::GetConstInstance().GetPixelWidth()),
-		  m_RayTracingHeight(Application::GetConstInstance().GetPixelHeight()),
+		  m_RayTracingResolution(Application::GetConstInstance().GetPixelWidth(), Application::GetConstInstance().GetPixelHeight()),
 		  m_ScreenNeedsRefreshing(true),
 		  m_Scene(std::make_shared<SponzaPalace>())
 	{
@@ -169,8 +168,8 @@ namespace OWC
         {
 			if (m_UseWindowResolution == true)
 			{
-				m_RayTracingWidth = Application::GetConstInstance().GetPixelWidth();
-				m_RayTracingHeight = Application::GetConstInstance().GetPixelHeight();
+				m_RayTracingResolution.x = Application::GetConstInstance().GetPixelWidth();
+				m_RayTracingResolution.y = Application::GetConstInstance().GetPixelHeight();
 				m_ScreenNeedsRefreshing = true;
 				Graphics::Renderer::AddToEndOfFrameCleanUp([this]()
 				{
@@ -184,10 +183,7 @@ namespace OWC
 		if (!m_UseWindowResolution)
 		{
 			// some static asserts to asure the position and size of ray tracing width and height will or with the short cuts ive set up
-			static_assert(offsetof(GPURayTracerRenderer, m_RayTracingWidth) + sizeof(m_RayTracingWidth) == offsetof(GPURayTracerRenderer, m_RayTracingHeight));
-			static_assert(sizeof(m_RayTracingWidth) == sizeof(u32));
-			static_assert(sizeof(m_RayTracingHeight) == sizeof(u32));
-			if (ImGui::OWC::SliderInt2WithAlignedText("Ray Tracing Resolution", "Width", "Height", &m_RayTracingWidth, 1, 8192, ImGuiSliderFlags_ClampOnInput))
+			if (ImGui::OWC::SliderInt2WithAlignedText("Ray Tracing Resolution", "Width", "Height", glm::value_ptr(m_RayTracingResolution), 1, 8192, ImGuiSliderFlags_ClampOnInput))
 			{
 				m_ScreenNeedsRefreshing = true;
 				Graphics::Renderer::AddToEndOfFrameCleanUp([this]()
@@ -259,8 +255,8 @@ namespace OWC
 				this->SetupRenderPass();
 				return false;
 			}
-			m_RayTracingWidth = Application::GetConstInstance().GetPixelWidth();
-			m_RayTracingHeight = Application::GetConstInstance().GetPixelHeight();
+			m_RayTracingResolution.x = Application::GetConstInstance().GetPixelWidth();
+			m_RayTracingResolution.y = Application::GetConstInstance().GetPixelHeight();
 			this->SetUpRenderImage();
 			this->m_RayTracingShader->BindTexture(0, m_RenderTarget);
 			this->m_DisplayShader->BindTexture(1, m_RenderTarget);
@@ -338,7 +334,7 @@ namespace OWC
 
 	void GPURayTracerRenderer::SetUpRenderImage() // used in a few places
 	{
-		m_RenderTarget = Graphics::TextureBuffer::CreateTextureBuffer(m_RayTracingWidth, m_RayTracingHeight);
+		m_RenderTarget = Graphics::TextureBuffer::CreateTextureBuffer(m_RayTracingResolution.x, m_RayTracingResolution.y);
 	}
 
 	void GPURayTracerRenderer::SetupRenderPass()
@@ -373,7 +369,7 @@ namespace OWC
 		Renderer::PushConstant(m_RayTracingRenderPass, *m_RayTracingShader, sizeof(PushConstantData), &pushConstantData);
 		Renderer::BindUniform(m_RayTracingRenderPass, *m_RayTracingShader);
 		Renderer::BindTexture(m_RayTracingRenderPass, *m_RayTracingShader, 0, 0);
-		Renderer::RayTrace(m_RayTracingRenderPass, *m_RayTracingShader, m_RayTracingWidth, m_RayTracingHeight, 1);
+		Renderer::RayTrace(m_RayTracingRenderPass, *m_RayTracingShader, m_RayTracingResolution.x, m_RayTracingResolution.y, 1);
 		Renderer::EndPass(m_RayTracingRenderPass);
 
 		m_DisplayRenderPass = Renderer::GetStaticRenderPass();
