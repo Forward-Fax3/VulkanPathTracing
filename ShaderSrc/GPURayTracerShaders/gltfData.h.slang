@@ -13,16 +13,20 @@ struct GeometryDescriptor
 
 struct MaterialData
 {
-    float3 baseColourFactor;
+    float4 baseColourFactor;
     float metallicFactor;
     float roughnessFactor;
     uint baseColourTextureIndex;
+    uint baseColourTextureCoords;
     uint metallicRoughnessTextureIndex;
+    uint metallicRoughnessTextureCoords;
+    float3 emissiveFactor;
     uint normalTextureIndex;
-    uint occlusionTextureIndex;
+    uint normalTextureCoords;
     uint emissiveTextureIndex;
+    uint emissiveTextureCoords;
     float alphaCutoff;
-    uint pad[1]; // pad to 48 bytes
+    uint pad[2]; // pad to 80 bytes
 }
 
 struct LightData

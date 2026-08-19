@@ -22,6 +22,11 @@ namespace OWC
         [[nodiscard]] OWC_FORCE_INLINE uSize GetLightBufferPtr() const override { return m_SponzaPalaceLoader.GetLightBufferPtr(); }
         [[nodiscard]] OWC_FORCE_INLINE u32 GetNumberOfLights() const override { return m_SponzaPalaceLoader.GetNumberOfLights(); }
 
+        [[nodiscard]] OWC_FORCE_INLINE const std::shared_ptr<Graphics::TextureArraySampler>& GetTextureArraySampler() const override { return m_SponzaPalaceLoader.GetTextureArraySampler(); }
+        [[nodiscard]] OWC_FORCE_INLINE const std::shared_ptr<Graphics::TextureArray>& GetColourTextureArray() const override { return m_SponzaPalaceLoader.GetColourTextureArray(); }
+        [[nodiscard]] OWC_FORCE_INLINE const std::shared_ptr<Graphics::TextureArray>& GetNormalTextureArray() const override { return m_SponzaPalaceLoader.GetNormalTextureArray(); }
+        [[nodiscard]] OWC_FORCE_INLINE const std::shared_ptr<Graphics::TextureArray>& GetMetallicRoughnessTextureArray() const override { return m_SponzaPalaceLoader.GetMetallicRoughnessTextureArray(); }
+
         [[nodiscard]] OWC_FORCE_INLINE bool GetNeedScreenRefresh() const override { return m_SponzaPalaceLoader.GetNeedScreenRefresh(); }
 
     private:

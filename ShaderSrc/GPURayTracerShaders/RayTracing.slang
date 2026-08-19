@@ -57,6 +57,16 @@ RWTexture2D<float4> resultTexture;
 RaytracingAccelerationStructure sceneBVH;
 [[vk::binding(2, 0)]]
 ConstantBuffer<GeneralData> PerFrameData;
+[[vk::binding(3, 0)]]
+SamplerState textureSampler;
+[[vk::binding(4, 0)]]
+Texture2DArray<float4> colourTextures;
+[[vk::binding(5, 0)]]
+Texture2DArray<float4> normalTextures;
+[[vk::binding(6, 0)]]
+Texture2DArray<float2> metallicRoughnessTextures;
+[[vk::binding(7, 0)]]
+Texture2DArray<float> emissiveTextures;
 
 float Rand(inout uint rngState)
 {
@@ -384,9 +394,43 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
     else // 32 bit indecies
         attributeIndex = reinterpret<uint3*>(PC.mainBufferData + geometry.indicesOffset)[primitiveIndex];
 
+    float2 texCoords = float2(0.0f);
+    if (geometry.texCoordsOffset != 0xFFFFFFFFFFFFFFFFULL)
+        texCoords = GetTriangleAttributes<float2>(geometry.texCoordsOffset, attributeIndex, barycentricCoords);
+
+    /*payload.radiance = hitNormal * 0.5f + 0.5f;
+    payload.depth = 0;
+    return;*/
+
+    // TODO: add materials
+    // TODO: dont assume a material
+    MaterialData mat;
+    if (geometry.materialIndex != 0xFFFFFFFFUL)
+    {
+        mat = PC.materialData[geometry.materialIndex];
+    }
+    else
+    {
+        mat.baseColourFactor = float4(1.0f);
+        mat.baseColourTextureIndex = 0xFFFFFFFFUL;
+        mat.metallicFactor = 0.0f;
+        mat.roughnessFactor = 0.5f;
+    }
+    /*if (payload.depth == PC.numberOfBounces)
+        payload.radiance += payload.throughput * mat.emissive;*/
+
+    float4 colour4 = float4(1.0f);
+    if (geometry.coloursOffset != 0xFFFFFFFFFFFFFFFFULL)
+        colour4 = GetTriangleAttributes<float4>(geometry.coloursOffset, attributeIndex, barycentricCoords);
+
+    colour4 *= mat.baseColourFactor;
+
+    if (mat.baseColourTextureIndex != 0xFFFFFFFFUL)
+        colour4 *= colourTextures.SampleLevel(textureSampler, float3(texCoords, mat.baseColourTextureIndex), 0.0f);
+
     float3 hitLocation = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
     float3 hitNormal = float3(0.0f, 1.0f, 0.0f);
-    float3x3 normalMatrix = (float3x3)ObjectToWorld3x4();
+    float3x3 normalMatrix = transpose((float3x3)WorldToObject3x4());
     if (geometry.normalsOffset != 0xFFFFFFFFFFFFFFFFULL)
         hitNormal = normalize(mul(normalMatrix, GetTriangleAttributes<float3>(geometry.normalsOffset, attributeIndex, barycentricCoords)));
     else
@@ -398,43 +442,44 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
         hitNormal = normalize(mul(normalMatrix, cross(p1 - p0, p2 - p0)));
     }
 
-    /*payload.radiance = hitNormal * 0.5f + 0.5f;
-    payload.depth = 0;
-    return;*/
-
-    bool frontFace = dot(WorldRayDirection(), hitNormal) <= 0.0f;
-    hitNormal = frontFace ? hitNormal : -hitNormal;
-
     float3 tangent = float3(1.0f, 0.0f, 0.0f);
     float3 bitangent = float3(0.0f, 0.0f, 1.0f);
     if (geometry.tangentOffset != 0xFFFFFFFFFFFFFFFFULL)
     {
         float4 tangent4 = normalize(GetTriangleAttributes<float4>(geometry.tangentOffset, attributeIndex, barycentricCoords));
-        tangent = normalize(tangent4.xyz - hitNormal * dot(tangent4.xyz, hitNormal));
+        float3 worldTangent = normalize(mul(normalMatrix, tangent4.xyz));
+        tangent = normalize(worldTangent - hitNormal * dot(worldTangent, hitNormal));
         bitangent = cross(hitNormal, tangent) * tangent4.w;
     }
     else
         BuildOrthonormalBasis(hitNormal, tangent, bitangent);
 
-    // TODO: add materials
-    // TODO: dont assume a material
-    MaterialData mat;
-    if (geometry.materialIndex != 0xFFFFFFFFUL)
+    if (mat.normalTextureIndex != 0xFFFFFFFFUL)
     {
-        mat = PC.materialData[geometry.materialIndex];
-    }
-    else
-    {
-        mat.baseColourFactor = float3(1.0f, 1.0f, 1.0f);
-        mat.metallicFactor = 0.0f;
-        mat.roughnessFactor = 0.5f;
-    }
-    /*if (payload.depth == PC.numberOfBounces)
-        payload.radiance += payload.throughput * mat.emissive;*/
+        /*float2 normalTexXY = normalTextures.SampleLevel(textureSampler, float3(texCoords, mat.normalTextureIndex), 0.0f).xy * 2.0f - 1.0f;
+        float normalZ = sqrt(max(0.0f, 1.0f - dot(normalTexXY, normalTexXY)));
+        float3 normalTexXYZ = float3(normalTexXY, normalZ);*/
 
-    float4 colour4 = float4(1.0f);
-    if (geometry.coloursOffset != 0xFFFFFFFFFFFFFFFFULL)
-        colour4 = GetTriangleAttributes<float4>(geometry.coloursOffset, attributeIndex, barycentricCoords);
+        float3 normalTexXYZ = normalTextures.SampleLevel(textureSampler, float3(texCoords, mat.normalTextureIndex), 0.0f).xyz * 2.0f - 1.0f;
+        float3x3 TBN = float3x3(normalize(tangent), normalize(bitangent), normalize(hitNormal));
+        hitNormal = normalize(mul(normalTexXYZ, TBN));
+    }
+
+    bool frontFace = dot(WorldRayDirection(), hitNormal) <= 0.0f;
+    hitNormal = frontFace ? hitNormal : -hitNormal;
+
+    /*payload.radiance = hitNormal;
+    payload.depth = 0;
+    return;*/
+
+    float metallicness = mat.metallicFactor;
+    float roughness = mat.roughnessFactor;
+    if (mat.metallicRoughnessTextureIndex != 0xFFFFFFFFUL)
+    {
+        float2 metallicRoughness = metallicRoughnessTextures.SampleLevel(textureSampler, float3(texCoords, mat.metallicRoughnessTextureIndex), 0.0f).xy;
+        metallicness *= metallicRoughness.x;
+        roughness *= metallicRoughness.y;
+    }
 
     if (Rand(payload.randSeed) > colour4.w)
     {
@@ -442,8 +487,8 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
     }
     else
     {
-        float3 albedo = colour4.xyz * (1.0f - mat.metallicFactor);
-        float3 F0 = lerp(float3(0.04f), colour4.xyz, mat.metallicFactor);
+        float3 albedo = colour4.xyz * (1.0f - metallicness);
+        float3 F0 = lerp(float3(0.04f), colour4.xyz, metallicness);
 
         //float diffuseWeight = 0.9f;
         float diffuseLum = dot(albedo, float3(0.2126f, 0.7152f, 0.0722f));
@@ -457,7 +502,7 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
         }
         else
         {
-            BRDFSample gs = SampleGGX(hitNormal, -WorldRayDirection(), mat.roughnessFactor, F0,
+            BRDFSample gs = SampleGGX(hitNormal, -WorldRayDirection(), roughness, F0,
                                        float2(Rand(payload.randSeed), Rand(payload.randSeed)),
                                        tangent, bitangent);
             newRayDirection = gs.direction;
@@ -465,10 +510,10 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
 
         float NdotV = max(dot(hitNormal, -WorldRayDirection()), 0.0f);
         float3 Fview = FresnelSchlick(NdotV, F0);
-        float3 kD = (1.0f - Fview) * (1.0f - mat.metallicFactor);
+        float3 kD = (1.0f - Fview) * (1.0f - metallicness);
 
         float3 diffuseValue = kD * albedo * oneOverPi;
-        GGXResult evalResult = EvalGGXSpecular(hitNormal, -WorldRayDirection(), newRayDirection, mat.roughnessFactor, F0);
+        GGXResult evalResult = EvalGGXSpecular(hitNormal, -WorldRayDirection(), newRayDirection, roughness, F0);
 
         float3 brdfValue = diffuseValue + evalResult.value;
         float NDotL = max(dot(hitNormal, newRayDirection), 0.0f);
@@ -503,7 +548,7 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
                 float NdotL_light = max(dot(hitNormal, light.direction), 0.0f);
 
                 float3 diffuseValLight = kD * albedo * oneOverPi;
-                GGXResult specEvalLight = EvalGGXSpecular(hitNormal, -WorldRayDirection(), light.direction, mat.roughnessFactor, F0);
+                GGXResult specEvalLight = EvalGGXSpecular(hitNormal, -WorldRayDirection(), light.direction, roughness, F0);
                 float3 brdfValueLight = diffuseValLight + specEvalLight.value;
 
                 float cosinePdfLight = NdotL_light * oneOverPi;

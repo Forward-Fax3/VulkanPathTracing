@@ -117,6 +117,81 @@ namespace OWC::Graphics
 		device.updateDescriptorSets(writeDescriptorSets, {});
 	}
 
+	void VulkanBaseShader::BindSampler2D(u32 binding, const std::shared_ptr<TextureArraySampler>& sampler)
+	{
+		if (!sampler)
+		{
+			//Log<LogLevel::Critical>("VulkanShader::BindSampler2D: Invalid TextureArraySampler pointer.");
+			return;
+		}
+
+		const auto vulkanSampler = std::dynamic_pointer_cast<VulkanTextureArraySampler>(sampler);
+		if (!vulkanSampler)
+		{
+			Log<LogLevel::Error>("VulkanShader::BindSampler2D: Invalid VulkanTextureArraySampler pointer.");
+			return;
+		}
+
+		const auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& device = vkCore.GetDevice();
+		const auto descriptorImageInfos = vk::DescriptorImageInfo()
+			.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+			.setSampler(vulkanSampler->GetSampler());
+		std::vector<vk::WriteDescriptorSet> writeDescriptorSets{};
+		writeDescriptorSets.reserve(vkCore.GetNumberOfFramesInFlight());
+
+		for (uSize i = 0; i < vkCore.GetNumberOfFramesInFlight(); i++)
+		{
+			writeDescriptorSets.emplace_back(
+				m_DescriptorSets[i],
+				binding,
+				0,
+				1,
+				vk::DescriptorType::eSampler,
+				&descriptorImageInfos
+			);
+		}
+		device.updateDescriptorSets(writeDescriptorSets, {});
+	}
+
+	void VulkanBaseShader::BindTextureArray(u32 binding, const std::shared_ptr<TextureArray>& textureArray)
+	{
+		if (!textureArray)
+		{
+			Log<LogLevel::Critical>("VulkanShader::BindTextureArray: Invalid TextureArray pointer.");
+			return;
+		}
+
+		const auto vulkanTextureArray = std::dynamic_pointer_cast<VulkanBaseTextureArray>(textureArray);
+		if (!vulkanTextureArray)
+		{
+			Log<LogLevel::Error>("VulkanShader::BindTextureArray: Invalid VulkanBaseTextureArray pointer.");
+			return;
+		}
+
+		const auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& device = vkCore.GetDevice();
+		const auto descriptorImageInfos = vk::DescriptorImageInfo()
+			.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+			.setImageView(vulkanTextureArray->getImageViews())
+			.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
+		std::vector<vk::WriteDescriptorSet> writeDescriptorSets{};
+		writeDescriptorSets.reserve(vkCore.GetNumberOfFramesInFlight());
+
+		for (uSize i = 0; i < vkCore.GetNumberOfFramesInFlight(); i++)
+		{
+			writeDescriptorSets.emplace_back(
+				m_DescriptorSets[i],
+				binding,
+				0,
+				1,
+				vk::DescriptorType::eSampledImage,
+				&descriptorImageInfos
+			);
+		}
+		device.updateDescriptorSets(writeDescriptorSets, {});
+	}
+
 	VulkanShaderData VulkanBaseShader::ProcessShaderData(const ShaderData& shaderData, std::map<std::vector<u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap)
 	{
 		Log<LogLevel::Trace>("VulkanShader::ProcessShaderData: Processing shader data of type {}.", shaderData.ShaderTypeToString());
@@ -193,6 +268,8 @@ namespace OWC::Graphics
 			return vk::DescriptorType::eStorageImage;
 		case DescriptorType::TLAS:
 			return vk::DescriptorType::eAccelerationStructureKHR;
+		case DescriptorType::SampledImage:
+			return vk::DescriptorType::eSampledImage;
 		default:
 			Log<LogLevel::Error>("VulkanShader::ConvertToVulkanDescriptorType: Unknown descriptor type provided: {}!", std::to_underlying(type));
 			return static_cast<vk::DescriptorType>(0); // to silence compiler warning

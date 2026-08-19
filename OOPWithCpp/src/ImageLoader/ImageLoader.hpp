@@ -2,6 +2,7 @@
 #include "Core.hpp"
 #include <string_view>
 #include <vector>
+#include <span>
 
 #include <glm/glm.hpp>
 
@@ -12,13 +13,18 @@ namespace OWC
 	class ImageLoader
 	{
 	public:
-		ImageLoader() = delete;
+		ImageLoader() = default;
+		explicit ImageLoader(std::nullptr_t) {}
+		explicit ImageLoader(std::string_view path);
+		explicit ImageLoader(std::span<std::byte> data);
+		virtual ~ImageLoader() = default;
+
+		ImageLoader& operator=(std::nullptr_t) { m_ImageData.clear(); m_Width = 0; m_Height = 0; return *this; }
+
 		ImageLoader(const ImageLoader&) = delete;
 		ImageLoader& operator=(const ImageLoader&) = delete;
-		ImageLoader(ImageLoader&&) = delete;
-		ImageLoader& operator=(ImageLoader&&) = delete;
-		explicit ImageLoader(std::string_view path);
-		virtual ~ImageLoader() = default;
+		ImageLoader(ImageLoader&&) = default;
+		ImageLoader& operator=(ImageLoader&&) = default;
 
 		[[nodiscard]] const std::vector<glm::vec<elementSize, Type, Qualifier>>& GetImageData() const { return m_ImageData; }
 		[[nodiscard]] const glm::vec<elementSize, Type, Qualifier>& GetPixel(const uSize x, const uSize y) const { return m_ImageData[y * m_Width + x]; }

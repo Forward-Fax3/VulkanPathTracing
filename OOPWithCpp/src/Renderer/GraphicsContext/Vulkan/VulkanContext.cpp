@@ -871,16 +871,10 @@ namespace OWC::Graphics
 			.setPNext(&rayTracingPipelineFeature)
 			.setSwapchainMaintenance1(vk::True);
 
-		auto bufferDeviceAddressFeature = vk::PhysicalDeviceBufferDeviceAddressFeatures()
+		auto vulkan12features = vk::PhysicalDeviceVulkan12Features()
 			.setPNext(&swapchainMaintenance1Feature)
-			.setBufferDeviceAddress(vk::True);
-
-		auto maintenance5Feature = vk::PhysicalDeviceMaintenance5Features()
-			.setPNext(&bufferDeviceAddressFeature)
-			.setMaintenance5(vk::True);
-
-		auto descriptorIndexingFeature = vk::PhysicalDeviceDescriptorIndexingFeatures()
-			.setPNext(&maintenance5Feature)
+			.setScalarBlockLayout(vk::True)
+			.setBufferDeviceAddress(vk::True)
 			.setRuntimeDescriptorArray(vk::True)
 			.setDescriptorBindingPartiallyBound(vk::True)
 			.setDescriptorBindingVariableDescriptorCount(vk::True)
@@ -888,8 +882,12 @@ namespace OWC::Graphics
 			.setShaderStorageBufferArrayNonUniformIndexing(vk::True)
 			.setShaderUniformBufferArrayNonUniformIndexing(vk::True);
 
+		auto maintenance5Feature = vk::PhysicalDeviceMaintenance5Features()
+			.setPNext(&vulkan12features)
+			.setMaintenance5(vk::True);
+
 		auto shaderDrawParametersFeature = vk::PhysicalDeviceShaderDrawParametersFeatures()
-			.setPNext(&descriptorIndexingFeature)
+			.setPNext(&maintenance5Feature)
 			.setShaderDrawParameters(vk::True);
 
 		auto synchronization2Feature = vk::PhysicalDeviceSynchronization2Features()
@@ -919,7 +917,6 @@ namespace OWC::Graphics
 
 		auto deviceCreateInfo = vk::DeviceCreateInfo()
 			.setQueueCreateInfos(deviceQueueCreateInfos)
-			//.setPEnabledExtensionNames(VulkanCore::GetConstInstance().HasSERSupport() ? g_DeviceExtensionsWithSER : g_DeviceExtensions)
 			.setPNext(&enabledFeatures);
 
 		if (VulkanCore::GetConstInstance().HasSERSupport())

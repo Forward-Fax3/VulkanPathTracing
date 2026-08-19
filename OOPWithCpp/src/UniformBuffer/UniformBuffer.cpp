@@ -33,4 +33,39 @@ namespace OWC::Graphics
 		// For Now, only Vulkan is supported
 		return std::make_shared<VulkanGeneralBuffer>(size);
 	}
+
+	std::shared_ptr<TextureArraySampler> TextureArraySampler::CreateEmptyTextureArraySampler()
+	{
+		return std::make_shared<VulkanTextureArraySampler>();
+	}
+
+	std::shared_ptr<TextureArraySampler> TextureArraySampler::CreateTextureArraySampler(const tg3_sampler& sampler)
+	{
+		return std::make_shared<VulkanTextureArraySampler>(sampler);
+	}
+
+	std::shared_ptr<TextureArray> TextureArray::CreateEmptyTextureArray()
+	{
+	return std::make_shared<VulkanEmptyTextureArray>();
+	}
+
+	std::shared_ptr<TextureArray> TextureArray::CreateColourTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf)
+	{
+		return std::make_shared<VulkanColourTextureArray>(model, indexing, pathToGltf);
+	}
+
+	std::shared_ptr<TextureArray> TextureArray::CreateNormalTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf)
+	{
+		return std::make_shared<VulkanNormalTextureArray>(model, indexing, pathToGltf);
+	}
+
+	std::shared_ptr<TextureArray> TextureArray::CreateMetallicRoughnessTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf)
+	{
+		return std::make_shared<VulkanMetallicRoughnessTextureArray>(model, indexing, pathToGltf);
+	}
+
+	/*std::shared_ptr<TextureArray> TextureArray::CreateEmissiveTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf)
+	{
+		return std::make_shared<VulkanEmissiveTextureArray>(model, indexing, pathToGltf);
+	}*/
 }

@@ -20,10 +20,6 @@ namespace OWC
 {
     GLTFLoader::GLTFLoader(const std::string_view gltfFilePath, const std::string_view layerName)
     {
-        //constexpr std::string_view filename = "./../../../../../GLTFs/Sponza/SimpleInstancing.glb";
-        //constexpr std::string_view filename = "./../../../../../GLTFs/Sponza/ABeautifulGame.glb";
-        constexpr std::string_view filename = "./../../../../../GLTFs/Sponza/NewSponza_Main_glTF_003.gltf";
-
         tg3_parse_options options;
         tg3_parse_options_init(&options);
 
@@ -50,6 +46,8 @@ namespace OWC
                 }
             return;
         }
+
+        //std::span<const tg3_texture> textures(m_Model.textures, m_Model.textures_count);
 
         uSize numberOfGPUGLTFDatas = 0;
         for (uSize i = 0; i < m_Model.meshes_count; i++)
@@ -90,25 +88,98 @@ namespace OWC
         m_Layer = std::make_shared<GLTFLayer>(m_LightBuffer, std::move(lightData), layerName);
         Application::GetInstance().PushLayer(m_Layer);
 
-        std::vector<GPUMaterialData> materialData;
-        materialData.reserve(m_Model.materials_count);
-        for (uSize i = 0; i < m_Model.materials_count; i++)
+        if (m_Model.materials_count > 0)
         {
-            const tg3_material& mat = m_Model.materials[i];
-            materialData.emplace_back(
-                glm::make_vec3(mat.pbr_metallic_roughness.base_color_factor),
-                static_cast<f32>(mat.pbr_metallic_roughness.metallic_factor),
-                static_cast<f32>(mat.pbr_metallic_roughness.roughness_factor),
-                mat.pbr_metallic_roughness.base_color_texture.index,
-                mat.pbr_metallic_roughness.metallic_roughness_texture.index,
-                mat.normal_texture.index,
-                mat.occlusion_texture.index,
-                mat.emissive_texture.index,
-                static_cast<f32>(mat.alpha_cutoff)
-            );
-        }
+            std::vector<u32> colourTexturesOrderIndex;
+            std::vector<u32> normalTexturesOrderIndex;
+            std::vector<u32> metallicRoughnessTexturesOrderIndex;
+            std::vector<u32> emissiveTexturesOrderIndex;
 
-        m_GPUBuffer->UpdateBufferData(std::bit_cast<u8*>(materialData.data()), m_MaterialBufferSize, m_MaterialBufferOffset);
+            for (uSize i = 0; i < m_Model.materials_count; i++)
+            {
+                const tg3_material& mat = m_Model.materials[i];
+
+                if (mat.pbr_metallic_roughness.base_color_texture.index != -1 && std::ranges::find(colourTexturesOrderIndex, m_Model.textures[mat.pbr_metallic_roughness.base_color_texture.index].source) == colourTexturesOrderIndex.end())
+                    colourTexturesOrderIndex.emplace_back(m_Model.textures[mat.pbr_metallic_roughness.base_color_texture.index].source);
+                if (mat.pbr_metallic_roughness.metallic_roughness_texture.index != -1 && std::ranges::find(metallicRoughnessTexturesOrderIndex, m_Model.textures[mat.pbr_metallic_roughness.metallic_roughness_texture.index].source) == metallicRoughnessTexturesOrderIndex.end())
+                    metallicRoughnessTexturesOrderIndex.emplace_back(m_Model.textures[mat.pbr_metallic_roughness.metallic_roughness_texture.index].source);
+                if (mat.normal_texture.index != -1 && std::ranges::find(normalTexturesOrderIndex, m_Model.textures[mat.normal_texture.index].source) == normalTexturesOrderIndex.end())
+                    normalTexturesOrderIndex.emplace_back(m_Model.textures[mat.normal_texture.index].source);
+                if (mat.emissive_texture.index != -1 && std::ranges::find(emissiveTexturesOrderIndex, m_Model.textures[mat.emissive_texture.index].source) == emissiveTexturesOrderIndex.end())
+                    emissiveTexturesOrderIndex.emplace_back(m_Model.textures[mat.emissive_texture.index].source);
+            }
+
+            std::string materialDataToPrint = "\n\n";
+            std::vector<GPUMaterialData> materialData;
+            materialData.reserve(m_Model.materials_count);
+            for (uSize i = 0; i < m_Model.materials_count; i++)
+            {
+                const tg3_material& mat = m_Model.materials[i];
+
+                materialDataToPrint += std::format("\tMaterial Data:\n"
+                        "\t\tMetallic Roughness Base Colour Factor: {}, {}, {}, {}\n"
+                        "\t\tMetallic Roughness Metallic Factor {}\n"
+                        "\t\tMetallic Roughness Roughness Factor {}\n"
+                        "\t\tMetallic Roughness Base Colour Texture Index: original {}, true {}, coords {}\n"
+                        "\t\tMetallic Roughness Base Matallic Roughness Texture Index: original {}, true {}, coords {}\n"
+                        "\t\tEmissive Factor: {}, {}, {}\n"
+                        "\t\tNormal Texture Index: original {}, true {}, coords {}\n"
+                        "\t\tEmissive Texture Index: original {}, true {}, coords {}\n"
+                        "\t\tAlpha Cutoff: {}\n\n",
+                        mat.pbr_metallic_roughness.base_color_factor[0],
+                        mat.pbr_metallic_roughness.base_color_factor[1],
+                        mat.pbr_metallic_roughness.base_color_factor[2],
+                        mat.pbr_metallic_roughness.base_color_factor[3],
+                        mat.pbr_metallic_roughness.metallic_factor,
+                        mat.pbr_metallic_roughness.roughness_factor,
+                        mat.pbr_metallic_roughness.base_color_texture.index,
+                        mat.pbr_metallic_roughness.base_color_texture.index != -1 ? std::distance(colourTexturesOrderIndex.begin(), std::ranges::find(colourTexturesOrderIndex, mat.pbr_metallic_roughness.base_color_texture.index)) : -1,
+                        mat.pbr_metallic_roughness.base_color_texture.tex_coord,
+                        mat.pbr_metallic_roughness.metallic_roughness_texture.index,
+                        mat.pbr_metallic_roughness.metallic_roughness_texture.index != -1 ? std::distance(metallicRoughnessTexturesOrderIndex.begin(), std::ranges::find(metallicRoughnessTexturesOrderIndex, mat.pbr_metallic_roughness.metallic_roughness_texture.index)) : -1,
+                        mat.pbr_metallic_roughness.metallic_roughness_texture.tex_coord,
+                        mat.emissive_factor[0],
+                        mat.emissive_factor[1],
+                        mat.emissive_factor[2],
+                        mat.normal_texture.index,
+                        (mat.normal_texture.index != -1 ? std::distance(normalTexturesOrderIndex.begin(), std::ranges::find(normalTexturesOrderIndex, mat.normal_texture.index)) : -1),
+                        mat.normal_texture.tex_coord,
+                        mat.emissive_texture.index,
+                        (mat.emissive_texture.index != -1 ? std::distance(emissiveTexturesOrderIndex.begin(), std::ranges::find(emissiveTexturesOrderIndex, mat.emissive_texture.index)) : -1),
+                        mat.emissive_texture.tex_coord,
+                        mat.alpha_cutoff
+                    );
+
+                materialData.emplace_back(
+                    glm::make_vec4(mat.pbr_metallic_roughness.base_color_factor),
+                    static_cast<f32>(mat.pbr_metallic_roughness.metallic_factor),
+                    static_cast<f32>(mat.pbr_metallic_roughness.roughness_factor),
+                    (mat.pbr_metallic_roughness.base_color_texture.index != -1 ? std::distance(colourTexturesOrderIndex.begin(), std::ranges::find(colourTexturesOrderIndex, mat.pbr_metallic_roughness.base_color_texture.index)) : -1),
+                    mat.pbr_metallic_roughness.base_color_texture.tex_coord,
+                    (mat.pbr_metallic_roughness.metallic_roughness_texture.index != -1 ? std::distance(metallicRoughnessTexturesOrderIndex.begin(), std::ranges::find(metallicRoughnessTexturesOrderIndex, mat.pbr_metallic_roughness.metallic_roughness_texture.index)) : -1),
+                    mat.pbr_metallic_roughness.metallic_roughness_texture.tex_coord,
+                    glm::make_vec3(mat.emissive_factor),
+                    (mat.normal_texture.index != -1 ? std::distance(normalTexturesOrderIndex.begin(), std::ranges::find(normalTexturesOrderIndex, mat.normal_texture.index)) : -1),
+                    mat.normal_texture.tex_coord,
+                    (mat.emissive_texture.index != -1 ? std::distance(emissiveTexturesOrderIndex.begin(), std::ranges::find(emissiveTexturesOrderIndex, mat.emissive_texture.index)) : -1),
+                    mat.emissive_texture.tex_coord,
+                    static_cast<f32>(mat.alpha_cutoff)
+                );
+            }
+
+            Log<LogLevel::Debug>("{}", materialDataToPrint);
+
+            m_GPUBuffer->UpdateBufferData(std::bit_cast<u8*>(materialData.data()), m_MaterialBufferSize, m_MaterialBufferOffset);
+
+            std::filesystem::path gltfPath(gltfFilePath);
+            m_TextureArraySampler = Graphics::TextureArraySampler::CreateTextureArraySampler(m_Model.samplers[0]); // for now only 1 sampler is supported
+            if (!colourTexturesOrderIndex.empty())
+                m_ColourTextureArray = Graphics::TextureArray::CreateColourTextureArray(m_Model, colourTexturesOrderIndex, gltfPath.parent_path().string());
+            if (!normalTexturesOrderIndex.empty())
+                m_NormalTextureArray = Graphics::TextureArray::CreateNormalTextureArray(m_Model, normalTexturesOrderIndex, gltfPath.parent_path().string());
+            if (!metallicRoughnessTexturesOrderIndex.empty())
+                m_MetallicRoughnessTextureArray = Graphics::TextureArray::CreateMetallicRoughnessTextureArray(m_Model, metallicRoughnessTexturesOrderIndex, gltfPath.parent_path().string());
+        }
 
         tg3_error_stack_free(&errorStack);
     }
@@ -244,7 +315,7 @@ namespace OWC
                     Vec3p(parentTransform[3]), // position
                     1, // type (1 for point)
                     glm::normalize(Vec3p(-parentTransform[2])), // direction
-                    light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 100.0f, // intensity
+                    light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 10000.0f, // intensity
                     colour, // colour
                     static_cast<f32>(light.range), // range
                     radius < 1e-4 ? 0.0f : radius// radius
@@ -256,7 +327,7 @@ namespace OWC
                     Vec3p(parentTransform[3]), // position
                     2, // type (2 for directional)
                     glm::normalize(Vec3p(-parentTransform[2])), // direction
-                    light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 10.0f, // intensity
+                    light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 100.0f, // intensity
                     colour, // colour
                     static_cast<f32>(light.range) // range
                 );

@@ -5,7 +5,10 @@
 #include <span>
 #include <memory>
 #include <vector>
+#include <map>
 #include <glm/vec4.hpp>
+
+#include "tiny_gltf_v3.h"
 
 
 namespace OWC::Graphics
@@ -83,4 +86,34 @@ namespace OWC::Graphics
 		static std::shared_ptr<GeneralBuffer> CreateGeneralBuffer(uSize size);
 	};
 
+	class TextureArraySampler
+	{
+	public:
+		TextureArraySampler() = default;
+		virtual ~TextureArraySampler() = default;
+		TextureArraySampler(TextureArraySampler&) = default;
+		TextureArraySampler& operator=(const TextureArraySampler&) = default;
+		TextureArraySampler(TextureArraySampler&&) noexcept = default;
+		TextureArraySampler& operator=(TextureArraySampler&&) noexcept = default;
+
+		static std::shared_ptr<TextureArraySampler> CreateEmptyTextureArraySampler();
+		static std::shared_ptr<TextureArraySampler> CreateTextureArraySampler(const tg3_sampler& sampler);
+	};
+
+	class TextureArray
+	{
+	public:
+		TextureArray() = default;
+		virtual ~TextureArray() = default;
+		TextureArray(TextureArray&) = default;
+		TextureArray& operator=(const TextureArray&) = default;
+		TextureArray(TextureArray&&) noexcept = default;
+		TextureArray& operator=(TextureArray&&) noexcept = default;
+
+		static std::shared_ptr<TextureArray> CreateEmptyTextureArray();
+		static std::shared_ptr<TextureArray> CreateColourTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf);
+		static std::shared_ptr<TextureArray> CreateNormalTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf);
+		static std::shared_ptr<TextureArray> CreateMetallicRoughnessTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf);
+		//static std::shared_ptr<TextureArray> CreateEmissiveTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf);
+	};
 }

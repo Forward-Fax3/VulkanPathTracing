@@ -122,4 +122,98 @@ namespace OWC::Graphics
 		vk::DeviceAddress m_BufferDeviceAddress = vk::DeviceAddress();
 		uSize m_BufferSize = 0;
 	};
+
+	class VulkanTextureArraySampler : public TextureArraySampler
+	{
+	public:
+		VulkanTextureArraySampler();
+		explicit VulkanTextureArraySampler(const tg3_sampler& sampler);
+		~VulkanTextureArraySampler() override = default;
+
+		[[nodiscard]] const vk::Sampler& GetSampler() const { return *m_Sampler; }
+
+	private:
+		vk::raii::Sampler m_Sampler = nullptr;
+	};
+
+	class VulkanBaseTextureArray : public TextureArray
+	{
+	public:
+		[[nodiscard]] virtual const vk::Image& getImages() const = 0;
+		[[nodiscard]] virtual  const vk::ImageView& getImageViews() const = 0;
+	};
+
+	class VulkanEmptyTextureArray : public VulkanBaseTextureArray
+	{
+	public:
+		VulkanEmptyTextureArray();
+		~VulkanEmptyTextureArray() override = default;
+
+		[[nodiscard]] const vk::Image& getImages() const override { return *m_TextureImages; }
+		[[nodiscard]] const vk::ImageView& getImageViews() const override { return *m_TextureImageView; }
+
+	private:
+		vma::raii::Image m_TextureImages = nullptr;
+		vk::raii::ImageView m_TextureImageView = nullptr;
+	};
+
+	class VulkanColourTextureArray : public VulkanBaseTextureArray
+	{
+	public:
+		VulkanColourTextureArray() = delete;
+		explicit VulkanColourTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf);
+		~VulkanColourTextureArray() override = default;
+
+		[[nodiscard]] const vk::Image& getImages() const override { return *m_TextureImages; }
+		[[nodiscard]] const vk::ImageView& getImageViews() const override { return *m_TextureImageView; }
+
+	private:
+		vma::raii::Image m_TextureImages = nullptr;
+		vk::raii::ImageView m_TextureImageView = nullptr;
+	};
+
+	class VulkanNormalTextureArray : public VulkanBaseTextureArray
+	{
+	public:
+		VulkanNormalTextureArray() = delete;
+		explicit VulkanNormalTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf);
+		~VulkanNormalTextureArray() override = default;
+
+		[[nodiscard]] const vk::Image& getImages() const override { return *m_TextureImages; }
+		[[nodiscard]] const vk::ImageView& getImageViews() const override { return *m_TextureImageView; }
+
+	private:
+		vma::raii::Image m_TextureImages = nullptr;
+		vk::raii::ImageView m_TextureImageView = nullptr;
+	};
+
+	class VulkanMetallicRoughnessTextureArray : public VulkanBaseTextureArray
+	{
+	public:
+		VulkanMetallicRoughnessTextureArray() = delete;
+		explicit VulkanMetallicRoughnessTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf);
+		~VulkanMetallicRoughnessTextureArray() override = default;
+
+		[[nodiscard]] const vk::Image& getImages() const override { return *m_TextureImages; }
+		[[nodiscard]] const vk::ImageView& getImageViews() const override { return *m_TextureImageView; }
+
+	private:
+		vma::raii::Image m_TextureImages = nullptr;
+		vk::raii::ImageView m_TextureImageView = nullptr;
+	};
+
+	class VulkanEmissiveTextureArray : public VulkanBaseTextureArray
+	{
+	public:
+		VulkanEmissiveTextureArray() = delete;
+		explicit VulkanEmissiveTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf);
+		~VulkanEmissiveTextureArray() override = default;
+
+		[[nodiscard]] const vk::Image& getImages() const override { return *m_TextureImages; }
+		[[nodiscard]] const vk::ImageView& getImageViews() const override { return *m_TextureImageView; }
+
+	private:
+		vma::raii::Image m_TextureImages = nullptr;
+		vk::raii::ImageView m_TextureImageView = nullptr;
+	};
 }

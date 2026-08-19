@@ -11,7 +11,7 @@ namespace OWC
     class BaseGPUScene
     {
     public:
-        BaseGPUScene() = default;
+        BaseGPUScene();
         virtual ~BaseGPUScene() = default;
         BaseGPUScene(BaseGPUScene&) = delete;
         BaseGPUScene& operator=(BaseGPUScene&) = delete;
@@ -25,6 +25,19 @@ namespace OWC
         [[nodiscard]] virtual uSize GetLightBufferPtr() const = 0;
         [[nodiscard]] virtual u32 GetNumberOfLights() const = 0;
 
+        [[nodiscard]] virtual const std::shared_ptr<Graphics::TextureArraySampler>& GetTextureArraySampler() const { return m_EmptyTextureArraySampler; }
+        [[nodiscard]] virtual const std::shared_ptr<Graphics::TextureArray>& GetColourTextureArray() const { return m_EmptyTextureArray; }
+        [[nodiscard]] virtual const std::shared_ptr<Graphics::TextureArray>& GetNormalTextureArray() const { return m_EmptyTextureArray; }
+        [[nodiscard]] virtual const std::shared_ptr<Graphics::TextureArray>& GetMetallicRoughnessTextureArray() const { return m_EmptyTextureArray; }
+        [[nodiscard]] virtual const std::shared_ptr<Graphics::TextureArray>& GetEmissiveTextureArray() const { return m_EmptyTextureArray; }
+
         [[nodiscard]] virtual bool GetNeedScreenRefresh() const { return false; }
+
+    private:
+        std::shared_ptr<Graphics::TextureArraySampler> m_EmptyTextureArraySampler;
+        std::shared_ptr<Graphics::TextureArray> m_EmptyTextureArray;
+
+        static std::weak_ptr<Graphics::TextureArraySampler> s_EmptyTextureArraySampler;
+        static std::weak_ptr<Graphics::TextureArray> s_EmptyTextureArray;
     };
 }

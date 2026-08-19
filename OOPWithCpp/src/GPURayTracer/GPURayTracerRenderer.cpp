@@ -411,7 +411,37 @@ namespace OWC
 					.binding = 2,
 					.descriptorType = DescriptorType::UniformBuffer,
 					.stageFlags = ShaderType::RayGen
-				}
+				},
+				{
+					.descriptorCount = 1,
+					.binding = 3,
+					.descriptorType = DescriptorType::Sampler,
+					.stageFlags = ShaderType::RayClosestHit
+				},
+				{
+					.descriptorCount = 1,
+					.binding = 4,
+					.descriptorType = DescriptorType::SampledImage,
+					.stageFlags = ShaderType::RayClosestHit
+				},
+				{
+					.descriptorCount = 1,
+					.binding = 5,
+					.descriptorType = DescriptorType::SampledImage,
+					.stageFlags = ShaderType::RayClosestHit
+				},
+				{
+					.descriptorCount = 1,
+					.binding = 6,
+					.descriptorType = DescriptorType::SampledImage,
+					.stageFlags = ShaderType::RayClosestHit
+				},
+				{
+					.descriptorCount = 1,
+					.binding = 7,
+					.descriptorType = DescriptorType::SampledImage,
+					.stageFlags = ShaderType::RayClosestHit
+				},
 			};
 
 			std::vector<u32> shaderSrc;
@@ -449,6 +479,11 @@ namespace OWC
 			m_RayTracingShader->BindTexture(0, m_RenderTarget);
 			m_RayTracingShader->BindTLAS(1, m_Scene->GetTLAS());
 			m_RayTracingShader->BindUniform(2, m_RayTracingGPUDataBuffer);
+			m_RayTracingShader->BindSampler2D(3, m_Scene->GetTextureArraySampler());
+			m_RayTracingShader->BindTextureArray(4, m_Scene->GetColourTextureArray());
+			m_RayTracingShader->BindTextureArray(5, m_Scene->GetNormalTextureArray());
+			m_RayTracingShader->BindTextureArray(6, m_Scene->GetMetallicRoughnessTextureArray());
+			m_RayTracingShader->BindTextureArray(7, m_Scene->GetEmissiveTextureArray());
 		}
 
 		{

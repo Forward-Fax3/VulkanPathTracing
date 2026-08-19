@@ -23,6 +23,11 @@ namespace OWC
         [[nodiscard]] OWC_FORCE_INLINE uSize GetLightBufferPtr() const override { return m_MeshReuseInstancingLoader.GetLightBufferPtr(); }
         [[nodiscard]] OWC_FORCE_INLINE u32 GetNumberOfLights() const override { return m_MeshReuseInstancingLoader.GetNumberOfLights(); }
 
+        [[nodiscard]] OWC_FORCE_INLINE const std::shared_ptr<Graphics::TextureArraySampler>& GetTextureArraySampler() const override { return m_MeshReuseInstancingLoader.GetTextureArraySampler(); }
+        [[nodiscard]] OWC_FORCE_INLINE const std::shared_ptr<Graphics::TextureArray>& GetColourTextureArray() const override { return m_MeshReuseInstancingLoader.GetColourTextureArray(); }
+        [[nodiscard]] OWC_FORCE_INLINE const std::shared_ptr<Graphics::TextureArray>& GetNormalTextureArray() const override { return m_MeshReuseInstancingLoader.GetNormalTextureArray(); }
+        [[nodiscard]] OWC_FORCE_INLINE const std::shared_ptr<Graphics::TextureArray>& GetMetallicRoughnessTextureArray() const override { return m_MeshReuseInstancingLoader.GetMetallicRoughnessTextureArray(); }
+
         [[nodiscard]] OWC_FORCE_INLINE bool GetNeedScreenRefresh() const override { return m_MeshReuseInstancingLoader.GetNeedScreenRefresh(); }
 
     private:

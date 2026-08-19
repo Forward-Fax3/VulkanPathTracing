@@ -33,6 +33,12 @@ namespace OWC
         [[nodiscard]] uSize GetLightBufferPtr() const { return m_LightBuffer ? m_LightBuffer->GetDeviceBufferPtr() : 0; }
         [[nodiscard]] u32 GetNumberOfLights() const { return m_NumberOfLights; }
 
+        [[nodiscard]] const std::shared_ptr<Graphics::TextureArraySampler>& GetTextureArraySampler() const { return m_TextureArraySampler; }
+        [[nodiscard]] const std::shared_ptr<Graphics::TextureArray>& GetColourTextureArray() const { return m_ColourTextureArray; }
+        [[nodiscard]] const std::shared_ptr<Graphics::TextureArray>& GetNormalTextureArray() const { return m_NormalTextureArray; }
+        [[nodiscard]] const std::shared_ptr<Graphics::TextureArray>& GetMetallicRoughnessTextureArray() const { return m_MetallicRoughnessTextureArray; }
+        [[nodiscard]] const std::shared_ptr<Graphics::TextureArray>& GetEmissiveTextureArray() const { return m_EmissiveTextureArray; }
+
         [[nodiscard]] bool GetNeedScreenRefresh() const { return m_Layer->GetNeedScreenRefresh(); }
 
     private:
@@ -44,6 +50,11 @@ namespace OWC
         std::shared_ptr<Graphics::GeneralBuffer> m_GPUBuffer;
         std::shared_ptr<Graphics::GeneralBuffer> m_LightBuffer;
         std::shared_ptr<GLTFLayer> m_Layer;
+        std::shared_ptr<Graphics::TextureArraySampler> m_TextureArraySampler;
+        std::shared_ptr<Graphics::TextureArray> m_ColourTextureArray;
+        std::shared_ptr<Graphics::TextureArray> m_NormalTextureArray;
+        std::shared_ptr<Graphics::TextureArray> m_MetallicRoughnessTextureArray;
+        std::shared_ptr<Graphics::TextureArray> m_EmissiveTextureArray;
         std::vector<GPUGLTFData> m_GPUData;
         uSize m_GeometryBufferSize = 0;
         uSize m_MaterialBufferSize = 0;

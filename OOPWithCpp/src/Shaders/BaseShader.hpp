@@ -47,7 +47,8 @@ namespace OWC::Graphics
 		CombinedImageSampler,
 		StorageBuffer,
 		StorageImage,
-		TLAS
+		TLAS,
+		SampledImage
 	};
 
 	struct BindingDescription
@@ -119,6 +120,8 @@ namespace OWC::Graphics
 		virtual void BindUniform(u32 binding, const std::shared_ptr<UniformBuffer>& uniformBuffer) = 0;
 		virtual void BindTexture(u32 binding, const std::shared_ptr<TextureBuffer>& textureBuffer) = 0;
 		virtual void BindDynamicTexture(u32 binding, const std::shared_ptr<DynamicTextureBuffer>& dTextureBuffer) = 0;
+		virtual void BindSampler2D(u32 binding, const std::shared_ptr<TextureArraySampler>& sampler) = 0;
+		virtual void BindTextureArray(u32 binding, const std::shared_ptr<TextureArray>& textureArray) = 0;
 
 		virtual void BindTLAS(u32 binding, const std::shared_ptr<BaseTLAS>& tlasBuffer) = 0;
 

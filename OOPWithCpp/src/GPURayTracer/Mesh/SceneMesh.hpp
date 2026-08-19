@@ -27,16 +27,20 @@ namespace OWC
 
     struct GPUMaterialData
     {
-        Vec3p baseColourFactor = Vec3p(1.0f);
+        Vec4p baseColourFactor = Vec4p(1.0f);
         f32 metallicFactor = 1.0f;
         f32 roughnessFactor = 1.0f;
         u32 baseColourTextureIndex = ~0u;
+        u32 baseColourTextureCoords = ~0u;
         u32 metallicRoughnessTextureIndex = ~0u;
+        u32 metallicRoughnessTextureCoords = ~0u;
+        Vec3p emissiveFactor = Vec3p(0.0f);
         u32 normalTextureIndex = ~0u;
-        u32 occlusionTextureIndex = ~0u;
+        u32 normalTextureCoords = ~0u;
         u32 emissiveTextureIndex = ~0u;
+        u32 emissiveTextureCoords = ~0u;
         f32 alphaCutoff = 0.5f;
-        u32 _[1] = { 0 }; // pad to 48 bytes
+        u32 _[2] = { 0, 0 }; // pad to 80 bytes
     };
 
     struct GPULightData

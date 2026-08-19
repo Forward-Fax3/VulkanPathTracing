@@ -34,6 +34,8 @@ namespace OWC::Graphics
 		void BindUniform(u32 binding, const std::shared_ptr<UniformBuffer>& uniformBuffer) override;
 		void BindTexture(u32 binding, const std::shared_ptr<TextureBuffer>& textureBuffer) override;
 		void BindDynamicTexture(u32 binding, const std::shared_ptr<DynamicTextureBuffer>& dTextureBuffer) override;
+		void BindSampler2D(u32 binding, const std::shared_ptr<TextureArraySampler>& sampler) override;
+		void BindTextureArray(u32 binding, const std::shared_ptr<TextureArray>& textureArray) override;
 
 		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::Pipeline& GetPipeline() const { return m_Pipeline; }
 		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::PipelineLayout& GetPipelineLayout() const { return m_PipelineLayout; }
