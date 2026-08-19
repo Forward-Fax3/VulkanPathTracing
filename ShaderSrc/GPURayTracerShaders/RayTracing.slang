@@ -490,7 +490,6 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
         float3 albedo = colour4.xyz * (1.0f - metallicness);
         float3 F0 = lerp(float3(0.04f), colour4.xyz, metallicness);
 
-        //float diffuseWeight = 0.9f;
         float diffuseLum = dot(albedo, float3(0.2126f, 0.7152f, 0.0722f));
         float specularLum = dot(F0, float3(0.2126f, 0.7152f, 0.0722f));
         float diffuseWeight = clamp(diffuseLum / max(diffuseLum + specularLum, 1e-4f), 0.05f, 0.95f);
