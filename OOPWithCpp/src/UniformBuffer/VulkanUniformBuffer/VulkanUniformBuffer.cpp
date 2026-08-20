@@ -30,7 +30,7 @@ namespace OWC::Graphics
 
 			constexpr auto allocInfo = vma::AllocationCreateInfo()
 				.setUsage(vma::MemoryUsage::eAutoPreferDevice)
-				.setFlags(vma::AllocationCreateFlagBits::eDedicatedMemory);
+				.setFlags(vma::AllocationCreateFlagBits::eCanAlias);
 
 			m_UniformBuffers.emplace_back(allocator, bufferInfo, allocInfo);
 		}
@@ -353,7 +353,7 @@ namespace OWC::Graphics
 
 		constexpr auto vmaCreateInfo = vma::AllocationCreateInfo()
 			.setUsage(vma::MemoryUsage::eAutoPreferDevice)
-			.setFlags(vma::AllocationCreateFlagBits::eDedicatedMemory);
+			.setFlags(vma::AllocationCreateFlagBits::eCanAlias);
 
 		// Create image
 		m_TextureImage = vma::raii::Image(allocator, createInfo, vmaCreateInfo);
@@ -431,7 +431,7 @@ namespace OWC::Graphics
 
 		constexpr auto allocInfo = vma::AllocationCreateInfo()
 			.setUsage(vma::MemoryUsage::eAutoPreferDevice)
-			.setFlags(vma::AllocationCreateFlagBits::eDedicatedMemory);
+			.setFlags(vma::AllocationCreateFlagBits::eCanAlias);
 
 		for (uSize i = 0; i < vkCore.GetNumberOfFramesInFlight(); i++)
 		{
@@ -654,7 +654,7 @@ namespace OWC::Graphics
 
 		constexpr vma::AllocationCreateInfo allocInfo = vma::AllocationCreateInfo()
 			.setUsage(vma::MemoryUsage::eGpuOnly)
-			.setFlags(vma::AllocationCreateFlagBits::eDedicatedMemory);
+			.setFlags(vma::AllocationCreateFlagBits::eCanAlias);
 
 		m_Buffer = vma::raii::Buffer(allocator, bufferInfo, allocInfo);
 
@@ -840,7 +840,7 @@ namespace OWC::Graphics
 
 		constexpr auto allocInfo = vma::AllocationCreateInfo()
 			.setUsage(vma::MemoryUsage::eAutoPreferDevice)
-			.setFlags(vma::AllocationCreateFlagBits::eDedicatedMemory);
+			.setFlags(vma::AllocationCreateFlagBits::eCanAlias);
 
 		m_TextureImages = vma::raii::Image(allocator, imageCreateInfo, allocInfo);
 
@@ -1013,7 +1013,7 @@ namespace OWC::Graphics
 
 		constexpr auto allocInfo = vma::AllocationCreateInfo()
 			.setUsage(vma::MemoryUsage::eAutoPreferDevice)
-			.setFlags(vma::AllocationCreateFlagBits::eDedicatedMemory);
+			.setFlags(vma::AllocationCreateFlagBits::eCanAlias);
 
 		m_TextureImages = vma::raii::Image(allocator, imageCreateInfo, allocInfo);
 
@@ -1227,7 +1227,7 @@ namespace OWC::Graphics
 
 		constexpr auto allocInfo = vma::AllocationCreateInfo()
 			.setUsage(vma::MemoryUsage::eAutoPreferDevice)
-			.setFlags(vma::AllocationCreateFlagBits::eDedicatedMemory);
+			.setFlags(vma::AllocationCreateFlagBits::eCanAlias);
 
 		m_TextureImages = vma::raii::Image(allocator, imageCreateInfo, allocInfo);
 
@@ -1443,7 +1443,7 @@ namespace OWC::Graphics
 
 		constexpr auto allocInfo = vma::AllocationCreateInfo()
 			.setUsage(vma::MemoryUsage::eAutoPreferDevice)
-			.setFlags(vma::AllocationCreateFlagBits::eDedicatedMemory);
+			.setFlags(vma::AllocationCreateFlagBits::eCanAlias);
 
 		m_TextureImages = vma::raii::Image(allocator, imageCreateInfo, allocInfo);
 
@@ -1658,7 +1658,7 @@ namespace OWC::Graphics
 
 		constexpr auto allocInfo = vma::AllocationCreateInfo()
 			.setUsage(vma::MemoryUsage::eAutoPreferDevice)
-			.setFlags(vma::AllocationCreateFlagBits::eDedicatedMemory);
+			.setFlags(vma::AllocationCreateFlagBits::eCanAlias);
 
 		m_TextureImages = vma::raii::Image(allocator, imageCreateInfo, allocInfo);
 
@@ -1881,7 +1881,7 @@ namespace OWC::Graphics
 
 		constexpr auto allocInfo = vma::AllocationCreateInfo()
 			.setUsage(vma::MemoryUsage::eAutoPreferDevice)
-			.setFlags(vma::AllocationCreateFlagBits::eDedicatedMemory);
+			.setFlags(vma::AllocationCreateFlagBits::eCanAlias);
 
 		m_TextureImages = vma::raii::Image(allocator, imageCreateInfo, allocInfo);
 

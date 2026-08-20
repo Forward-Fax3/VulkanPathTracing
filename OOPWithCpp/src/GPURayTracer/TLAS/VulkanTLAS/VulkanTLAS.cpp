@@ -65,7 +65,28 @@ namespace OWC
 
         const vk::DeviceSize scratchBufferSize = alignUp(buildSizes.buildScratchSize, vkCore.GetAccelerationStructureProperties().minAccelerationStructureScratchOffsetAlignment);
 
-        VulkanGeneralBuffer scratchBuffer(scratchBufferSize);
+        // create scratch data
+
+        constexpr auto scratchBufferCreateInfoUsage = vk::BufferUsageFlags2CreateInfo()
+            .setUsage(
+                vk::BufferUsageFlagBits2::eShaderDeviceAddress |
+                vk::BufferUsageFlagBits2::eAccelerationStructureBuildInputReadOnlyKHR |
+                vk::BufferUsageFlagBits2::eAccelerationStructureStorageKHR |
+                vk::BufferUsageFlagBits2::eStorageBuffer
+            );
+
+        const auto scratchDataCreateInfo = vk::BufferCreateInfo()
+            .setPNext(&scratchBufferCreateInfoUsage)
+            .setSize(scratchBufferSize)
+            .setSharingMode(vk::SharingMode::eConcurrent)
+            .setQueueFamilyIndices(queueIndices);
+
+        const auto scratchDataAllocInfo = vma::AllocationCreateInfo()
+            .setUsage(vma::MemoryUsage::eGpuOnly)
+            .setFlags(vma::AllocationCreateFlagBits::eCanAlias)
+            .setMinAlignment(vkCore.GetAccelerationStructureProperties().minAccelerationStructureScratchOffsetAlignment);
+
+        vma::raii::Buffer scratchBuffer(allocator, scratchDataCreateInfo, scratchDataAllocInfo);
 
         constexpr auto bufferUsageInfo2 = vk::BufferUsageFlags2CreateInfo()
             .setUsage(
@@ -80,9 +101,10 @@ namespace OWC
             .setSharingMode(vk::SharingMode::eConcurrent)
             .setQueueFamilyIndices(queueIndices);
 
-        constexpr vma::AllocationCreateInfo allocInfo = vma::AllocationCreateInfo()
+        const vma::AllocationCreateInfo allocInfo = vma::AllocationCreateInfo()
             .setUsage(vma::MemoryUsage::eGpuOnly)
-            .setFlags(vma::AllocationCreateFlagBits::eDedicatedMemory);
+            .setFlags(vma::AllocationCreateFlagBits::eCanAlias)
+            .setMinAlignment(vkCore.GetAccelerationStructureProperties().minAccelerationStructureScratchOffsetAlignment);
 
         vma::raii::Buffer scratchTLASBuffer(allocator, bufferInfo, allocInfo);
 
@@ -95,7 +117,7 @@ namespace OWC
 
         OWC::Log<LogLevel::Trace>("created scratch TLAS: ID: 0x{:x}", std::bit_cast<u64>(std::bit_cast<const VkAccelerationStructureKHR>(*scratchTLAS)));
 
-        buildInfo.setScratchData(vk::DeviceOrHostAddressKHR().setDeviceAddress(scratchBuffer.GetBufferDeviceAddress()))
+        buildInfo.setScratchData(vk::DeviceOrHostAddressKHR().setDeviceAddress(vkCore.GetDevice().getBufferAddress(vk::BufferDeviceAddressInfo().setBuffer(*scratchBuffer))))
             .setDstAccelerationStructure(scratchTLAS);
 
         auto cmd = vkCore.GetSingleTimeComputeCommandBuffer();
@@ -197,7 +219,7 @@ namespace OWC
         const auto& allocator = vkCore.GetVulkanMemoryAllocator();
         const auto& queueIndices = vkCore.GetAllUniqueQueuesIndices();
 
-        constexpr uSize accelerationStructureAlignment = 256;
+        const uSize accelerationStructureAlignment = vkCore.GetAccelerationStructureProperties().minAccelerationStructureScratchOffsetAlignment;
 
         std::vector<vk::AccelerationStructureBuildSizesInfoKHR> buildSizesList;
         std::vector<vk::raii::AccelerationStructureKHR> scratchBLASes;
@@ -235,7 +257,26 @@ namespace OWC
             buildSizesList.emplace_back(buildSizes);
         }
 
-        VulkanGeneralBuffer scratchBuffer(scratchBufferSize);
+        const vma::AllocationCreateInfo allocInfo = vma::AllocationCreateInfo()
+            .setUsage(vma::MemoryUsage::eGpuOnly)
+            .setFlags(vma::AllocationCreateFlagBits::eCanAlias)
+            .setMinAlignment(accelerationStructureAlignment);
+
+        constexpr auto scratchBufferCreateInfoUsage = vk::BufferUsageFlags2CreateInfo()
+            .setUsage(
+                vk::BufferUsageFlagBits2::eShaderDeviceAddress |
+                vk::BufferUsageFlagBits2::eAccelerationStructureBuildInputReadOnlyKHR |
+                vk::BufferUsageFlagBits2::eAccelerationStructureStorageKHR |
+                vk::BufferUsageFlagBits2::eStorageBuffer
+            );
+
+        const auto scratchBufferCreateInfo = vk::BufferCreateInfo()
+            .setPNext(&scratchBufferCreateInfoUsage)
+            .setSize(scratchBufferSize)
+            .setSharingMode(vk::SharingMode::eConcurrent)
+            .setQueueFamilyIndices(queueIndices);
+
+        vma::raii::Buffer scratchBuffer(allocator, scratchBufferCreateInfo, allocInfo);
 
         constexpr auto bufferUsageInfo2 = vk::BufferUsageFlags2CreateInfo()
             .setUsage(
@@ -250,14 +291,12 @@ namespace OWC
             .setSharingMode(vk::SharingMode::eConcurrent)
             .setQueueFamilyIndices(queueIndices);
 
-        constexpr vma::AllocationCreateInfo allocInfo = vma::AllocationCreateInfo()
-            .setUsage(vma::MemoryUsage::eGpuOnly)
-            .setFlags(vma::AllocationCreateFlagBits::eDedicatedMemory);
-
         auto scratchBLASBuffer = vma::raii::Buffer(allocator, bufferInfo, allocInfo);
 
         vk::DeviceSize scratchBufferOffset = 0;
         vk::DeviceSize scratchBLASesOffset = 0;
+
+        vk::DeviceAddress scratchBufferDeviceAddress = device.getBufferAddress(vk::BufferDeviceAddressInfo().setBuffer(*scratchBuffer));
 
         std::vector<vk::DeviceSize> fullSizeBLASSize;
         fullSizeBLASSize.reserve(meshes.size());
@@ -286,7 +325,7 @@ namespace OWC
                 geometries.size(),
                 geometries.data(),
                 nullptr,
-                vk::DeviceOrHostAddressKHR().setDeviceAddress(scratchBuffer.GetBufferDeviceAddress() + scratchBufferOffset),
+                vk::DeviceOrHostAddressKHR().setDeviceAddress(scratchBufferDeviceAddress + scratchBufferOffset),
                 nullptr);
 
             scratchBLASesOffset += alignUp(buildSizes.accelerationStructureSize, accelerationStructureAlignment);
