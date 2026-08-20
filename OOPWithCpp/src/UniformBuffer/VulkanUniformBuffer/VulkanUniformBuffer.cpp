@@ -1351,7 +1351,7 @@ namespace OWC::Graphics
 
 			if (device.waitForFences(*fence, vk::True, UINT64_MAX) != vk::Result::eSuccess)
 			{
-				Log<LogLevel::Error>("Failed to wait for fence in VulkanColourTextureArray constructor");
+				Log<LogLevel::Error>("Failed to wait for fence in VulkanNormalTextureArray constructor");
 			}
 		}
 
@@ -1567,7 +1567,7 @@ namespace OWC::Graphics
 
 			if (device.waitForFences(*fence, vk::True, UINT64_MAX) != vk::Result::eSuccess)
 			{
-				Log<LogLevel::Error>("Failed to wait for fence in VulkanColourTextureArray constructor");
+				Log<LogLevel::Error>("Failed to wait for fence in VulkanNormalTextureArray constructor");
 			}
 		}
 
@@ -1790,7 +1790,7 @@ namespace OWC::Graphics
 
 			if (device.waitForFences(*fence, vk::True, UINT64_MAX) != vk::Result::eSuccess)
 			{
-				Log<LogLevel::Error>("Failed to wait for fence in VulkanColourTextureArray constructor");
+				Log<LogLevel::Error>("Failed to wait for fence in VulkanMetallicRoughnessTextureArray constructor");
 			}
 		}
 
@@ -1831,6 +1831,221 @@ namespace OWC::Graphics
 		if (device.waitForFences(*finalFence, vk::True, UINT64_MAX) != vk::Result::eSuccess)
 		{
 			Log<LogLevel::Error>("Failed to wait for final fence in VulkanMetallicRoughnessTextureArray constructor");
+		}
+	}
+
+	VulkanEmissiveTextureArray::VulkanEmissiveTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf)
+	{
+		const auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& device = vkCore.GetDevice();
+		const auto& allocator = vkCore.GetVulkanMemoryAllocator();
+
+		auto imageCreateInfo = vk::ImageCreateInfo()
+			.setImageType(vk::ImageType::e2D)
+			.setFormat(vk::Format::eR8G8B8A8Srgb)
+			.setMipLevels(1)
+			.setArrayLayers(indexing.size())
+			.setSamples(vk::SampleCountFlagBits::e1)
+			.setTiling(vk::ImageTiling::eOptimal)
+			.setUsage(vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst)
+			.setSharingMode(vk::SharingMode::eExclusive)
+			.setInitialLayout(vk::ImageLayout::eUndefined);
+
+		auto scratchBufferInfo = vk::BufferCreateInfo()
+			.setSize(1)
+			.setUsage(vk::BufferUsageFlagBits::eTransferSrc)
+			.setSharingMode(vk::SharingMode::eExclusive);
+
+		{
+			ImageLoader<u8, 4, glm::packed_highp> imageLoader;
+			if (model.images->buffer_view != -1)
+			{
+				const tg3_buffer_view& bufferView = model.buffer_views[model.images->buffer_view];
+				imageLoader = ImageLoader<u8, 4, glm::packed_highp>(std::span(std::bit_cast<std::byte*>(model.buffers[bufferView.buffer].data.data) + bufferView.byte_offset, bufferView.byte_length));
+			}
+			else
+			{
+				const std::string imagePath = std::string{ pathToGltf } + "/" + std::string(model.images->uri.data, model.images->uri.len);
+				imageLoader = ImageLoader<u8, 4, glm::packed_highp>(imagePath);
+			}
+
+			imageCreateInfo.setExtent(vk::Extent3D()
+				.setWidth(static_cast<u32>(imageLoader.GetWidth()))
+				.setHeight(static_cast<u32>(imageLoader.GetHeight()))
+				.setDepth(1));
+
+			scratchBufferInfo.setSize(imageLoader.GetWidth() * imageLoader.GetHeight() * sizeof(u8) * 4);
+
+			Log<LogLevel::Trace>("Loading {} emissive textures  at {}x{}. This might take some time please have some patience.", indexing.size(), imageLoader.GetWidth(), imageLoader.GetHeight());
+		}
+
+		constexpr auto allocInfo = vma::AllocationCreateInfo()
+			.setUsage(vma::MemoryUsage::eAutoPreferDevice)
+			.setFlags(vma::AllocationCreateFlagBits::eDedicatedMemory);
+
+		m_TextureImages = vma::raii::Image(allocator, imageCreateInfo, allocInfo);
+
+		constexpr auto scratchBufferCreateAllocInfo = vma::AllocationCreateInfo()
+			.setUsage(vma::MemoryUsage::eAutoPreferHost)
+			.setFlags(vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped);
+
+		vma::AllocationInfo scratchBufferAllocInfo;
+		vma::raii::Buffer scratchBuffer(allocator, scratchBufferInfo, scratchBufferCreateAllocInfo, vk::Optional(scratchBufferAllocInfo));
+
+		const auto imageViewCreateInfo = vk::ImageViewCreateInfo()
+				.setImage(*m_TextureImages)
+				.setViewType(vk::ImageViewType::e2DArray)
+				.setFormat(vk::Format::eR8G8B8A8Srgb)
+				.setSubresourceRange(vk::ImageSubresourceRange()
+					.setAspectMask(vk::ImageAspectFlagBits::eColor)
+					.setBaseMipLevel(0)
+					.setLevelCount(1)
+					.setBaseArrayLayer(0)
+					.setLayerCount(indexing.size()));
+
+		m_TextureImageView = vk::raii::ImageView(device, imageViewCreateInfo);
+
+		ImageLoader<u8, 4, glm::packed_highp> imageLoaderPreLoad;
+		auto nextTextureIndex = indexing[0];
+		if (model.images[nextTextureIndex].buffer_view != -1)
+		{
+			const tg3_buffer_view& bufferView = model.buffer_views[model.images[nextTextureIndex].buffer_view];
+			imageLoaderPreLoad = ImageLoader<u8, 4, glm::packed_highp>(std::span(std::bit_cast<std::byte*>(model.buffers[bufferView.buffer].data.data) + bufferView.byte_offset, bufferView.byte_length));
+		}
+		else
+		{
+			const std::string imagePath = std::string(pathToGltf) + "/" + std::string(model.images[nextTextureIndex].uri.data, model.images[nextTextureIndex].uri.len);
+			imageLoaderPreLoad = ImageLoader<u8, 4, glm::packed_highp>(imagePath);
+		}
+
+		for (u32 i = 0; i < indexing.size(); i++)
+		{
+			if ((i + 1) % 5 == 0 || i + 1 == indexing.size())
+				Log<LogLevel::Trace>("Loading texture {}/{}", i + 1, indexing.size());
+
+			ImageLoader<u8, 4, glm::packed_highp> imageLoader = std::move(imageLoaderPreLoad);
+
+			assert(imageCreateInfo.extent.width == imageLoader.GetWidth() && imageCreateInfo.extent.height == imageLoader.GetHeight() && "All images in the texture array must have the same dimensions");
+
+			std::memcpy(scratchBufferAllocInfo.pMappedData, imageLoader.GetImageData().data(), scratchBufferInfo.size);
+
+			auto cmd = vkCore.GetSingleTimeTransferCommandBuffer();
+			cmd.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+
+			// Only transition layout on first texture
+			if (i == 0)
+			{
+				const std::array imageMemoryBarrierBegin = {
+					vk::ImageMemoryBarrier2()
+						.setSrcStageMask(vk::PipelineStageFlagBits2::eTopOfPipe)
+						.setDstStageMask(vk::PipelineStageFlagBits2::eTransfer)
+						.setSrcAccessMask(vk::AccessFlagBits2::eNone)
+						.setDstAccessMask(vk::AccessFlagBits2::eTransferWrite)
+						.setOldLayout(vk::ImageLayout::eUndefined)
+						.setNewLayout(vk::ImageLayout::eTransferDstOptimal)
+						.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+						.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+						.setImage(*m_TextureImages)
+						.setSubresourceRange(vk::ImageSubresourceRange()
+							.setAspectMask(vk::ImageAspectFlagBits::eColor)
+							.setBaseMipLevel(0)
+							.setLevelCount(1)
+							.setBaseArrayLayer(0)
+							.setLayerCount(indexing.size()))
+				};
+
+				cmd.pipelineBarrier2(vk::DependencyInfo()
+					.setImageMemoryBarriers(imageMemoryBarrierBegin)
+				);
+			}
+
+			cmd.copyBufferToImage(
+				scratchBuffer,
+				*m_TextureImages,
+				vk::ImageLayout::eTransferDstOptimal,
+				vk::BufferImageCopy()
+					.setBufferOffset(0)
+					.setBufferRowLength(0)
+					.setBufferImageHeight(0)
+					.setImageSubresource(vk::ImageSubresourceLayers()
+						.setAspectMask(vk::ImageAspectFlagBits::eColor)
+						.setMipLevel(0)
+						.setBaseArrayLayer(i)
+						.setLayerCount(1))
+					.setImageOffset(vk::Offset3D{ 0, 0, 0 })
+					.setImageExtent(vk::Extent3D{
+						imageCreateInfo.extent.width,
+						imageCreateInfo.extent.height,
+						1
+					})
+			);
+
+			cmd.end();
+
+			const auto fence = device.createFence(vk::FenceCreateInfo());
+			const auto cmdSubmit = vk::CommandBufferSubmitInfo().setCommandBuffer(cmd);
+			const auto submitInfo = vk::SubmitInfo2().setCommandBufferInfos(cmdSubmit);
+			vkCore.GetTransferQueue().submit2(submitInfo, fence);
+
+			if (i + 1 < indexing.size())
+			{
+				// preload the next image while moving the current one to the GPU
+				nextTextureIndex = indexing[i + 1];
+				if (model.images[nextTextureIndex].buffer_view != -1)
+				{
+					const tg3_buffer_view& bufferView = model.buffer_views[model.images[nextTextureIndex].buffer_view];
+					imageLoaderPreLoad = ImageLoader<u8, 4, glm::packed_highp>(std::span(std::bit_cast<std::byte*>(model.buffers[bufferView.buffer].data.data) + bufferView.byte_offset, bufferView.byte_length));
+				}
+				else
+				{
+					const std::string imagePath = std::string(pathToGltf) + "/" + std::string(model.images[nextTextureIndex].uri.data, model.images[nextTextureIndex].uri.len);
+					imageLoaderPreLoad = ImageLoader<u8, 4, glm::packed_highp>(imagePath);
+				}
+			}
+
+			if (device.waitForFences(*fence, vk::True, UINT64_MAX) != vk::Result::eSuccess)
+			{
+				Log<LogLevel::Error>("Failed to wait for fence in VulkanEmissiveTextureArray constructor");
+			}
+		}
+
+		// Final barrier to transition to shader read only for ray tracing shader
+		auto cmdFinal = vkCore.GetSingleTimeGraphicsCommandBuffer();
+		cmdFinal.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+
+		const std::array imageMemoryBarrierEnd = {
+			vk::ImageMemoryBarrier2()
+				.setSrcStageMask(vk::PipelineStageFlagBits2::eTransfer)
+				.setDstStageMask(vk::PipelineStageFlagBits2::eRayTracingShaderKHR)
+				.setSrcAccessMask(vk::AccessFlagBits2::eTransferWrite)
+				.setDstAccessMask(vk::AccessFlagBits2::eShaderRead)
+				.setOldLayout(vk::ImageLayout::eTransferDstOptimal)
+				.setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+				.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+				.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+				.setImage(*m_TextureImages)
+				.setSubresourceRange(vk::ImageSubresourceRange()
+					.setAspectMask(vk::ImageAspectFlagBits::eColor)
+					.setBaseMipLevel(0)
+					.setLevelCount(1)
+					.setBaseArrayLayer(0)
+					.setLayerCount(indexing.size()))
+		};
+
+		cmdFinal.pipelineBarrier2(vk::DependencyInfo()
+			.setImageMemoryBarriers(imageMemoryBarrierEnd)
+		);
+
+		cmdFinal.end();
+
+		const auto finalFence = device.createFence(vk::FenceCreateInfo());
+		const auto cmdFinalSubmit = vk::CommandBufferSubmitInfo().setCommandBuffer(cmdFinal);
+		const auto finalSubmitInfo = vk::SubmitInfo2().setCommandBufferInfos(cmdFinalSubmit);
+		vkCore.GetGraphicsQueue().submit2(finalSubmitInfo, finalFence);
+
+		if (device.waitForFences(*finalFence, vk::True, UINT64_MAX) != vk::Result::eSuccess)
+		{
+			Log<LogLevel::Error>("Failed to wait for final fence in VulkanEmissiveTextureArray constructor");
 		}
 	}
 }

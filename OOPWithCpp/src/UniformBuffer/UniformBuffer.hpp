@@ -114,6 +114,6 @@ namespace OWC::Graphics
 		static std::shared_ptr<TextureArray> CreateColourTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf);
 		static std::shared_ptr<TextureArray> CreateNormalTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf);
 		static std::shared_ptr<TextureArray> CreateMetallicRoughnessTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf);
-		//static std::shared_ptr<TextureArray> CreateEmissiveTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf);
+		static std::shared_ptr<TextureArray> CreateEmissiveTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf);
 	};
 }

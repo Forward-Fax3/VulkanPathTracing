@@ -64,8 +64,8 @@ namespace OWC::Graphics
 		return std::make_shared<VulkanMetallicRoughnessTextureArray>(model, indexing, pathToGltf);
 	}
 
-	/*std::shared_ptr<TextureArray> TextureArray::CreateEmissiveTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf)
+	std::shared_ptr<TextureArray> TextureArray::CreateEmissiveTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf)
 	{
 		return std::make_shared<VulkanEmissiveTextureArray>(model, indexing, pathToGltf);
-	}*/
+	}
 }

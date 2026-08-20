@@ -151,14 +151,14 @@ namespace OWC
                     );
 
                 materialData.emplace_back(
-                    glm::make_vec4(mat.pbr_metallic_roughness.base_color_factor),
+                    Vec4p(glm::make_vec4(mat.pbr_metallic_roughness.base_color_factor)),
                     static_cast<f32>(mat.pbr_metallic_roughness.metallic_factor),
                     static_cast<f32>(mat.pbr_metallic_roughness.roughness_factor),
                     (mat.pbr_metallic_roughness.base_color_texture.index != -1 ? std::distance(colourTexturesOrderIndex.begin(), std::ranges::find(colourTexturesOrderIndex, m_Model.textures[mat.pbr_metallic_roughness.base_color_texture.index].source)) : -1),
                     mat.pbr_metallic_roughness.base_color_texture.tex_coord,
                     (mat.pbr_metallic_roughness.metallic_roughness_texture.index != -1 ? std::distance(metallicRoughnessTexturesOrderIndex.begin(), std::ranges::find(metallicRoughnessTexturesOrderIndex, m_Model.textures[mat.pbr_metallic_roughness.metallic_roughness_texture.index].source)) : -1),
                     mat.pbr_metallic_roughness.metallic_roughness_texture.tex_coord,
-                    glm::make_vec3(mat.emissive_factor),
+                    Vec3p(glm::make_vec3(mat.emissive_factor)),
                     (mat.normal_texture.index != -1 ? std::distance(normalTexturesOrderIndex.begin(), std::ranges::find(normalTexturesOrderIndex, m_Model.textures[mat.normal_texture.index].source)) : -1),
                     mat.normal_texture.tex_coord,
                     (mat.emissive_texture.index != -1 ? std::distance(emissiveTexturesOrderIndex.begin(), std::ranges::find(emissiveTexturesOrderIndex, m_Model.textures[mat.emissive_texture.index].source)) : -1),

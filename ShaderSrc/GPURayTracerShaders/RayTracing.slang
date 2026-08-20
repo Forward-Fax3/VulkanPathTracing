@@ -66,7 +66,7 @@ Texture2DArray<float4> normalTextures;
 [[vk::binding(6, 0)]]
 Texture2DArray<float2> metallicRoughnessTextures;
 [[vk::binding(7, 0)]]
-Texture2DArray<float> emissiveTextures;
+Texture2DArray<float3> emissiveTextures;
 
 float Rand(inout uint rngState)
 {
@@ -416,8 +416,6 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
         mat.metallicFactor = 0.0f;
         mat.roughnessFactor = 0.5f;
     }
-    /*if (payload.depth == PC.numberOfBounces)
-        payload.radiance += payload.throughput * mat.emissive;*/
 
     float4 colour4 = float4(1.0f);
     if (geometry.coloursOffset != 0xFFFFFFFFFFFFFFFFULL)
@@ -480,6 +478,12 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
         metallicness *= metallicRoughness.x;
         roughness *= metallicRoughness.y;
     }
+
+    float3 emissive = mat.emissiveFactor;
+    if (mat.emissiveTextureIndex != 0xFFFFFFFFUL)
+        emissive *= emissiveTextures.SampleLevel(textureSampler, float3(texCoords, mat.emissiveTextureIndex), 0.0f).xyz;
+
+    payload.radiance += payload.throughput * emissive;
 
     if (Rand(payload.randSeed) > colour4.w)
     {
