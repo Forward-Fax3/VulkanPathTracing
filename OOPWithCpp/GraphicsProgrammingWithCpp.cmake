@@ -17,6 +17,7 @@ endforeach()
 
 set(GraphicsProgrammingWithCppIncludeDirs
         ${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/Projects/git/SDL/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/Projects/git/assimp/include
         ${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/Projects/git/ImGui
         ${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/HeaderOnly/git/GLM
         ${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/HeaderOnly/git/stbImage
@@ -60,6 +61,7 @@ foreach (TargetArch SSE4_2 AVX2 AVX512)
     target_link_libraries(GraphicsProgrammingWithCpp${TargetArch} PUBLIC
             SDL3_${TargetArch}
             ImGui_${TargetArch}
+            Assimp_${TargetArch}
             ${Vulkan_LIBRARIES}
             ${Polly_LINK_FLAGS}
             ${TargetLinks}

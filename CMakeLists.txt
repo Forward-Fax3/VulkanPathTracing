@@ -170,5 +170,6 @@ endif()
 
 include(OOPWithCpp/3rdParty/Projects/git/CmakeFiles/ImGui.cmake)
 include(OOPWithCpp/3rdParty/Projects/git/CmakeFiles/SDL.cmake)
+include(OOPWithCpp/3rdParty/Projects/git/CmakeFiles/Assimp.cmake)
 include(OOPWithCpp/GraphicsProgrammingWithCpp.cmake)
 include(StartProj/StartProj.cmake)

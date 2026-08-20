@@ -14,3 +14,6 @@
 [submodule "OOPWithCpp/3rdParty/HeaderOnly/git/VMAhpp"]
 	path = OOPWithCpp/3rdParty/HeaderOnly/git/VMAhpp
 	url = https://github.com/YaaZ/VulkanMemoryAllocator-Hpp.git
+[submodule "OOPWithCpp/3rdParty/Projects/git/assimp"]
+	path = OOPWithCpp/3rdParty/Projects/git/assimp
+	url = https://github.com/assimp/assimp.git
