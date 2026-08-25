@@ -9,8 +9,10 @@
 
 #include "SceneMesh.hpp"
 #include "GLTFLayer.hpp"
+#include "GLTFLoaderHelper.hpp"
 #include <tiny_gltf_v3.h>
 #include <filesystem>
+#include <thread>
 
 #include "glm/ext/matrix_transform.hpp"
 #include "glm/gtc/type_ptr.hpp"
@@ -24,7 +26,9 @@ namespace OWC
         tg3_parse_options_init(&options);
 
         tg3_error_stack errorStack;
-        tg3_parse_file(&m_Model, &errorStack, gltfFilePath.data(), gltfFilePath.size(), &options);
+        errorStack.has_error = false; // explicitly set this to false
+        tg3_model model;
+        tg3_parse_file(&model, &errorStack, gltfFilePath.data(), gltfFilePath.size(), &options);
 
         if (errorStack.has_error)
         {
@@ -47,74 +51,110 @@ namespace OWC
             return;
         }
 
-        //std::span<const tg3_texture> textures(m_Model.textures, m_Model.textures_count);
+        const auto sceneIndex = model.default_scene == -1 ? 0 : model.default_scene;
+        const auto& scene = model.scenes[sceneIndex];
 
-        uSize numberOfGPUGLTFDatas = 0;
-        for (uSize i = 0; i < m_Model.meshes_count; i++)
-            numberOfGPUGLTFDatas += m_Model.meshes[i].primitives_count;
-
-        m_GPUData.reserve(numberOfGPUGLTFDatas);
-        m_GeometryBufferSize = numberOfGPUGLTFDatas * sizeof(GPUGLTFData);
-        m_MaterialBufferSize = m_Model.materials_count * sizeof(GPUMaterialData);
-        m_GeometryBufferOffset = alignUp(m_Model.buffers[0].data.count, alignof(GPUGLTFData));
-        m_MaterialBufferOffset = alignUp(m_GeometryBufferOffset, alignof(GPUMaterialData)) + m_GeometryBufferSize;
-
-        const auto bufferSize = m_MaterialBufferOffset + m_MaterialBufferSize;
-        m_GPUBuffer = Graphics::GeneralBuffer::CreateGeneralBuffer(bufferSize);
-        m_GPUBuffer->UpdateBufferData(std::bit_cast<const u8*>(m_Model.buffers[0].data.data), m_Model.buffers[0].data.count);
-
-        const auto sceneIndex = m_Model.default_scene == -1 ? 0 : m_Model.default_scene;
-        const auto& scene = m_Model.scenes[sceneIndex];
-        u32 customInstancesIndex = 0;
-
-        std::vector<GPULightData> lightData;
-
-        std::map<i32, std::unique_ptr<SceneMesh>> meshMap;
-        std::vector<std::pair<Mat4, i32>> meshIndexes;
-
-        for (u32 i = 0; i < scene.nodes_count; i++)
-            IterateThroughNodes(scene.nodes[i], Mat4(1.0f), customInstancesIndex, lightData, meshMap, meshIndexes);
-
-        m_TLAS = BaseTLAS::CreateTopLevelAccelerationStructure(meshMap, meshIndexes);
-
-        m_GPUBuffer->UpdateBufferData(std::bit_cast<u8*>(m_GPUData.data()), m_GeometryBufferSize, m_GeometryBufferOffset);
-        if (!lightData.empty())
+        uSize totalNumOfPrimitives = 0;
+        uSize totalNumOfVertices = 0;
+        uSize totalSizeOfIndices = 0;
+        for (uSize i = 0; i < model.meshes_count; i++)
         {
-            m_LightBuffer = Graphics::GeneralBuffer::CreateGeneralBuffer(lightData.size() * sizeof(GPULightData));
-            m_LightBuffer->UpdateBufferData(std::bit_cast<u8*>(lightData.data()));
-            m_NumberOfLights = static_cast<u32>(lightData.size());
+            auto& mesh = model.meshes[i];
+            totalNumOfPrimitives += mesh.primitives_count;
+            for (uSize j = 0; j < mesh.primitives_count; j++)
+            {
+                auto& prim = mesh.primitives[j];
+
+                const auto pos = extractAttribute(prim, "POSITION", model);
+                const auto indices = model.accessors[prim.indices];
+
+                totalNumOfVertices += pos.count;
+                totalSizeOfIndices += indices.count * (indices.component_type == TG3_COMPONENT_TYPE_UNSIGNED_SHORT ? sizeof(u16) : sizeof(u32));
+            }
         }
 
-        m_Layer = std::make_shared<GLTFLayer>(m_LightBuffer, std::move(lightData), layerName);
-        Application::GetInstance().PushLayer(m_Layer);
+        std::unordered_map<uSize, uSize> gltfBufferPosToIndicesOffset;
+        std::vector<std::byte> indicesTotalData;
+        indicesTotalData.resize(totalSizeOfIndices);
+        uSize indicesOffset = 0;
+        for (uSize i = 0; i < model.meshes_count; i++)
+        {
+            auto& mesh = model.meshes[i];
+            for (uSize j = 0; j < mesh.primitives_count; j++)
+            {
+                auto& prim = mesh.primitives[j];
+                const auto indices = model.accessors[prim.indices];
 
-        if (m_Model.materials_count > 0)
+                const auto indicesData = extractAttribute(indices, model);
+                gltfBufferPosToIndicesOffset[indicesData.offset] = indicesOffset;
+                uSize sizeOfIndices = indices.count * (indices.component_type == TG3_COMPONENT_TYPE_UNSIGNED_SHORT ? sizeof(u16) : sizeof(u32));
+                std::memcpy(indicesTotalData.data() + indicesOffset, model.buffers[indicesData.bufferIndex].data.data + indicesData.offset, sizeOfIndices);
+                indicesOffset += sizeOfIndices;
+            }
+        }
+
+        u32 numberOfLights = 0;
+        for (u32 i = 0; i < scene.nodes_count; i++)
+            FindNumberOfLightsInScene(model, scene.nodes[i], numberOfLights);
+
+        std::vector<VertexData> verticesData;
+        std::vector<Vec3p> verticesPos;
+        verticesData.reserve(totalNumOfVertices);
+        verticesPos.reserve(totalNumOfVertices);
+        const uSize verticesDataSize = totalNumOfVertices * sizeof(VertexData);
+        const uSize verticesPosDataSize = totalNumOfVertices * sizeof(Vec3p);
+        
+        std::vector<GPUData> GPUDatas;
+        GPUDatas.reserve(totalNumOfPrimitives);
+
+        const uSize LightBufferSize = numberOfLights * sizeof(GPULightData);
+        const uSize geometryBufferSize = totalNumOfPrimitives * sizeof(GPUData);
+        const uSize materialBufferSize = model.materials_count * sizeof(GPUMaterialData);
+        constexpr uSize indicesBufferOffset = 0;
+        const uSize verticesPosBufferOffset = alignUp(indicesBufferOffset + totalSizeOfIndices, alignof(Vec3p));
+        const uSize verticesBufferOffset = alignUp(verticesPosBufferOffset + verticesPosDataSize, alignof(VertexData));
+        m_LightBufferOffset = alignUp(verticesBufferOffset + verticesDataSize, alignof(GPULightData));
+        m_GeometryBufferOffset = alignUp(m_LightBufferOffset + LightBufferSize, alignof(GPUData));
+        m_MaterialBufferOffset = alignUp(m_GeometryBufferOffset + geometryBufferSize, alignof(GPUMaterialData));
+
+        constexpr uSize maxAlignment = std::max({ alignof(Vec3p), alignof(VertexData), alignof(GPULightData), alignof(GPUData), alignof(GPUMaterialData) });
+
+        const auto bufferSize = m_MaterialBufferOffset + materialBufferSize;
+        m_GPUBuffer = Graphics::GeneralBuffer::CreateGeneralBuffer(bufferSize, maxAlignment);
+        m_GPUBuffer->UpdateBufferData(std::bit_cast<const u8*>(indicesTotalData.data()), totalSizeOfIndices, indicesBufferOffset);
+
+        bool colourThreadDone = true;
+        bool normalThreadDone = true;
+        bool metallicRoughnessThreadDone = true;
+        bool emissiveTextureThreadDone = true;
+
+        if (model.materials_count > 0)
         {
             std::vector<u32> colourTexturesOrderIndex;
             std::vector<u32> normalTexturesOrderIndex;
             std::vector<u32> metallicRoughnessTexturesOrderIndex;
             std::vector<u32> emissiveTexturesOrderIndex;
 
-            for (uSize i = 0; i < m_Model.materials_count; i++)
+            for (uSize i = 0; i < model.materials_count; i++)
             {
-                const tg3_material& mat = m_Model.materials[i];
+                const tg3_material& mat = model.materials[i];
 
-                if (mat.pbr_metallic_roughness.base_color_texture.index != -1 && std::ranges::find(colourTexturesOrderIndex, m_Model.textures[mat.pbr_metallic_roughness.base_color_texture.index].source) == colourTexturesOrderIndex.end())
-                    colourTexturesOrderIndex.emplace_back(m_Model.textures[mat.pbr_metallic_roughness.base_color_texture.index].source);
-                if (mat.pbr_metallic_roughness.metallic_roughness_texture.index != -1 && std::ranges::find(metallicRoughnessTexturesOrderIndex, m_Model.textures[mat.pbr_metallic_roughness.metallic_roughness_texture.index].source) == metallicRoughnessTexturesOrderIndex.end())
-                    metallicRoughnessTexturesOrderIndex.emplace_back(m_Model.textures[mat.pbr_metallic_roughness.metallic_roughness_texture.index].source);
-                if (mat.normal_texture.index != -1 && std::ranges::find(normalTexturesOrderIndex, m_Model.textures[mat.normal_texture.index].source) == normalTexturesOrderIndex.end())
-                    normalTexturesOrderIndex.emplace_back(m_Model.textures[mat.normal_texture.index].source);
-                if (mat.emissive_texture.index != -1 && std::ranges::find(emissiveTexturesOrderIndex, m_Model.textures[mat.emissive_texture.index].source) == emissiveTexturesOrderIndex.end())
-                    emissiveTexturesOrderIndex.emplace_back(m_Model.textures[mat.emissive_texture.index].source);
+                if (mat.pbr_metallic_roughness.base_color_texture.index != -1 && std::ranges::find(colourTexturesOrderIndex, model.textures[mat.pbr_metallic_roughness.base_color_texture.index].source) == colourTexturesOrderIndex.end())
+                    colourTexturesOrderIndex.emplace_back(model.textures[mat.pbr_metallic_roughness.base_color_texture.index].source);
+                if (mat.pbr_metallic_roughness.metallic_roughness_texture.index != -1 && std::ranges::find(metallicRoughnessTexturesOrderIndex, model.textures[mat.pbr_metallic_roughness.metallic_roughness_texture.index].source) == metallicRoughnessTexturesOrderIndex.end())
+                    metallicRoughnessTexturesOrderIndex.emplace_back(model.textures[mat.pbr_metallic_roughness.metallic_roughness_texture.index].source);
+                if (mat.normal_texture.index != -1 && std::ranges::find(normalTexturesOrderIndex, model.textures[mat.normal_texture.index].source) == normalTexturesOrderIndex.end())
+                    normalTexturesOrderIndex.emplace_back(model.textures[mat.normal_texture.index].source);
+                if (mat.emissive_texture.index != -1 && std::ranges::find(emissiveTexturesOrderIndex, model.textures[mat.emissive_texture.index].source) == emissiveTexturesOrderIndex.end())
+                    emissiveTexturesOrderIndex.emplace_back(model.textures[mat.emissive_texture.index].source);
             }
 
             std::string materialDataToPrint = "\n\n";
             std::vector<GPUMaterialData> materialData;
-            materialData.reserve(m_Model.materials_count);
-            for (uSize i = 0; i < m_Model.materials_count; i++)
+            materialData.reserve(model.materials_count);
+            for (uSize i = 0; i < model.materials_count; i++)
             {
-                const tg3_material& mat = m_Model.materials[i];
+                const tg3_material& mat = model.materials[i];
 
                 materialDataToPrint += std::format("\tMaterial Data:\n"
                         "\t\tMetallic Roughness Base Colour Factor: {}, {}, {}, {}\n"
@@ -154,14 +194,14 @@ namespace OWC
                     Vec4p(glm::make_vec4(mat.pbr_metallic_roughness.base_color_factor)),
                     static_cast<f32>(mat.pbr_metallic_roughness.metallic_factor),
                     static_cast<f32>(mat.pbr_metallic_roughness.roughness_factor),
-                    (mat.pbr_metallic_roughness.base_color_texture.index != -1 ? std::distance(colourTexturesOrderIndex.begin(), std::ranges::find(colourTexturesOrderIndex, m_Model.textures[mat.pbr_metallic_roughness.base_color_texture.index].source)) : -1),
+                    (mat.pbr_metallic_roughness.base_color_texture.index != -1 ? std::distance(colourTexturesOrderIndex.begin(), std::ranges::find(colourTexturesOrderIndex, model.textures[mat.pbr_metallic_roughness.base_color_texture.index].source)) : -1),
                     mat.pbr_metallic_roughness.base_color_texture.tex_coord,
-                    (mat.pbr_metallic_roughness.metallic_roughness_texture.index != -1 ? std::distance(metallicRoughnessTexturesOrderIndex.begin(), std::ranges::find(metallicRoughnessTexturesOrderIndex, m_Model.textures[mat.pbr_metallic_roughness.metallic_roughness_texture.index].source)) : -1),
+                    (mat.pbr_metallic_roughness.metallic_roughness_texture.index != -1 ? std::distance(metallicRoughnessTexturesOrderIndex.begin(), std::ranges::find(metallicRoughnessTexturesOrderIndex, model.textures[mat.pbr_metallic_roughness.metallic_roughness_texture.index].source)) : -1),
                     mat.pbr_metallic_roughness.metallic_roughness_texture.tex_coord,
                     Vec3p(glm::make_vec3(mat.emissive_factor)),
-                    (mat.normal_texture.index != -1 ? std::distance(normalTexturesOrderIndex.begin(), std::ranges::find(normalTexturesOrderIndex, m_Model.textures[mat.normal_texture.index].source)) : -1),
+                    (mat.normal_texture.index != -1 ? std::distance(normalTexturesOrderIndex.begin(), std::ranges::find(normalTexturesOrderIndex, model.textures[mat.normal_texture.index].source)) : -1),
                     mat.normal_texture.tex_coord,
-                    (mat.emissive_texture.index != -1 ? std::distance(emissiveTexturesOrderIndex.begin(), std::ranges::find(emissiveTexturesOrderIndex, m_Model.textures[mat.emissive_texture.index].source)) : -1),
+                    (mat.emissive_texture.index != -1 ? std::distance(emissiveTexturesOrderIndex.begin(), std::ranges::find(emissiveTexturesOrderIndex, model.textures[mat.emissive_texture.index].source)) : -1),
                     mat.emissive_texture.tex_coord,
                     static_cast<f32>(mat.alpha_cutoff)
                 );
@@ -169,32 +209,106 @@ namespace OWC
 
             Log<LogLevel::Debug>("{}", materialDataToPrint);
 
-            m_GPUBuffer->UpdateBufferData(std::bit_cast<u8*>(materialData.data()), m_MaterialBufferSize, m_MaterialBufferOffset);
-
-            std::filesystem::path gltfPath(gltfFilePath);
-            m_TextureArraySampler = Graphics::TextureArraySampler::CreateTextureArraySampler(m_Model.samplers[0]); // for now only 1 sampler is supported
-            if (!colourTexturesOrderIndex.empty())
-                m_ColourTextureArray = Graphics::TextureArray::CreateColourTextureArray(m_Model, colourTexturesOrderIndex, gltfPath.parent_path().string());
-            if (!normalTexturesOrderIndex.empty())
-                m_NormalTextureArray = Graphics::TextureArray::CreateNormalTextureArray(m_Model, normalTexturesOrderIndex, gltfPath.parent_path().string());
-            if (!metallicRoughnessTexturesOrderIndex.empty())
-                m_MetallicRoughnessTextureArray = Graphics::TextureArray::CreateMetallicRoughnessTextureArray(m_Model, metallicRoughnessTexturesOrderIndex, gltfPath.parent_path().string());
+            colourThreadDone = false;
+            normalThreadDone = false;
+            metallicRoughnessThreadDone = false;
+            emissiveTextureThreadDone = false;
+            std::jthread colourTextureThread([&, colourTexturesOrderIndex = std::move(colourTexturesOrderIndex)]()
+            {
+                const std::filesystem::path gltfPath(gltfFilePath);
+                if (!colourTexturesOrderIndex.empty())
+                    m_ColourTextureArray = Graphics::TextureArray::CreateColourTextureArray(model, colourTexturesOrderIndex, gltfPath.parent_path().string());
+                colourThreadDone = true;
+            });
+            std::jthread normalTextureThread([&, normalTexturesOrderIndex = std::move(normalTexturesOrderIndex)]()
+            {
+                const std::filesystem::path gltfPath(gltfFilePath);
+                if (!normalTexturesOrderIndex.empty())
+                    m_NormalTextureArray = Graphics::TextureArray::CreateNormalTextureArray(model, normalTexturesOrderIndex, gltfPath.parent_path().string());
+                normalThreadDone = true;
+            });
+            std::jthread metallicRoughnessTextureThread([&, metallicRoughnessTexturesOrderIndex = std::move(metallicRoughnessTexturesOrderIndex)]()
+            {
+                const std::filesystem::path gltfPath(gltfFilePath);
+                if (!metallicRoughnessTexturesOrderIndex.empty())
+                    m_MetallicRoughnessTextureArray = Graphics::TextureArray::CreateMetallicRoughnessTextureArray(model, metallicRoughnessTexturesOrderIndex, gltfPath.parent_path().string());
+                metallicRoughnessThreadDone = true;
+            });
+            std::jthread emissiveTextureThread([&, emissiveTexturesOrderIndex = std::move(emissiveTexturesOrderIndex)]()
+            {
+                const std::filesystem::path gltfPath(gltfFilePath);
+                if (!emissiveTexturesOrderIndex.empty())
+                    m_EmissiveTextureArray = Graphics::TextureArray::CreateEmissiveTextureArray(model, emissiveTexturesOrderIndex, gltfPath.parent_path().string());
+                emissiveTextureThreadDone = true;
+            });
+            colourTextureThread.detach();
+            normalTextureThread.detach();
+            metallicRoughnessTextureThread.detach();
+            emissiveTextureThread.detach();
+            //if (!colourTexturesOrderIndex.empty())
+            //    m_ColourTextureArray = Graphics::TextureArray::CreateColourTextureArray(model, colourTexturesOrderIndex, gltfPath.parent_path().string());
+            //if (!normalTexturesOrderIndex.empty())
+            //    m_NormalTextureArray = Graphics::TextureArray::CreateNormalTextureArray(model, normalTexturesOrderIndex, gltfPath.parent_path().string());
+            //if (!metallicRoughnessTexturesOrderIndex.empty())
+            //    m_MetallicRoughnessTextureArray = Graphics::TextureArray::CreateMetallicRoughnessTextureArray(model, metallicRoughnessTexturesOrderIndex, gltfPath.parent_path().string());
             //if (!emissiveTexturesOrderIndex.empty())
-            //    m_EmissiveTextureArray = Graphics::TextureArray::CreateEmissiveTextureArray(m_Model, emissiveTexturesOrderIndex, gltfPath.parent_path().string());
+            //    m_EmissiveTextureArray = Graphics::TextureArray::CreateEmissiveTextureArray(model, emissiveTexturesOrderIndex, gltfPath.parent_path().string());
+
+            //if (colourTextureThread.joinable())
+            //    colourTextureThread.join();
+            //if (normalTextureThread.joinable())
+            //    normalTextureThread.join();
+            //if (metallicRoughnessTextureThread.joinable())
+            //    metallicRoughnessTextureThread.join();
+            //if (emissiveTextureThread.joinable())
+            //    emissiveTextureThread.join();
+
+            m_TextureArraySampler = Graphics::TextureArraySampler::CreateTextureArraySampler(model.samplers[0]); // for now only 1 sampler is supported
+            m_GPUBuffer->UpdateBufferData(std::bit_cast<u8*>(materialData.data()), materialBufferSize, m_MaterialBufferOffset);
         }
 
-        tg3_error_stack_free(&errorStack);
+        u32 customInstancesIndex = 0;
+
+        std::vector<GPULightData> lightData;
+        lightData.reserve(numberOfLights);
+
+        std::map<u32, std::unique_ptr<SceneMesh>> meshMap;
+        std::vector<std::pair<Mat4, u32>> meshIndexes;
+
+        for (u32 i = 0; i < scene.nodes_count; i++)
+            IterateThroughNodes(model, scene.nodes[i], gltfBufferPosToIndicesOffset, verticesPosBufferOffset, Mat4(1.0f), customInstancesIndex, GPUDatas, verticesPos, verticesData, lightData, meshMap, meshIndexes);
+
+        if (verticesPosDataSize > 0)
+            m_GPUBuffer->UpdateBufferData(std::bit_cast<u8*>(verticesPos.data()), verticesPosDataSize, verticesPosBufferOffset);
+        if (verticesDataSize > 0)
+            m_GPUBuffer->UpdateBufferData(std::bit_cast<u8*>(verticesData.data()), verticesDataSize, verticesBufferOffset);
+        if (geometryBufferSize > 0)
+            m_GPUBuffer->UpdateBufferData(std::bit_cast<u8*>(GPUDatas.data()), geometryBufferSize, m_GeometryBufferOffset);
+        if (LightBufferSize > 0)
+            m_GPUBuffer->UpdateBufferData(std::bit_cast<u8*>(lightData.data()), LightBufferSize, m_LightBufferOffset);
+
+        m_TLAS = BaseTLAS::CreateTopLevelAccelerationStructure(meshMap, meshIndexes);
+        m_NumberOfLights = static_cast<u32>(lightData.size());
+
+        m_Layer = std::make_shared<GLTFLayer>(m_GPUBuffer, m_LightBufferOffset, std::move(lightData), layerName);
+        Application::GetInstance().PushLayer(m_Layer);
+
+        while (!colourThreadDone || !normalThreadDone || !metallicRoughnessThreadDone || !emissiveTextureThreadDone)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+        if (errorStack.has_error)
+            tg3_error_stack_free(&errorStack);
+        tg3_model_free(&model);
     }
 
     GLTFLoader::~GLTFLoader()
     {
-        tg3_model_free(&m_Model);
         Application::GetInstance().PopLayer(m_Layer);
     }
 
-    void GLTFLoader::IterateThroughNodes(const u32 nodeIndex, Mat4 parentTransform, u32& customInstancesIndex, std::vector<GPULightData>& lightData, std::map<i32, std::unique_ptr<SceneMesh>>& meshes, std::vector<std::pair<Mat4, i32>>& meshIndexes)
+    void GLTFLoader::IterateThroughNodes(const tg3_model& model, u32 nodeIndex, const std::unordered_map<uSize, uSize>& gltfBufferPosToIndicesOffset, uSize verticesBufferOffset, Mat4 parentTransform, u32& customInstancesIndex, std::vector<GPUData>& GPUDatas, std::vector<Vec3p>& verticesPos, std::vector<VertexData>& verticesData, std::vector<GPULightData>& lightData, std::map<u32, std::unique_ptr<SceneMesh>>& meshes, std::vector<std::pair<Mat4, u32>>& meshIndexes)
     {
-        const tg3_node& node = m_Model.nodes[nodeIndex];
+        const tg3_node& node = model.nodes[nodeIndex];
 
         // casts are used in this next section because tinygltf gives the matrix with doubles but vulkan uses floats, and we change it right away
         if (node.has_matrix)
@@ -233,27 +347,27 @@ namespace OWC
                     const auto& [instanceName, instanceValue] = entryValue.object_data[k];
                     if (tg3_str_equals_cstr(instanceName, "TRANSLATION"))
                     {
-                        const tg3_accessor& acc = m_Model.accessors[instanceValue.int_val];
-                        const auto [offset, count, byteStride, bufferIndex, hasData] = extractAttribute(acc, m_Model);
+                        const tg3_accessor& acc = model.accessors[instanceValue.int_val];
+                        const auto [offset, count, byteStride, bufferIndex, hasData] = extractAttribute(acc, model);
                         assert(hasData);
                         assert(byteStride == sizeof(Vec3p));
-                        translationBuffer = std::span(std::bit_cast<Vec3p*>(m_Model.buffers[bufferIndex].data.data + offset), count);
+                        translationBuffer = std::span(std::bit_cast<Vec3p*>(model.buffers[bufferIndex].data.data + offset), count);
                     }
                     else if (tg3_str_equals_cstr(instanceName, "ROTATION"))
                     {
-                        const tg3_accessor& acc = m_Model.accessors[instanceValue.int_val];
-                        const auto [offset, count, byteStride, bufferIndex, hasData] = extractAttribute(acc, m_Model);
+                        const tg3_accessor& acc = model.accessors[instanceValue.int_val];
+                        const auto [offset, count, byteStride, bufferIndex, hasData] = extractAttribute(acc, model);
                         assert(hasData);
                         assert(byteStride == sizeof(Vec4p));
-                        rotationBuffer = std::span(std::bit_cast<Vec4p*>(m_Model.buffers[bufferIndex].data.data + offset), count);
+                        rotationBuffer = std::span(std::bit_cast<Vec4p*>(model.buffers[bufferIndex].data.data + offset), count);
                     }
                     else if (tg3_str_equals_cstr(instanceName, "SCALE"))
                     {
-                        const tg3_accessor& acc = m_Model.accessors[instanceValue.int_val];
-                        const auto [offset, count, byteStride, bufferIndex, hasData] = extractAttribute(acc, m_Model);
+                        const tg3_accessor& acc = model.accessors[instanceValue.int_val];
+                        const auto [offset, count, byteStride, bufferIndex, hasData] = extractAttribute(acc, model);
                         assert(hasData);
                         assert(byteStride == sizeof(Vec3p));
-                        scaleBuffer = std::span(std::bit_cast<Vec3p*>(m_Model.buffers[bufferIndex].data.data + offset), count);
+                        scaleBuffer = std::span(std::bit_cast<Vec3p*>(model.buffers[bufferIndex].data.data + offset), count);
                     }
                 }
             }
@@ -263,8 +377,8 @@ namespace OWC
 
             if (!meshes.contains(node.mesh))
             {
-                meshes.emplace(node.mesh, SceneMesh::CreateFromGLTFModelWithMeshIndex(m_Model, node.mesh, customInstancesIndex, m_GPUBuffer, m_GPUData));
-                customInstancesIndex += m_Model.meshes[node.mesh].primitives_count;
+                meshes.emplace(node.mesh, SceneMesh::CreateFromGLTFModelWithMeshIndex(model, node.mesh, customInstancesIndex, gltfBufferPosToIndicesOffset, verticesBufferOffset, m_GPUBuffer, GPUDatas, verticesPos, verticesData));
+                customInstancesIndex += model.meshes[node.mesh].primitives_count;
             }
 
             for (size_t i = 0; i < translationBuffer.size(); ++i)
@@ -280,8 +394,8 @@ namespace OWC
         {
             if (!meshes.contains(node.mesh))
             {
-                meshes.emplace(node.mesh, SceneMesh::CreateFromGLTFModelWithMeshIndex(m_Model, node.mesh, customInstancesIndex, m_GPUBuffer, m_GPUData));
-                customInstancesIndex += m_Model.meshes[node.mesh].primitives_count;
+                meshes.emplace(node.mesh, SceneMesh::CreateFromGLTFModelWithMeshIndex(model, node.mesh, customInstancesIndex, gltfBufferPosToIndicesOffset, verticesBufferOffset, m_GPUBuffer, GPUDatas, verticesPos, verticesData));
+                customInstancesIndex += model.meshes[node.mesh].primitives_count;
             }
 
             meshIndexes.emplace_back(parentTransform, node.mesh);
@@ -289,7 +403,7 @@ namespace OWC
 
         if (node.light != -1)
         {
-            const tg3_light& light = m_Model.lights[node.light];
+            const tg3_light& light = model.lights[node.light];
             const std::string_view lightType = light.type.data;
             const Vec3p colour = glm::make_vec3(light.color);
 
@@ -339,6 +453,15 @@ namespace OWC
         }
 
         for (u32 i = 0; i < node.children_count; i++)
-            IterateThroughNodes(node.children[i], parentTransform, customInstancesIndex, lightData, meshes, meshIndexes);
+            IterateThroughNodes(model, node.children[i], gltfBufferPosToIndicesOffset, verticesBufferOffset, parentTransform, customInstancesIndex, GPUDatas, verticesPos, verticesData, lightData, meshes, meshIndexes);
+    }
+
+    void GLTFLoader::FindNumberOfLightsInScene(const tg3_model& model, const u32 nodeIndex, u32& numberOfLights)
+    {
+        const tg3_node& node = model.nodes[nodeIndex];
+        if (node.light != -1)
+            numberOfLights++;
+        for (u32 i = 0; i < node.children_count; i++)
+            FindNumberOfLightsInScene(model, node.children[i], numberOfLights);
     }
 } // OWC

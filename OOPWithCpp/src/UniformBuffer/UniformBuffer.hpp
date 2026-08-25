@@ -83,7 +83,7 @@ namespace OWC::Graphics
 
 		virtual uSize GetDeviceBufferPtr() const = 0;
 
-		static std::shared_ptr<GeneralBuffer> CreateGeneralBuffer(uSize size);
+		static std::shared_ptr<GeneralBuffer> CreateGeneralBuffer(uSize size, uSize alignment = 0);
 	};
 
 	class TextureArraySampler

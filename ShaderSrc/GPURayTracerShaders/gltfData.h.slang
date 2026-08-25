@@ -1,14 +1,10 @@
 struct GeometryDescriptor
 {
-    uint64_t positionsOffset;
     uint64_t indicesOffset;
-    uint64_t normalsOffset;
-    uint64_t coloursOffset;
-    uint64_t tangentOffset;
-    uint64_t texCoordsOffset;
+    uint64_t vertexOffset;
     uint materialIndex;
-    uint is16BitIndices; // boolean
-    uint pad[2]; // 64 bytes
+    uint is32BitIndices;
+    uint pad[2]; // 32 bytes
 }
 
 struct MaterialData
@@ -26,7 +22,16 @@ struct MaterialData
     uint emissiveTextureIndex;
     uint emissiveTextureCoords;
     float alphaCutoff;
-    uint pad[2]; // pad to 80 bytes
+    //uint pad[2]; // pad to 80 bytes
+}
+
+struct VertexData
+{
+    float3 normal;
+    float4 tangent;
+    float4 colour;
+    float2 UV[2];
+    uint pad[1]; // pad to 64 bytes
 }
 
 struct LightData

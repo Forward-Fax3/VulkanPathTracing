@@ -28,10 +28,10 @@ namespace OWC::Graphics
 		return std::make_shared<VulkanDynamicTextureBuffer>(width, height);
 	}
 
-	std::shared_ptr<GeneralBuffer> GeneralBuffer::CreateGeneralBuffer(uSize size)
+	std::shared_ptr<GeneralBuffer> GeneralBuffer::CreateGeneralBuffer(uSize size, uSize alignment /*= 0*/)
 	{
 		// For Now, only Vulkan is supported
-		return std::make_shared<VulkanGeneralBuffer>(size);
+		return std::make_shared<VulkanGeneralBuffer>(size, alignment);
 	}
 
 	std::shared_ptr<TextureArraySampler> TextureArraySampler::CreateEmptyTextureArraySampler()

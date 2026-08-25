@@ -19,6 +19,8 @@
 #include "SponzaPalace.hpp"
 #include "EXTMeshGPUInstancingExample.hpp"
 #include "MeshReuseInstancingExample.hpp"
+#include "BistroExterior.hpp"
+#include "BistroInterior.hpp"
 
 #include <array>
 
@@ -37,7 +39,7 @@ namespace OWC
 		  m_RayTracingGPUDataBuffer(Graphics::UniformBuffer::CreateUniformBuffer(sizeof(GeneralGPUData))),
 		  m_RayTracingResolution(Application::GetConstInstance().GetPixelWidth(), Application::GetConstInstance().GetPixelHeight()),
 		  m_ScreenNeedsRefreshing(true),
-		  m_Scene(std::make_shared<SponzaPalace>())
+		  m_Scene(std::make_shared<MeshReuseInstancingExample>())
 	{
 		SetUpRenderImage();
 		SetupPipeline();
@@ -101,7 +103,7 @@ namespace OWC
 
 	void GPURayTracerRenderer::ImGuiRender()
 	{
-		constexpr std::array scenes = { "Sponza Palace", "EXT_mesh_gpu_instancing Example", "mesh Reuse Instancing Example" };
+		constexpr std::array scenes = { "mesh Reuse Instancing Example", "EXT_mesh_gpu_instancing Example", "Sponza Palace", "Bistro Exterior", "Bistro Interior" };
 
 		bool cameraMoved = false;
 		ImGui::Begin("GPU Renderer");
@@ -118,26 +120,45 @@ namespace OWC
 				{
 				case 0:
 				{
-					this->m_Scene = std::make_shared<SponzaPalace>();
-					newPosition = Vec3(0.0f, 1.5f, 0.0f);
-					break;
-				}
-				case 1:
-					this->m_Scene = std::make_shared<EXTMeshGPUInstancingExample>();
-					newPosition = Vec3(-25.0f, 15.0f, 15.0f);
-					newRotation = Vec3(-20.0f, 105.0f, 0.0f);
-					break;
-				case 2:
 					this->m_Scene = std::make_shared<MeshReuseInstancingExample>();
 					newPosition = Vec3(-1.0f, 0.2f, 0.0f);
 					newRotation = Vec3(0.0f, 90.0f, 0.0f);
 					break;
-				default:
+				}
+				case 1:
+				{
+					this->m_Scene = std::make_shared<EXTMeshGPUInstancingExample>();
+					newPosition = Vec3(-25.0f, 15.0f, 15.0f);
+					newRotation = Vec3(-20.0f, 105.0f, 0.0f);
+					break;
+				}
+				case 2:
 				{
 					this->m_Scene = std::make_shared<SponzaPalace>();
 					newPosition = Vec3(0.0f, 1.5f, 0.0f);
+					break;
+				}
+				case 3:
+				{
+					this->m_Scene = std::make_shared<BistroExterior>();
+					newPosition = Vec3(-21.0f, 3.0f, -3.0f);
+					newRotation = Vec3(0.0f, 75.0f, 0.0f);
+					break;
+				}
+				case 4:
+				{
+					this->m_Scene = std::make_shared<BistroInterior>();
+					newPosition = Vec3(5.0f, 3.0f, 10.0f);
+					newRotation = Vec3(0.0f, 150.0f, 0.0f);
+					break;
+				}
+				default:
+				{
+					this->m_Scene = std::make_shared<MeshReuseInstancingExample>();
+					newRotation = Vec3(0.0f, 90.0f, 0.0f);
+					newPosition = Vec3(-1.0f, 0.2f, 0.0f);
 					this->m_SceneIndex = 0;
-					Log<LogLevel::Warn>("Invalid scene index selected, defaulting to Sponza Palace");
+					Log<LogLevel::Warn>("Invalid scene index selected, defaulting to MeshReuseInstancingExample");
 				}
 				}
 				this->m_CameraRotation = newRotation;

@@ -204,6 +204,13 @@ namespace OWC
 	template <typename T>
 	[[nodiscard]] constexpr T alignUp(T value, size_t alignment) noexcept
 	{
-		return ((value + alignment - 1) & ~(alignment - 1));
+		if constexpr (std::is_signed_v<T>)
+		{
+			return static_cast<T>((static_cast<iSize>(value) + alignment - 1) & ~(alignment - 1));
+		}
+		else
+		{
+			return static_cast<T>((static_cast<uSize>(value) + alignment - 1) & ~(alignment - 1));
+		}
 	}
 }

@@ -1,0 +1,34 @@
+//
+// Created by forwardfax3 on 07/08/2026.
+//
+
+#pragma once
+#include "Core.hpp"
+#include "Layer.hpp"
+
+#include "SceneMesh.hpp"
+#include "UniformBuffer.hpp"
+
+
+namespace OWC
+{
+    class AssimpLayer : public Layer
+    {
+    public:
+        AssimpLayer() = delete;
+        AssimpLayer(const std::shared_ptr<Graphics::GeneralBuffer>& lightBuffer, uSize lightsOffset, std::vector<GPULightData>&& lightData, const std::string_view& layerName);
+        ~AssimpLayer() override = default;
+
+        void ImGuiRender() override;
+
+        [[nodiscard]] OWC_FORCE_INLINE bool GetNeedScreenRefresh() const { return m_ScreenNeedRefresh; }
+
+    private:
+        std::shared_ptr<Graphics::GeneralBuffer> m_LightBuffer;
+        std::vector<GPULightData> m_LightData;
+        std::string m_LayerName;
+        uSize m_LightsOffset;
+        bool m_ShowLights = false;
+        bool m_ScreenNeedRefresh = false;
+    };
+}

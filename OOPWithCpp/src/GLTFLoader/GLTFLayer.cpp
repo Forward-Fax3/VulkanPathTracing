@@ -10,14 +10,14 @@
 
 namespace OWC
 {
-    GLTFLayer::GLTFLayer(const std::shared_ptr<Graphics::GeneralBuffer>& lightBuffer, std::vector<GPULightData>&& lightData, const std::string_view& layerName)
-        : m_LightBuffer(lightBuffer), m_LightData(std::move(lightData)), layerName(layerName) {}
+    GLTFLayer::GLTFLayer(const std::shared_ptr<Graphics::GeneralBuffer>& lightBuffer, uSize lightsOffset, std::vector<GPULightData>&& lightData, const std::string_view& layerName)
+        : m_LightBuffer(lightBuffer), m_LightData(std::move(lightData)), m_LayerName(layerName), m_LightBufferOffset(lightsOffset) {}
 
     void GLTFLayer::ImGuiRender()
     {
         m_ScreenNeedRefresh = false;
 
-        ImGui::Begin(layerName.data());
+        ImGui::Begin(m_LayerName.data());
 
         ImGui::Checkbox("Show Lights", &m_ShowLights);
 
@@ -33,7 +33,7 @@ namespace OWC
                     ImGui::Separator();
                 ImGui::Text("Light %zu\nIntensity", i);
                 m_ScreenNeedRefresh |= ImGui::DragFloat("Intensity", &light.intensity, 0.1f, 0.0f, 10000.0f, "%.1f");
-                m_ScreenNeedRefresh |= ImGui::OWC::SliderFloat3WithAlignedText("Colour", "Red", "Green", "Blue", glm::value_ptr(light.Colour), 0.0f, 1.0f);
+                m_ScreenNeedRefresh |= ImGui::OWC::SliderFloat3WithAlignedText("Colour", "Red", "Green", "Blue", glm::value_ptr(light.colour), 0.0f, 1.0f);
                 if (light.type == 1) // point light
                     m_ScreenNeedRefresh |= ImGui::DragFloat("Radius", &light.radius, 0.1f, 0.0f, 100.0f, "%.2f");
                 ImGui::PopID();
@@ -44,7 +44,7 @@ namespace OWC
 
         if (m_ScreenNeedRefresh)
         {
-            m_LightBuffer->UpdateBufferData(std::bit_cast<u8*>(m_LightData.data()));
+            m_LightBuffer->UpdateBufferData(std::bit_cast<u8*>(m_LightData.data()), m_LightData.size() * sizeof(GPULightData), m_LightBufferOffset);
         }
     }
 }

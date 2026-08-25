@@ -105,6 +105,8 @@ namespace OWC::Graphics
 
 	vk::raii::CommandBuffer VulkanCore::GetSingleTimeGraphicsCommandBuffer() const
 	{
+		std::unique_lock lock(m_SingleUseGraphicsCommandPoolMutex);
+
 		return std::move(m_Device.allocateCommandBuffers(
 			vk::CommandBufferAllocateInfo()
 			.setCommandPool(*m_GraphicsCommandPool)
@@ -115,6 +117,8 @@ namespace OWC::Graphics
 
 	vk::raii::CommandBuffer VulkanCore::GetSingleTimeComputeCommandBuffer() const
 	{
+		std::unique_lock lock(m_SingleUseComputeCommandPoolMutex);
+
 		return std::move(m_Device.allocateCommandBuffers(
 			vk::CommandBufferAllocateInfo()
 			.setCommandPool(*m_ComputeCommandPool)
@@ -125,9 +129,41 @@ namespace OWC::Graphics
 
 	vk::raii::CommandBuffer VulkanCore::GetSingleTimeTransferCommandBuffer() const
 	{
+		std::unique_lock lock(m_SingleUseTransferCommandPoolMutex);
+
 		return std::move(m_Device.allocateCommandBuffers(
 			vk::CommandBufferAllocateInfo()
 			.setCommandPool(*m_TransferCommandPool)
+			.setLevel(vk::CommandBufferLevel::ePrimary)
+			.setCommandBufferCount(1)
+		)[0]);
+	}
+
+	vk::raii::CommandBuffer VulkanCore::GetSingleTimeReusableGraphicsCommandBuffer() const
+	{
+		return std::move(m_Device.allocateCommandBuffers(
+			vk::CommandBufferAllocateInfo()
+			.setCommandPool(*m_DynamicGraphicsCommandPool)
+			.setLevel(vk::CommandBufferLevel::ePrimary)
+			.setCommandBufferCount(1)
+		)[0]);
+	}
+
+	vk::raii::CommandBuffer VulkanCore::GetSingleTimeReusableComputeCommandBuffer() const
+	{
+		return std::move(m_Device.allocateCommandBuffers(
+			vk::CommandBufferAllocateInfo()
+			.setCommandPool(*m_DynamicComputeCommandPool)
+			.setLevel(vk::CommandBufferLevel::ePrimary)
+			.setCommandBufferCount(1)
+		)[0]);
+	}
+
+	vk::raii::CommandBuffer VulkanCore::GetSingleTimeReusableTransferCommandBuffer() const
+	{
+		return std::move(m_Device.allocateCommandBuffers(
+			vk::CommandBufferAllocateInfo()
+			.setCommandPool(*m_DynamicTransferCommandPool)
 			.setLevel(vk::CommandBufferLevel::ePrimary)
 			.setCommandBufferCount(1)
 		)[0]);

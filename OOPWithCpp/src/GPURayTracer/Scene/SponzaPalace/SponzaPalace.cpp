@@ -7,6 +7,6 @@
 namespace OWC
 {
     SponzaPalace::SponzaPalace()
-        : m_SponzaPalaceLoader("./../../../../../GLTFs/Sponza/NewSponza_Main_glTF_003.gltf", "Sponza Palace")
+        : m_SponzaPalaceLoader("./../../../../../Models/Sponza/NewSponza_Main_glTF_003.gltf", "Sponza Palace")
     {}
 } // OWC

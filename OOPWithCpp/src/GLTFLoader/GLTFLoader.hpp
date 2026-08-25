@@ -30,7 +30,7 @@ namespace OWC
         [[nodiscard]] uSize GetDeviceMegaBufferPtr() const { return m_GPUBuffer->GetDeviceBufferPtr(); }
         [[nodiscard]] uSize GetDeviceGeometryBufferPtr() const { return m_GPUBuffer->GetDeviceBufferPtr() + m_GeometryBufferOffset; }
         [[nodiscard]] uSize GetDeviceMaterialBufferPtr() const { return m_GPUBuffer->GetDeviceBufferPtr() + m_MaterialBufferOffset; }
-        [[nodiscard]] uSize GetLightBufferPtr() const { return m_LightBuffer ? m_LightBuffer->GetDeviceBufferPtr() : 0; }
+        [[nodiscard]] uSize GetLightBufferPtr() const { return m_GPUBuffer->GetDeviceBufferPtr() + m_LightBufferOffset; }
         [[nodiscard]] u32 GetNumberOfLights() const { return m_NumberOfLights; }
 
         [[nodiscard]] const std::shared_ptr<Graphics::TextureArraySampler>& GetTextureArraySampler() const { return m_TextureArraySampler; }
@@ -42,22 +42,19 @@ namespace OWC
         [[nodiscard]] bool GetNeedScreenRefresh() const { return m_Layer->GetNeedScreenRefresh(); }
 
     private:
-        void IterateThroughNodes(u32 nodeIndex, Mat4 parentTransform, u32& customInstancesIndex, std::vector<GPULightData>& lightData, std::map<i32, std::unique_ptr<SceneMesh>>& meshes, std::vector<std::pair<Mat4, i32>>& meshIndexes);
+        void IterateThroughNodes(const tg3_model& model, u32 nodeIndex, const std::unordered_map<uSize, uSize>& gltfBufferPosToIndicesOffset, uSize verticesBufferOffset, Mat4 parentTransform, u32& customInstancesIndex, std::vector<GPUData>& gpuData, std::vector<Vec3p>& verticesPos, std::vector<VertexData>& verticesData, std::vector<GPULightData>& lightData, std::map<u32, std::unique_ptr<SceneMesh>>& meshes, std::vector<std::pair<Mat4, u32>>& meshIndexes);
+        static void FindNumberOfLightsInScene(const tg3_model& model, u32 nodeIndex, u32& numberOfLights);
 
     private:
-        tg3_model m_Model = {};
         std::shared_ptr<BaseTLAS> m_TLAS;
         std::shared_ptr<Graphics::GeneralBuffer> m_GPUBuffer;
-        std::shared_ptr<Graphics::GeneralBuffer> m_LightBuffer;
         std::shared_ptr<GLTFLayer> m_Layer;
         std::shared_ptr<Graphics::TextureArraySampler> m_TextureArraySampler;
         std::shared_ptr<Graphics::TextureArray> m_ColourTextureArray;
         std::shared_ptr<Graphics::TextureArray> m_NormalTextureArray;
         std::shared_ptr<Graphics::TextureArray> m_MetallicRoughnessTextureArray;
         std::shared_ptr<Graphics::TextureArray> m_EmissiveTextureArray;
-        std::vector<GPUGLTFData> m_GPUData;
-        uSize m_GeometryBufferSize = 0;
-        uSize m_MaterialBufferSize = 0;
+        uSize m_LightBufferOffset = 0;
         uSize m_GeometryBufferOffset = 0;
         uSize m_MaterialBufferOffset = 0;
         u32 m_NumberOfLights = 0;

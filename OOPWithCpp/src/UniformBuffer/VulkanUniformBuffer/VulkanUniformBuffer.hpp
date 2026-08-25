@@ -104,7 +104,7 @@ namespace OWC::Graphics
 	{
 		public:
 		VulkanGeneralBuffer() = delete;
-		explicit VulkanGeneralBuffer(uSize size);
+		explicit VulkanGeneralBuffer(uSize size, uSize alignment = 0);
 		~VulkanGeneralBuffer() override = default;
 		VulkanGeneralBuffer(VulkanGeneralBuffer&&) noexcept = delete;
 		VulkanGeneralBuffer& operator=(VulkanGeneralBuffer&&) noexcept = delete;

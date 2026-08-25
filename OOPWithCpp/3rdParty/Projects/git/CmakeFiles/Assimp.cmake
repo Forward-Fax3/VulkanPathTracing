@@ -31,6 +31,42 @@ else ()
     set(ASSIMP_BUILD_TYPE "${CMAKE_BUILD_TYPE}")
 endif ()
 
+# --- ThinLTO support for MinGW ---
+set(ASSIMP_LTO_COMPILE_FLAGS "")
+set(ASSIMP_LTO_LINK_FLAGS "")
+set(ASSIMP_LTO_AR "")
+set(ASSIMP_LTO_RANLIB "")
+
+if (MINGW AND LTO_ENABLED)
+    # 1. Compile flags: produce LLVM bitcode instead of native object files
+    set(ASSIMP_LTO_COMPILE_FLAGS "-flto=thin")
+
+    # 2. Link flags: use ThinLTO and lld for the final link (used for Assimp's own test executables)
+    set(ASSIMP_LTO_LINK_FLAGS "-flto=thin -fuse-ld=lld")
+
+    # 3. For ThinLTO to work with static archives, CMake needs to use llvm-ar and llvm-ranlib
+    #    instead of the GNU ones (which don't understand the thin index).
+    #    These will be passed into the inner build.
+    find_program(LLVM_AR NAMES llvm-ar)
+    find_program(LLVM_RANLIB NAMES llvm-ranlib)
+    if (LLVM_AR AND LLVM_RANLIB)
+        set(ASSIMP_LTO_AR ${LLVM_AR})
+        set(ASSIMP_LTO_RANLIB ${LLVM_RANLIB})
+    else()
+        message(WARNING "llvm-ar / llvm-ranlib not found. ThinLTO may fail for static libraries.")
+        # Optionally disable LTO if tools missing:
+        # set(LTO_ENABLED OFF)
+    endif()
+endif()
+
+set(EXTRA_CMAKE_ARGS)
+if (ASSIMP_LTO_AR)
+    list(APPEND EXTRA_CMAKE_ARGS "-DCMAKE_AR=${ASSIMP_LTO_AR}")
+endif()
+if (ASSIMP_LTO_RANLIB)
+    list(APPEND EXTRA_CMAKE_ARGS "-DCMAKE_RANLIB=${ASSIMP_LTO_RANLIB}")
+endif()
+
 # Options shared by every variant. Assimp's own CMakeLists.txt defaults ASSIMP_INSTALL and
 # ASSIMP_BUILD_TESTS to ON, which is meant for standalone/system builds, not for use as a
 # vendored submodule - and ASSIMP_WARNINGS_AS_ERRORS defaults ON, which can turn warnings
@@ -71,6 +107,7 @@ set(ASSIMP_COMMON_CMAKE_ARGS
         -DASSIMP_BUILD_NONFREE_C4D_IMPORTER=OFF
         -DASSIMP_HUNTER_ENABLED=OFF
         -DASSIMP_BUILD_USE_CCACHE=OFF
+        -DASSIMP_BUILD_SINGLETHREADED=OFF
 )
 if (CMAKE_TOOLCHAIN_FILE)
     list(APPEND ASSIMP_COMMON_CMAKE_ARGS -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
@@ -78,6 +115,10 @@ endif ()
 if (CMAKE_TOOLCHAIN_FILE)
     list(APPEND ASSIMP_COMMON_CMAKE_ARGS -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
 endif ()
+
+if (NOT CMAKE_BUILD_TYPE STREQUAL "clang_Debug")
+    list(APPEND ASSIMP_COMMON_CMAKE_ARGS -DNDEBUG=1)
+endif()
 
 set(ASSIMP_STATIC_LIB_NAME "${CMAKE_STATIC_LIBRARY_PREFIX}assimp${CMAKE_STATIC_LIBRARY_SUFFIX}")
 
@@ -92,6 +133,14 @@ function(add_assimp_variant TargetArch SimdFlags)
     set(EpPrefix ${CMAKE_CURRENT_BINARY_DIR}/assimp-${TargetArch})
     set(EpInstallDir ${EpPrefix}/install)
     set(EpLibPath ${EpInstallDir}/lib/${ASSIMP_STATIC_LIB_NAME})
+    # When ASSIMP_BUILD_ZLIB=ON, Assimp builds its own bundled zlib (CMake target
+    # "zlibstatic") and uses it internally, but libassimp.a is a plain static archive -
+    # it does NOT re-export zlib's symbols, so consumers must link zlibstatic themselves.
+    # On Linux this often goes unnoticed (something else on the link line already drags
+    # in libz), but MinGW/lld won't silently resolve inflate/crc32/uncompress/etc, which
+    # is exactly the "undefined symbol" failure we're fixing. Assimp's own install step
+    # installs this lib right alongside libassimp.a, so pick it up the same way.
+    set(EpZlibLibPath ${EpInstallDir}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}zlibstatic${CMAKE_STATIC_LIBRARY_SUFFIX})
 
     # SimdFlags list items may use CMake's "SHELL:" prefix (meaningful only inside
     # target_compile_options() - it prevents flag de-duplication and is unpacked into
@@ -105,16 +154,32 @@ function(add_assimp_variant TargetArch SimdFlags)
     endforeach ()
     string(REPLACE ";" " " SimdFlagsStr "${SimdFlagsClean}")
 
+    # NOTE: CMAKE_C_FLAGS / CMAKE_CXX_FLAGS below carry ONLY the SIMD flags - they don't
+    # clobber CMAKE_C_FLAGS_RELEASE / CMAKE_CXX_FLAGS_RELEASE (CMake appends flags from
+    # both when CMAKE_BUILD_TYPE=Release), so -O2/-DNDEBUG etc. from Release still apply
+    # on top of these. This comment exists to flag that dependency explicitly, since it's
+    # easy to assume passing CMAKE_C_FLAGS overrides everything and silently lose
+    # optimization if that assumption is ever acted on.
     ExternalProject_Add(${EpDriverName}
             SOURCE_DIR ${ASSIMP_SOURCE_DIR}
             PREFIX ${EpPrefix}
             INSTALL_DIR ${EpInstallDir}
+            CMAKE_GENERATOR ${CMAKE_GENERATOR}
             CMAKE_ARGS
             ${ASSIMP_COMMON_CMAKE_ARGS}
             -DCMAKE_INSTALL_PREFIX=${EpInstallDir}
-            "-DCMAKE_CXX_FLAGS=${SimdFlagsStr}"
-            "-DCMAKE_C_FLAGS=${SimdFlagsStr}"
-            BUILD_BYPRODUCTS ${EpLibPath}
+            # --- Modify these two lines to append LTO compile flags ---
+            "-DCMAKE_CXX_FLAGS=${SimdFlagsStr} ${ASSIMP_LTO_COMPILE_FLAGS}"
+            "-DCMAKE_C_FLAGS=${SimdFlagsStr} ${ASSIMP_LTO_COMPILE_FLAGS}"
+            # --- Add linker flags for executables/shared libs (inner build tests/tools) ---
+            "-DCMAKE_EXE_LINKER_FLAGS=${ASSIMP_LTO_LINK_FLAGS}"
+            "-DCMAKE_SHARED_LINKER_FLAGS=${ASSIMP_LTO_LINK_FLAGS}"
+            # --- Override the archiver and ranlib for ThinLTO support ---
+            ${EXTRA_CMAKE_ARGS}
+            # --- Prevent CMake's built-in IPO machinery from interfering ---
+            "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF"
+            "-DCMAKE_POLICY_DEFAULT_CMP0069=NEW"
+            BUILD_BYPRODUCTS ${EpLibPath} ${EpZlibLibPath}
     )
 
     # The include dir doesn't exist until the external build's install step runs, but
@@ -128,6 +193,20 @@ function(add_assimp_variant TargetArch SimdFlags)
             INTERFACE_INCLUDE_DIRECTORIES ${EpInstallDir}/include
     )
     add_dependencies(${ImportedName} ${EpDriverName})
+
+    # Import the bundled zlibstatic too and attach it as a link dependency of the Assimp
+    # imported target, so anything that links Assimp_<arch> transitively links zlib -
+    # matching what would happen automatically if Assimp were a real (non-imported)
+    # CMake target with proper target_link_libraries() propagation.
+    set(ZlibImportedName Assimp_${TargetArch}_zlib)
+    add_library(${ZlibImportedName} STATIC IMPORTED GLOBAL)
+    set_target_properties(${ZlibImportedName} PROPERTIES
+            IMPORTED_LOCATION ${EpZlibLibPath}
+    )
+    add_dependencies(${ZlibImportedName} ${EpDriverName})
+    set_target_properties(${ImportedName} PROPERTIES
+            INTERFACE_LINK_LIBRARIES ${ZlibImportedName}
+    )
 endfunction()
 
 add_assimp_variant(SSE4_2 "${SSE42_FLAGS}")

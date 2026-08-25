@@ -16,17 +16,18 @@ namespace OWC
     {
     public:
         GLTFLayer() = delete;
-        GLTFLayer(const std::shared_ptr<Graphics::GeneralBuffer>& lightBuffer, std::vector<GPULightData>&& lightData, const std::string_view& layerName);
+        GLTFLayer(const std::shared_ptr<Graphics::GeneralBuffer>& lightBuffer, uSize lightsOffset, std::vector<GPULightData>&& lightData, const std::string_view& layerName);
         ~GLTFLayer() override = default;
 
         void ImGuiRender() override;
 
-        [[nodiscard]] bool GetNeedScreenRefresh() const { return m_ScreenNeedRefresh; }
+        [[nodiscard]] OWC_FORCE_INLINE bool GetNeedScreenRefresh() const { return m_ScreenNeedRefresh; }
 
     private:
         std::shared_ptr<Graphics::GeneralBuffer> m_LightBuffer;
         std::vector<GPULightData> m_LightData;
-        std::string layerName;
+        std::string m_LayerName;
+        uSize m_LightBufferOffset;
         bool m_ShowLights = false;
         bool m_ScreenNeedRefresh = false;
     };

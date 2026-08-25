@@ -9,7 +9,7 @@
 
 namespace OWC
 {
-    VulkanTLAS::VulkanTLAS(const std::map<i32, std::unique_ptr<SceneMesh>>& meshes, const std::vector<std::pair<Mat4, i32>>& meshIndices)
+    VulkanTLAS::VulkanTLAS(const std::map<u32, std::unique_ptr<SceneMesh>>& meshes, const std::vector<std::pair<Mat4, u32>>& meshIndices)
     {
         CreateBLASes(meshes);
 
@@ -210,7 +210,7 @@ namespace OWC
         // 	Log<LogLevel::Critical>("Failed to wait for acceleration structure copy fence");
     }
 
-    void VulkanTLAS::CreateBLASes(const std::map<i32, std::unique_ptr<SceneMesh>>& meshes)
+    void VulkanTLAS::CreateBLASes(const std::map<u32, std::unique_ptr<SceneMesh>>& meshes)
     {
         using namespace OWC::Graphics;
 

@@ -22,6 +22,6 @@ namespace OWC
         BaseTLAS(BaseTLAS&&) noexcept = delete;
         BaseTLAS& operator=(BaseTLAS&&) noexcept = delete;
 
-        static std::shared_ptr<BaseTLAS> CreateTopLevelAccelerationStructure(const std::map<i32, std::unique_ptr<SceneMesh>>& meshes, const std::vector<std::pair<Mat4, i32>>& meshIndices);
+        static std::shared_ptr<BaseTLAS> CreateTopLevelAccelerationStructure(const std::map<u32, std::unique_ptr<SceneMesh>>& meshes, const std::vector<std::pair<Mat4, u32>>& meshIndices);
     };
 }

@@ -95,6 +95,10 @@ namespace OWC::Graphics
 		[[nodiscard]] vk::raii::CommandBuffer GetSingleTimeGraphicsCommandBuffer() const;
 		[[nodiscard]] vk::raii::CommandBuffer GetSingleTimeComputeCommandBuffer() const;
 		[[nodiscard]] vk::raii::CommandBuffer GetSingleTimeTransferCommandBuffer() const;
+		[[nodiscard]] vk::raii::CommandBuffer GetSingleTimeReusableGraphicsCommandBuffer() const;
+		[[nodiscard]] vk::raii::CommandBuffer GetSingleTimeReusableComputeCommandBuffer() const;
+		[[nodiscard]] vk::raii::CommandBuffer GetSingleTimeReusableTransferCommandBuffer() const;
+
 
 		[[nodiscard]] std::vector<vk::Semaphore> GetSemaphoresFromNames(std::span<std::string_view> semaphoreNames);
 		[[nodiscard]] vk::raii::Semaphore GetSingleSemaphore() const;
@@ -251,6 +255,10 @@ namespace OWC::Graphics
 		vk::Semaphore m_LastFrameWaitSemaphore = vk::Semaphore();
 
 		bool hasSERSupport = false;
+
+		mutable std::mutex m_SingleUseTransferCommandPoolMutex;
+		mutable std::mutex m_SingleUseGraphicsCommandPoolMutex;
+		mutable std::mutex m_SingleUseComputeCommandPoolMutex;
 
 		static std::unique_ptr<VulkanCore> s_Instance;
 	};

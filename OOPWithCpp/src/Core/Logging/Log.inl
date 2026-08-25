@@ -59,15 +59,22 @@ namespace OWC
 		}
 		else if constexpr (level == Error)
 		{
+			if constexpr (!IsDistributionMode())
+			{
 #if defined(_WIN32) || defined(_WIN64)
-			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 13);
+				SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 13);
 #endif
-			std::cout << "[Error]: " << std::format(str, std::forward<Args>(args)...) << std::flush;
+				std::cout << "[Error]: " << std::format(str, std::forward<Args>(args)...) << std::flush;
 
 #if defined(_WIN32) || defined(_WIN64)
-			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 8);
+				SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), 8);
 #endif
-			std::cout << '\n';
+				std::cout << '\n';
+			}
+#if defined(_WIN32) || defined(_WIN64)
+			else
+				MessageBoxA(nullptr, std::format(str, std::forward<Args>(args)...).c_str(), "Error", MB_OK | MB_ICONERROR);
+#endif
 		}
 		else if constexpr (level == Critical)
 		{

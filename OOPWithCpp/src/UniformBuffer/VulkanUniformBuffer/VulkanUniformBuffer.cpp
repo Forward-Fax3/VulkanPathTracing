@@ -620,7 +620,7 @@ namespace OWC::Graphics
 		VulkanCore::GetInstance().AddVulkanEndOfFrameCleanUpFunction([cmdTransBuf = std::move(cmdTransBuf), cmdGraphicsBuf = std::move(cmdGraphicsBuf), semaphore = std::move(semaphore), stagingBuffer = std::move(stagingBuffer)]() -> void {});
 	}
 
-	VulkanGeneralBuffer::VulkanGeneralBuffer(const uSize size)
+	VulkanGeneralBuffer::VulkanGeneralBuffer(const uSize size, const uSize alignment /*= 0*/)
 		: m_BufferSize(size)
 	{
 		const auto& vkCore = VulkanCore::GetInstance();
@@ -652,7 +652,8 @@ namespace OWC::Graphics
 			.setSharingMode(vk::SharingMode::eConcurrent)
 			.setQueueFamilyIndices(queueIndices);
 
-		constexpr vma::AllocationCreateInfo allocInfo = vma::AllocationCreateInfo()
+		const vma::AllocationCreateInfo allocInfo = vma::AllocationCreateInfo()
+			.setMinAlignment(alignment)
 			.setUsage(vma::MemoryUsage::eGpuOnly)
 			.setFlags(vma::AllocationCreateFlagBits::eCanAlias);
 

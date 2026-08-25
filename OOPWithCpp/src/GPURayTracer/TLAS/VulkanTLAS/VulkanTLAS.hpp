@@ -14,7 +14,7 @@ namespace OWC
     class VulkanTLAS : public BaseTLAS
     {
     public:
-        VulkanTLAS(const std::map<i32, std::unique_ptr<SceneMesh>>& meshes, const std::vector<std::pair<Mat4, i32>>& meshIndices);
+        VulkanTLAS(const std::map<u32, std::unique_ptr<SceneMesh>>& meshes, const std::vector<std::pair<Mat4, u32>>& meshIndices);
         ~VulkanTLAS() override = default;
 
         VulkanTLAS(const VulkanTLAS&) = delete;
@@ -25,7 +25,7 @@ namespace OWC
         [[nodiscard]] const vk::raii::AccelerationStructureKHR& GetTLAS() const { return m_TLAS; }
 
     private:
-        void CreateBLASes(const std::map<i32, std::unique_ptr<SceneMesh>>& meshes);
+        void CreateBLASes(const std::map<u32, std::unique_ptr<SceneMesh>>& meshes);
         void CreateTLAS(const std::vector<vk::AccelerationStructureInstanceKHR>& meshIndices);
 
         [[nodiscard]] static vk::TransformMatrixKHR ConvertMat4ToVulkanTransform(const Mat4& transform);

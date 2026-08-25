@@ -15,7 +15,8 @@ namespace OWC
     {
     public:
         VulkanSceneMesh() = delete;
-        explicit VulkanSceneMesh(const tg3_model& model, i32 meshIndex, u32 customInstancesIndex, const std::shared_ptr<Graphics::GeneralBuffer>& GPUBuffer, std::vector<GPUGLTFData>& GPUData);
+        explicit VulkanSceneMesh(const tg3_model& model, i32 meshIndex, u32 customInstancesIndex, const std::unordered_map<uSize, uSize>& gltfBufferPosToIndicesOffset, uSize verticesPosOffset, const std::shared_ptr<Graphics::GeneralBuffer>& GPUBuffer, std::vector<GPUData>& GPUData, std::vector<Vec3p>& verticesPos, std::vector<VertexData>& verticesData);
+        explicit VulkanSceneMesh(const aiScene& scene, const std::unordered_map<aiFace*, u64>& assimpFacePtrToGPUOffset, u32 meshIndex, uSize vertexPosOffset, u32 customInstancesIndex, const std::shared_ptr<Graphics::GeneralBuffer>& GPUBuffer, std::vector<GPUData>& GPUData, std::vector<Vec3p>& verticesPos, std::vector<VertexData>& verticesData);
         ~VulkanSceneMesh() override = default;
 
         VulkanSceneMesh(const VulkanSceneMesh&) = delete;

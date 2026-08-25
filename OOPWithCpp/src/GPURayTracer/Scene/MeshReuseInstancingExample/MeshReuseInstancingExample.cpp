@@ -7,7 +7,7 @@
 namespace OWC
 {
     MeshReuseInstancingExample::MeshReuseInstancingExample()
-        : m_MeshReuseInstancingLoader("./../../../../../GLTFs/Mesh Reuse Instacing Example/ABeautifulGame.glb", "Mesh Reuse Instancing Example")
+        : m_MeshReuseInstancingLoader("./../../../../../Models/Mesh Reuse Instacing Example/ABeautifulGame.glb", "Mesh Reuse Instancing Example")
     {
     }
 } // OWC
