@@ -476,6 +476,10 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
         roughness *= metallicRoughness.y;
     }
 
+    /*payload.radiance = float3(0.0, metallicness, roughness);
+    payload.depth = 0;
+    return;*/
+
     float3 emissive = mat.emissiveFactor;
     if (mat.emissiveTextureIndex != 0xFFFFFFFFUL)
         emissive *= emissiveTextures.SampleLevel(textureSampler, float3(hitData.UV[mat.emissiveTextureCoords], mat.emissiveTextureIndex), 0.0f).xyz;

@@ -1711,8 +1711,8 @@ namespace OWC::Graphics
 
 			for (u32 pixelIndex = 0; pixelIndex < sourceData.size(); pixelIndex++)
 			{
-				destPtr[pixelIndex * 2] = sourceData[pixelIndex][1];      // G -> R
-				destPtr[pixelIndex * 2 + 1] = sourceData[pixelIndex][2];  // B -> G
+				destPtr[pixelIndex * 2] = sourceData[pixelIndex][2];      // B -> R
+				destPtr[pixelIndex * 2 + 1] = sourceData[pixelIndex][1];  // G -> G
 			}
 
 			auto cmd = vkCore.GetSingleTimeTransferCommandBuffer();
