@@ -1,6 +1,6 @@
 ﻿#pragma once
 #include "Core.hpp"
-#include "UniformBuffer.hpp"
+#include "GPUBuffers.hpp"
 #include "VulkanCore.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
@@ -8,6 +8,59 @@
 
 namespace OWC::Graphics
 {
+	class VulkanVertexBuffer : public VertexBuffer
+	{
+	public:
+		VulkanVertexBuffer() = delete;
+		explicit VulkanVertexBuffer(uSize vertexSize);
+		explicit VulkanVertexBuffer(uSize size, uSize vertexSize);
+		~VulkanVertexBuffer() override = default;
+		VulkanVertexBuffer(VulkanVertexBuffer&) = delete;
+		VulkanVertexBuffer& operator=(VulkanVertexBuffer&) = delete;
+		VulkanVertexBuffer(VulkanVertexBuffer&&) noexcept = delete;
+		VulkanVertexBuffer& operator=(VulkanVertexBuffer&&) noexcept = delete;
+
+		[[nodiscard]] vk::Buffer GetBuffer() const { return m_VertexBuffer; }
+
+		void Resize(uSize size) override;
+
+		[[nodiscard]] uSize GetNumOfVertices() const override { return m_NumOfVertices; }
+		[[nodiscard]] uSize GetVertexSize() const override { return m_VertexSize; }
+
+	private: // methods
+		void ImplUpdate(std::span<const std::byte> data, uSize offset) override;
+
+	// private: // attributes
+		vma::raii::Buffer m_VertexBuffer = nullptr;
+		uSize m_NumOfVertices = 0;
+		uSize m_VertexSize = 0;
+	};
+
+	class VulkanIndexBuffer : public IndexBuffer
+	{
+	public:
+		VulkanIndexBuffer() = default;
+		explicit VulkanIndexBuffer(uSize size);
+		~VulkanIndexBuffer() override = default;
+		VulkanIndexBuffer(VulkanIndexBuffer&) = delete;
+		VulkanIndexBuffer& operator=(VulkanIndexBuffer&) = delete;
+		VulkanIndexBuffer(VulkanIndexBuffer&&) noexcept = delete;
+		VulkanIndexBuffer& operator=(VulkanIndexBuffer&&) noexcept = delete;
+
+		void Resize(uSize size) override;
+		[[nodiscard]] vk::Buffer GetBuffer() const { return m_IndexBuffer; }
+		[[nodiscard]] uSize GetBufferSize() const { return m_NumOfIndices; }
+
+		[[nodiscard]] uSize GetNumberOfIndices() const override { return m_NumOfIndices; }
+
+	private:
+		void ImplUpdate(std::span<const std::byte> data, uSize offset) override;
+
+	private:
+		vma::raii::Buffer m_IndexBuffer = nullptr;
+		uSize m_NumOfIndices = 0;
+	};
+
 	class VulkanUniformBuffer : public UniformBuffer
 	{
 	public:
@@ -31,19 +84,20 @@ namespace OWC::Graphics
 		std::vector<vma::raii::Buffer> m_UniformBuffers;
 	};
 
-	class VulkanTextureBuffer : public TextureBuffer
+	class VulkanStorageImage : public TextureImage
 	{
 	public:
-		VulkanTextureBuffer() = delete;
-		explicit VulkanTextureBuffer(const ImageLoader<f32, 4, glm::aligned_highp>& image);
-		explicit VulkanTextureBuffer(u32 width, u32 height);
-		~VulkanTextureBuffer() override = default;
-		VulkanTextureBuffer(VulkanTextureBuffer&) = delete;
-		VulkanTextureBuffer& operator=(const VulkanTextureBuffer&) = delete;
-		VulkanTextureBuffer(VulkanTextureBuffer&&) noexcept = delete;
-		VulkanTextureBuffer& operator=(VulkanTextureBuffer&&) noexcept = delete;
+		VulkanStorageImage() = delete;
+		explicit VulkanStorageImage(const ImageLoader<f32, 4, glm::aligned_highp>& image);
+		explicit VulkanStorageImage(u32 width, u32 height, Format format);
+		~VulkanStorageImage() override = default;
+		VulkanStorageImage(VulkanStorageImage&) = delete;
+		VulkanStorageImage& operator=(const VulkanStorageImage&) = delete;
+		VulkanStorageImage(VulkanStorageImage&&) noexcept = delete;
+		VulkanStorageImage& operator=(VulkanStorageImage&&) noexcept = delete;
 
 		void UpdateBufferData(const std::vector<Vec4>& data) override;
+		void UpdateBufferData(const std::span<const std::byte>& data) override;
 
 		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::Image& GetImage() const { return m_TextureImage; }
 		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::ImageView& GetImageView() const { return m_TextureImageView; }
@@ -67,6 +121,7 @@ namespace OWC::Graphics
 		vk::raii::Sampler m_TextureSampler = nullptr;
 		u32 m_Width = 0;
 		u32 m_Height = 0;
+		vk::Format m_Format = vk::Format::eUndefined;
 		vk::AccessFlags2 m_CurrentAccessFlags = vk::AccessFlags2();
 		vk::PipelineStageFlags2 m_CurrentPipelineStageFlags = vk::PipelineStageFlags2();
 		vk::ImageLayout m_CurrentLayout = vk::ImageLayout();

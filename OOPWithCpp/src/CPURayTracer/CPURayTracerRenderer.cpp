@@ -39,7 +39,6 @@ namespace OWC
 
 		UniformBufferObject ubo{
 			.divider = 1.0f / static_cast<f32>((m_ILD->numberOfSamples - 1 == 0) ? 1 : m_ILD->numberOfSamples - 1), // avoid division by zero
-			.invGammaValue = m_ILD->invGammaValue
 		};
 
 		m_UniformBuffer->UpdateBufferData(std::as_bytes(std::span<const UniformBufferObject>(&ubo, 1)));
@@ -134,6 +133,12 @@ namespace OWC
 			{
 				.descriptorCount = 1,
 				.binding = 1,
+				.descriptorType = DescriptorType::UniformBuffer,
+				.stageFlags = ShaderType::Fragment
+			},
+			{
+				.descriptorCount = 1,
+				.binding = 2,
 				.descriptorType = DescriptorType::CombinedImageSampler,
 				.stageFlags = ShaderType::Fragment
 			}
@@ -160,6 +165,7 @@ namespace OWC
 
 		m_Shader = BaseShader::CreateShader(shaderDatas);
 		m_Shader->BindUniform(0, m_UniformBuffer);
-		m_Shader->BindDynamicTexture(1, m_Image);
+		m_Shader->BindUniform(1, Renderer::GetDynamicRageUniformBuffer());
+		m_Shader->BindDynamicTexture(2, m_Image);
 	}
 }

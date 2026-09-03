@@ -1,25 +1,45 @@
-﻿#include "UniformBuffer.hpp"
-#include "VulkanUniformBuffer.hpp"
+﻿#include "GPUBuffers.hpp"
+#include "VulkanBuffers.hpp"
 
 
 namespace OWC::Graphics
 {
+	std::shared_ptr<VertexBuffer> VertexBuffer::CreateVertexBuffer(const uSize vertexSize)
+	{
+		return std::make_shared<VulkanVertexBuffer>(vertexSize);
+	}
+
+	std::shared_ptr<VertexBuffer> VertexBuffer::CreateVertexBuffer(uSize size, uSize vertexSize)
+	{
+		return std::make_shared<VulkanVertexBuffer>(size, vertexSize);
+	}
+
+	std::shared_ptr<IndexBuffer> IndexBuffer::CreateIndexBuffer()
+	{
+		return std::make_shared<VulkanIndexBuffer>();
+	}
+
+	std::shared_ptr<IndexBuffer> IndexBuffer::CreateIndexBuffer(uSize numOfIndices)
+	{
+		return std::make_shared<VulkanIndexBuffer>(numOfIndices);
+	}
+
 	std::shared_ptr<UniformBuffer> UniformBuffer::CreateUniformBuffer(uSize size)
 	{
 		// For now, only Vulkan is supported
 		return std::make_shared<VulkanUniformBuffer>(size);
 	}
 
-	std::shared_ptr<TextureBuffer> TextureBuffer::CreateTextureBuffer(const ImageLoader<f32, 4, glm::aligned_highp>& image)
+	std::shared_ptr<TextureImage> TextureImage::CreateStorageImage(const ImageLoader<f32, 4, glm::aligned_highp>& image)
 	{
 		// For now, only Vulkan is supported
-		return std::make_shared<VulkanTextureBuffer>(image);
+		return std::make_shared<VulkanStorageImage>(image);
 	}
 
-	std::shared_ptr<TextureBuffer> TextureBuffer::CreateTextureBuffer(u32 width, u32 height)
+	std::shared_ptr<TextureImage> TextureImage::CreateStorageImage(u32 width, u32 height, Format format)
 	{
 		// For now, only Vulkan is supported
-		return std::make_shared<VulkanTextureBuffer>(width, height);
+		return std::make_shared<VulkanStorageImage>(width, height, format);
 	}
 
 	std::shared_ptr<DynamicTextureBuffer> DynamicTextureBuffer::CreateDynamicTextureBuffer(u32 width, u32 height)

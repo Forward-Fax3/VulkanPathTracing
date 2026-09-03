@@ -3,7 +3,7 @@
 //
 
 #include "VulkanSceneMesh.hpp"
-#include "VulkanUniformBuffer.hpp"
+#include "VulkanBuffers.hpp"
 #include "Core.hpp"
 #include "Log.hpp"
 #include "VulkanCore.hpp"
@@ -59,7 +59,7 @@ namespace OWC
             auto& accessor = model.accessors[prim.indices];
             const AttributeData indexData = extractAttribute(accessor, model);
 
-            const u32 fallbackMaxVertex = positionData.count > 0 ? positionData.count - 1 : 0;
+            const u32 fallbackMaxVertex = positionData.count > 0 ? positionData.count : 0;
             const u32 maxIndex = computeMaxIndex(model, accessor, fallbackMaxVertex);
 
             const u32 positionStride = positionData.byteStride;
@@ -68,7 +68,7 @@ namespace OWC
                 vk::Format::eR32G32B32Sfloat,
                 vk::DeviceOrHostAddressConstKHR().setDeviceAddress(vulkanBuffer->GetBufferDeviceAddress() + verticesPosOffset + verticesData.size() * sizeof(Vec3p)),
                 sizeof(Vec3p),
-                positionData.count,
+                maxIndex,
                 accessor.component_type == TG3_COMPONENT_TYPE_UNSIGNED_SHORT ? vk::IndexType::eUint16 : vk::IndexType::eUint32,
                 vk::DeviceOrHostAddressConstKHR().setDeviceAddress(vulkanBuffer->GetBufferDeviceAddress() + gltfBufferPosToIndicesOffset.at(indexData.offset))
             );

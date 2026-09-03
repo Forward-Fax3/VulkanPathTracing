@@ -52,8 +52,8 @@ namespace OWC
 		bool m_CameraSettingsUpdated = true;
 
 		i32	m_CurrentSceneIndex = 0;
-		i32	m_CurrentGammaIndex = 3; // Default to Gamma 2.2
-		f32 m_CustomGammaValue = 2.2f;
+		//i32 m_CurrentGammaIndex = 3; // Default to Gamma 2.2
+		//f32 m_CustomGammaValue = 2.2f;
 		f32 m_LastFrameTime = 0.0f;
 
 		bool m_IsMultiThreaded = false;

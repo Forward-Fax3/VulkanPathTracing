@@ -7,7 +7,7 @@
 #include "Layer.hpp"
 #include "BaseShader.hpp"
 #include "Renderer.hpp"
-#include "UniformBuffer.hpp"
+#include "GPUBuffers.hpp"
 #include "InterLayerData.hpp"
 #include "BaseGPUScene.hpp"
 
@@ -38,7 +38,6 @@ namespace OWC
         struct UniformBufferObject
         {
             f32 divider = 0.0f;
-            f32 invGammaValue = 0.0f;
         };
 
         struct GeneralGPUData
@@ -55,9 +54,8 @@ namespace OWC
         std::unique_ptr<Graphics::BaseShader> m_DisplayShader = nullptr;
         std::shared_ptr<Graphics::RenderPassData> m_RayTracingRenderPass = nullptr;
         std::shared_ptr<Graphics::RenderPassData> m_DisplayRenderPass = nullptr;
-        std::shared_ptr<Graphics::RenderPassData> m_ImageReleaseRenderPass = nullptr;
         std::shared_ptr<Graphics::UniformBuffer> m_UniformBuffer = nullptr;
-        std::shared_ptr<Graphics::TextureBuffer> m_RenderTarget = nullptr;
+        std::shared_ptr<Graphics::TextureImage> m_RenderTarget = nullptr;
         std::shared_ptr<Graphics::UniformBuffer> m_RayTracingGPUDataBuffer = nullptr;
         uSize m_NumberOfAccumulatedSamples = 0;
 

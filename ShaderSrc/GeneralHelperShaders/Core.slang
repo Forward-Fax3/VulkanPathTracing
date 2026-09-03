@@ -22,3 +22,10 @@ void BuildOrthonormalBasis(float3 n, out float3 tangent, out float3 bitangent)
     tangent   = float3(1.0 + sign * n.x * n.x * a, sign * b, -sign * n.x);
     bitangent = float3(b, sign + n.y * n.y * a, -n.y);
 }
+
+float3 ApplySaturation(float3 color, float saturation)
+{
+    // Rec. 709 luma weights
+    float luma = dot(color, float3(0.2126, 0.7152, 0.0722));
+    return lerp(float3(luma, luma, luma), color, saturation);
+}

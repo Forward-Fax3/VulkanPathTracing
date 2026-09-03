@@ -1,9 +1,8 @@
 ﻿foreach (Target ImGui_SSE4_2 ImGui_AVX2 ImGui_AVX512)
     add_library(${Target} STATIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/Projects/git/CmakeFiles/imconfig.h
             ${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/Projects/git/ImGui/backends/imgui_impl_sdl3.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/Projects/git/ImGui/backends/imgui_impl_sdl3.h
-            ${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/Projects/git/ImGui/backends/imgui_impl_vulkan.cpp
-            ${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/Projects/git/ImGui/backends/imgui_impl_vulkan.h
             ${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/Projects/git/ImGui/imconfig.h
             ${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/Projects/git/ImGui/imgui.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/Projects/git/ImGui/imgui.h
@@ -40,10 +39,13 @@ endforeach()
 
 target_compile_options(ImGui_SSE4_2 PRIVATE
         ${SSE42_FLAGS}
+        "-DIMGUI_USER_CONFIG=\"${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/Projects/git/CmakeFiles/imconfig.h\""
 )
 target_compile_options(ImGui_AVX2 PRIVATE
         ${AVX2_FLAGS}
+        "-DIMGUI_USER_CONFIG=\"${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/Projects/git/CmakeFiles/imconfig.h\""
 )
 target_compile_options(ImGui_AVX512 PRIVATE
         ${AVX512_FLAGS}
+        "-DIMGUI_USER_CONFIG=\"${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/Projects/git/CmakeFiles/imconfig.h\""
 )

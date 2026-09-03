@@ -3,9 +3,9 @@
 
 #include "VulkanCore.hpp"
 #include "VulkanShader.hpp"
-#include "VulkanUniformBuffer.hpp"
+#include "VulkanBuffers.hpp"
 
-#include <backends/imgui_impl_vulkan.h>
+#include <imgui.h>
 
 
 namespace OWC::Graphics
@@ -66,12 +66,16 @@ namespace OWC::Graphics
 
 	void VulkanRenderPass::PushConstant(const BaseShader& shader, uSize size, const void* dataPtr)
 	{
-		const auto info = vk::PushConstantsInfo()
+		auto info = vk::PushConstantsInfo()
 			.setLayout(dynamic_cast<const VulkanBaseShader&>(shader).GetPipelineLayout())
-			.setStageFlags(vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eMissKHR)
 			.setOffset(0)
 			.setSize(size)
 			.setPValues(dataPtr);
+
+		if (testBitMask(GetRenderPassType(), RenderPassType::RayTracingBit))
+			info.setStageFlags(vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eMissKHR);
+		else
+			info.setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
 
 		if (testBitMask(GetRenderPassType(), RenderPassType::Dynamic))
 			m_CommandBuffers[VulkanCore::GetConstInstance().GetCurrentFrameIndex()].pushConstants2(info);
@@ -80,9 +84,9 @@ namespace OWC::Graphics
 				cmdBuf.pushConstants2(info);
 	}
 
-	void VulkanRenderPass::TransitionImage(const std::shared_ptr<TextureBuffer>& textureBuffer, const AccessMask dstAccessMask, StageMask dstStageMask, const ImageLayout newLayout)
+	void VulkanRenderPass::TransitionImage(const std::shared_ptr<TextureImage>& textureBuffer, const AccessMask dstAccessMask, StageMask dstStageMask, const ImageLayout newLayout)
 	{
-		const auto vulkanTextureBuffer = std::dynamic_pointer_cast<VulkanTextureBuffer>(textureBuffer);
+		const auto vulkanTextureBuffer = std::dynamic_pointer_cast<VulkanStorageImage>(textureBuffer);
 
 		const auto barrier = vk::ImageMemoryBarrier2()
 			.setSrcAccessMask(vulkanTextureBuffer->GetCurrentAccessFlags())
@@ -415,10 +419,124 @@ namespace OWC::Graphics
 			Log<LogLevel::Critical>("RestartRenderPass can not be call on static render pass. This is not allowed.");
 	}
 
-	void VulkanRenderPass::DrawImGui(ImDrawData* drawData)
+	void VulkanRenderPass::DrawImGui(const std::shared_ptr<VertexBuffer> vertexBuffer, const std::shared_ptr<IndexBuffer> indexBuffer, ImDrawData* drawData)
 	{
-		const vk::CommandBuffer& cmdBuf = m_CommandBuffers[VulkanCore::GetConstInstance().GetCurrentFrameIndex()];
-		ImGui_ImplVulkan_RenderDrawData(drawData, cmdBuf);
+		if (drawData->DisplaySize.x <= 0.0f || drawData->DisplaySize.y <= 0.0f)
+			return; // window minimized
+
+		if (drawData->TotalVtxCount == 0 || drawData->TotalIdxCount == 0)
+			return; // nothing to draw
+
+		const vk::CommandBuffer& cmd = m_CommandBuffers[VulkanCore::GetConstInstance().GetCurrentFrameIndex()];
+		const auto vulkanVertexBuffer = std::dynamic_pointer_cast<VulkanVertexBuffer>(vertexBuffer);
+		const auto vulkanIndexBuffer = std::dynamic_pointer_cast<VulkanIndexBuffer>(indexBuffer);
+		//ImGui_ImplVulkan_RenderDrawData(drawData, cmdBuf);
+
+    	// --- 1. Upload vertex/index buffers ---
+    	// ImGui rebuilds these every frame; you need a per-frame (or per-in-flight-frame)
+    	// dynamically resized vertex/index buffer, similar to what the stock backend does
+    	// with its ImGui_ImplVulkanH_FrameRenderBuffers.
+    	if (drawData->TotalVtxCount > 0)
+		{
+    		if (vulkanVertexBuffer->GetNumOfVertices() < drawData->TotalVtxCount)
+			{
+    			vulkanVertexBuffer->Resize(drawData->TotalVtxCount);
+			}
+    		if (vulkanIndexBuffer->GetNumberOfIndices() < drawData->TotalIdxCount)
+			{
+    			vulkanIndexBuffer->Resize(drawData->TotalIdxCount);
+			}
+
+    		uSize vtxOffset = 0;
+    		uSize idxOffset = 0;
+		    for (int n = 0; n < drawData->CmdListsCount; n++)
+		    {
+		        const ImDrawList* cmdList = drawData->CmdLists[n];
+		    	const std::span<const ImDrawVert> vtxData(cmdList->VtxBuffer.Data, cmdList->VtxBuffer.Size);
+		    	const std::span<const ImDrawIdx> idxData(cmdList->IdxBuffer.Data, cmdList->IdxBuffer.Size);
+		    	vulkanVertexBuffer->Update(std::as_bytes(vtxData), vtxOffset);
+		    	vulkanIndexBuffer->Update(std::as_bytes(idxData), idxOffset);
+		        vtxOffset += cmdList->VtxBuffer.Size * sizeof(ImDrawVert);
+		        idxOffset += cmdList->IdxBuffer.Size * sizeof(ImDrawIdx);
+		    }
+		}
+
+    	cmd.bindVertexBuffers(0, vulkanVertexBuffer->GetBuffer(), { 0 });
+    	cmd.bindIndexBuffer(vulkanIndexBuffer->GetBuffer(), 0, vk::IndexType::eUint32);
+
+    	// --- 3. Set viewport (full display, once) ---
+    	vk::Viewport viewport{};
+    	viewport.x = 0.0f;
+    	viewport.y = 0.0f;
+    	viewport.width = drawData->DisplaySize.x * drawData->FramebufferScale.x;
+    	viewport.height = drawData->DisplaySize.y * drawData->FramebufferScale.y;
+    	viewport.minDepth = 0.0f;
+    	viewport.maxDepth = 1.0f;
+    	cmd.setViewport(0, viewport);
+
+    	// --- 4. Push constants: ortho scale/translate (matches your Slang PushConstants) ---
+
+    	// --- 5. Walk command lists ---
+    	const ImVec2 clipOff = drawData->DisplayPos;
+    	const ImVec2 clipScale = drawData->FramebufferScale;
+
+    	int globalVtxOffset = 0;
+    	int globalIdxOffset = 0;
+
+    	for (int n = 0; n < drawData->CmdListsCount; n++)
+    	{
+    	    const ImDrawList* cmdList = drawData->CmdLists[n];
+
+    	    for (int i = 0; i < cmdList->CmdBuffer.Size; i++)
+    	    {
+    	        const ImDrawCmd& drawCmd = cmdList->CmdBuffer[i];
+
+    	        /*if (drawCmd.UserCallback != nullptr)
+    	        {
+    	            // Support AddCallback (e.g. ImDrawCallback_ResetRenderState, or your own)
+    	            if (drawCmd.UserCallback == ImDrawCallback_ResetRenderState)
+    	            {
+    	                // re-bind your default pipeline/state here
+    	                cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, m_ImGuiPipeline);
+    	            }
+    	            else
+    	            {
+    	                drawCmd.UserCallback(cmdList, &drawCmd);
+    	            }
+    	            continue;
+    	        }*/
+
+    	        // Clip rect -> scissor
+    	        const ImVec2 clipMin((drawCmd.ClipRect.x - clipOff.x) * clipScale.x,
+    	                        (drawCmd.ClipRect.y - clipOff.y) * clipScale.y);
+    	        const ImVec2 clipMax((drawCmd.ClipRect.z - clipOff.x) * clipScale.x,
+    	                        (drawCmd.ClipRect.w - clipOff.y) * clipScale.y);
+
+    	        if (clipMax.x <= clipMin.x || clipMax.y <= clipMin.y)
+    	            continue; // zero-area scissor, skip draw
+
+    	        vk::Rect2D scissor{};
+    	        scissor.offset.x = static_cast<int32_t>(clipMin.x);
+    	        scissor.offset.y = static_cast<int32_t>(clipMin.y);
+    	        scissor.extent.width  = static_cast<uint32_t>(clipMax.x - clipMin.x);
+    	        scissor.extent.height = static_cast<uint32_t>(clipMax.y - clipMin.y);
+    	        cmd.setScissor(0, scissor);
+
+    	        // Bind the texture this draw call wants
+    	        // TextureId is whatever you set via SetTexID / ImGui::Image() calls —
+    	        // treat it as your own descriptor-set handle / texture index
+    	        //BindTextureForDraw(cmd, drawCmd.TextureId); // your own function
+
+    	    	cmd.drawIndexed(
+    	            drawCmd.ElemCount, 1,
+    	            drawCmd.IdxOffset + globalIdxOffset,
+    	            drawCmd.VtxOffset + globalVtxOffset,
+    	            0);
+    	    }
+
+    	    globalIdxOffset += cmdList->IdxBuffer.Size;
+    	    globalVtxOffset += cmdList->VtxBuffer.Size;
+    	}
 	}
 
 	void VulkanRenderPass::AddToEndOfFrameCleanUp(std::move_only_function<void()>&& func)

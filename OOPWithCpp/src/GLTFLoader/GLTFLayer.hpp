@@ -7,7 +7,7 @@
 #include "Layer.hpp"
 
 #include "SceneMesh.hpp"
-#include "UniformBuffer.hpp"
+#include "GPUBuffers.hpp"
 
 
 namespace OWC

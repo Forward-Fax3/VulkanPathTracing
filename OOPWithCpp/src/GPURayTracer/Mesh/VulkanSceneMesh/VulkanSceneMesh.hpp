@@ -4,7 +4,7 @@
 
 #pragma once
 #include "SceneMesh.hpp"
-#include "VulkanUniformBuffer.hpp"
+#include "VulkanBuffers.hpp"
 
 #include <tiny_gltf_v3.h>
 

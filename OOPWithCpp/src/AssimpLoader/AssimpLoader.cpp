@@ -211,7 +211,7 @@ namespace OWC
 
             for (uSize i = 0; i < scene.mNumMaterials; i++)
             {
-                const aiMaterial* mat = scene.mMaterials[i];
+                //const aiMaterial* mat = scene.mMaterials[i];
 
                 //if (mat->GetTextureCount(aiTextureType_DIFFUSE) > 0)
                 //{

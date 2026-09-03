@@ -443,7 +443,7 @@ namespace OWC
                     Vec3p(parentTransform[3]), // position
                     2, // type (2 for directional)
                     glm::normalize(Vec3p(-parentTransform[2])), // direction
-                    light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 100.0f, // intensity
+                    light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 1000.0f, // intensity
                     colour, // colour
                     static_cast<f32>(light.range) // range
                 );

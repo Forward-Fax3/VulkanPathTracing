@@ -4,7 +4,7 @@
 
 #pragma once
 #include "BaseTLAS.hpp"
-#include "VulkanUniformBuffer.hpp"
+#include "VulkanBuffers.hpp"
 
 #include "vulkan/vulkan.hpp"
 

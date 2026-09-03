@@ -1,6 +1,6 @@
 ﻿#pragma once
 #include "VulkanCore.hpp"
-#include "VulkanUniformBuffer.hpp"
+#include "VulkanBuffers.hpp"
 
 #include <string>
 #include <vector>
@@ -32,7 +32,7 @@ namespace OWC::Graphics
 		VulkanBaseShader& operator=(VulkanBaseShader&&) noexcept = delete;
 
 		void BindUniform(u32 binding, const std::shared_ptr<UniformBuffer>& uniformBuffer) override;
-		void BindTexture(u32 binding, const std::shared_ptr<TextureBuffer>& textureBuffer) override;
+		void BindTexture(u32 binding, const std::shared_ptr<TextureImage>& textureBuffer, DescriptorType descriptorType) override;
 		void BindDynamicTexture(u32 binding, const std::shared_ptr<DynamicTextureBuffer>& dTextureBuffer) override;
 		void BindSampler2D(u32 binding, const std::shared_ptr<TextureArraySampler>& sampler) override;
 		void BindTextureArray(u32 binding, const std::shared_ptr<TextureArray>& textureArray) override;
@@ -54,6 +54,7 @@ namespace OWC::Graphics
 
 		[[nodiscard]] static VulkanShaderData ProcessShaderData(const ShaderData& shaderData, std::map<std::vector<u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap);
 		[[nodiscard]] static vk::ShaderStageFlagBits ConvertToVulkanShaderStage(ShaderType type);
+		[[nodiscard]] static vk::VertexInputRate ConvertToVulkanVertexInputRate(VertexInputRate rate);
 		[[nodiscard]] static vk::DescriptorType ConvertToVulkanDescriptorType(DescriptorType type);
 
 	private:
@@ -67,7 +68,7 @@ namespace OWC::Graphics
 	class VulkanShader : public VulkanBaseShader
 	{
 	public:
-		explicit VulkanShader(const std::span<ShaderData>& shaderDatas);
+		explicit VulkanShader(const std::span<ShaderData>& shaderDatas, const std::span<VertexBindings>& vertexBindings, const std::span<VertexAttributes>& vertexAttributes);
 		VulkanShader(VulkanShader&) = delete;
 		VulkanShader& operator=(VulkanShader&) = delete;
 		VulkanShader(VulkanShader&&) noexcept = delete;
@@ -76,7 +77,7 @@ namespace OWC::Graphics
 		void BindTLAS(u32 binding, const std::shared_ptr<BaseTLAS>& tlasBuffer) override { Log<LogLevel::Error>("VulkanShader::BindTLAS: TLAS can only be bound to ray tracing shaders! For this shader type please use VulkanRayTracingShader."); }
 
 	private:
-		void CreateVulkanPipeline(const std::span<VulkanShaderData>& vulkanShaderDatas, const std::map<std::vector<u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap);
+		void CreateVulkanPipeline(const std::span<VulkanShaderData>& vulkanShaderDatas, const std::map<std::vector<u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap, const std::span<VertexBindings>& vertexBindings, const std::span<VertexAttributes>& vertexAttributes);
 	};
 
 	class VulkanRayTracingShader : public VulkanBaseShader

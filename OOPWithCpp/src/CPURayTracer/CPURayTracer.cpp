@@ -61,15 +61,6 @@ namespace OWC
 
 	void CPURayTracer::ImGuiRender()
 	{
-		constexpr std::array<const char*, 7> gammaCorrectionNames = {
-			"None",
-			"Gamma 1.9",
-			"Gamma 2.0",
-			"Gamma 2.2",
-			"Gamma 2.4",
-			"BT. 1886",
-			"Custom"
-		};
 		constexpr std::array<const char*, 6> sceneNames = {
 			"Basic",
 //			"RandTest",
@@ -103,16 +94,16 @@ namespace OWC
 				pixel = Vec4(0.0f);
 		}
 
-		if (ImGui::Combo("Gamma Correction", &m_CurrentGammaIndex, gammaCorrectionNames.data(), static_cast<i32>(gammaCorrectionNames.size())))
-		{
-			const auto gamma = static_cast<GammaCorrection>(m_CurrentGammaIndex);
-			if (gamma != GammaCorrection::custom)
-				UpdateGammaValue(gamma);
-			else
-				m_InterLayerData->invGammaValue = 1.0f / m_CustomGammaValue;
-		}
-		if (static_cast<GammaCorrection>(m_CurrentGammaIndex) == GammaCorrection::custom && ImGui::InputFloat("Custom Gamma Value", &m_CustomGammaValue))
-			m_InterLayerData->invGammaValue = 1.0f / m_CustomGammaValue;
+		//if (ImGui::Combo("Gamma Correction", &m_CurrentGammaIndex, gammaCorrectionNames.data(), static_cast<i32>(gammaCorrectionNames.size())))
+		//{
+		//	const auto gamma = static_cast<GammaCorrection>(m_CurrentGammaIndex);
+		//	if (gamma != GammaCorrection::custom)
+		//		UpdateGammaValue(gamma);
+		//	else
+		//		m_InterLayerData->invGammaValue = 1.0f / m_CustomGammaValue;
+		//}
+		//if (static_cast<GammaCorrection>(m_CurrentGammaIndex) == GammaCorrection::custom && ImGui::InputFloat("Custom Gamma Value", &m_CustomGammaValue))
+		//	m_InterLayerData->invGammaValue = 1.0f / m_CustomGammaValue;
 
 		if (ImGui::Button("Reset Camera Position"))
 		{
@@ -214,27 +205,27 @@ namespace OWC
 
 	void CPURayTracer::UpdateGammaValue(GammaCorrection gammaCorrection) const
 	{
-		switch (gammaCorrection)
-		{
-		case GammaCorrection::None:
-			m_InterLayerData->invGammaValue = 1.0f;
-			break;
-		case GammaCorrection::Gamma19:
-			m_InterLayerData->invGammaValue = 1.0f / 1.9f;
-			break;
-		case GammaCorrection::Gamma20:
-			m_InterLayerData->invGammaValue = 1.0f / 2.0f;
-			break;
-		case GammaCorrection::Gamma22:
-			m_InterLayerData->invGammaValue = 1.0f / 2.2f;
-			break;
-		case GammaCorrection::Gamma24:
-		case GammaCorrection::GammaBT1886:
-			m_InterLayerData->invGammaValue = 1.0f / 2.4f;
-			break;
-		case GammaCorrection::custom:
-		default:
-			std::unreachable();
-		}
+		//switch (gammaCorrection)
+		//{
+		//case GammaCorrection::None:
+		//	m_InterLayerData->invGammaValue = 1.0f;
+		//	break;
+		//case GammaCorrection::Gamma19:
+		//	m_InterLayerData->invGammaValue = 1.0f / 1.9f;
+		//	break;
+		//case GammaCorrection::Gamma20:
+		//	m_InterLayerData->invGammaValue = 1.0f / 2.0f;
+		//	break;
+		//case GammaCorrection::Gamma22:
+		//	m_InterLayerData->invGammaValue = 1.0f / 2.2f;
+		//	break;
+		//case GammaCorrection::Gamma24:
+		//case GammaCorrection::GammaBT1886:
+		//	m_InterLayerData->invGammaValue = 1.0f / 2.4f;
+		//	break;
+		//case GammaCorrection::custom:
+		//default:
+		//	std::unreachable();
+		//}
 	}
 }

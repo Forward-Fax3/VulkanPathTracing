@@ -8,11 +8,65 @@
 #include <map>
 #include <glm/vec4.hpp>
 
+#include "RendererCore.hpp"
+
 #include "tiny_gltf_v3.h"
 
 
 namespace OWC::Graphics
 {
+	class VertexBuffer
+	{
+	public:
+		VertexBuffer() = default;
+		virtual ~VertexBuffer() = default;
+		VertexBuffer(VertexBuffer&) = delete;
+		VertexBuffer& operator=(const VertexBuffer&) = delete;
+		VertexBuffer(VertexBuffer&&) noexcept = default;
+		VertexBuffer& operator=(VertexBuffer&&) noexcept = default;
+
+		virtual void Resize(uSize size) = 0;
+		OWC_FORCE_INLINE void Update(const std::span<const std::byte> data, const uSize offset = 0)
+		{
+			ImplUpdate(data, offset);
+		}
+
+		[[nodiscard]] virtual uSize GetNumOfVertices() const = 0;
+		[[nodiscard]] virtual uSize GetVertexSize() const = 0;
+
+		// must use resize before use
+		static std::shared_ptr<VertexBuffer> CreateVertexBuffer(uSize vertexSize);
+		static std::shared_ptr<VertexBuffer> CreateVertexBuffer(uSize size, uSize vertexSize);
+
+	private:
+		virtual void ImplUpdate(std::span<const std::byte> data, uSize offset) = 0;
+	};
+
+	class IndexBuffer
+	{
+	public:
+		IndexBuffer() = default;
+		virtual ~IndexBuffer() = default;
+		IndexBuffer(IndexBuffer&) = delete;
+		IndexBuffer& operator=(const IndexBuffer&) = delete;
+		IndexBuffer(IndexBuffer&&) noexcept = default;
+		IndexBuffer& operator=(IndexBuffer&&) noexcept = default;
+
+		virtual void Resize(uSize size) = 0;
+		OWC_FORCE_INLINE void Update(const std::span<const std::byte> data, const uSize offset = 0)
+		{
+			ImplUpdate(data, offset);
+		}
+
+		[[nodiscard]] virtual uSize GetNumberOfIndices() const = 0;
+
+		static std::shared_ptr<IndexBuffer> CreateIndexBuffer();
+		static std::shared_ptr<IndexBuffer> CreateIndexBuffer(uSize numOfIndices);
+
+	private:
+		virtual void ImplUpdate(std::span<const std::byte> data, uSize offset) = 0;
+	};
+
 	class UniformBuffer
 	{
 	public:
@@ -23,7 +77,7 @@ namespace OWC::Graphics
 		UniformBuffer(UniformBuffer&&) noexcept = default;
 		UniformBuffer& operator=(UniformBuffer&&) noexcept = default;
 
-		void UpdateBufferData(const std::span<const std::byte> data, const uSize size = 0, const uSize offset = 0)
+		OWC_FORCE_INLINE void UpdateBufferData(const std::span<const std::byte> data, const uSize size = 0, const uSize offset = 0)
 		{
 			UpdateBufferDataImpl(data, size, offset);
 		}
@@ -34,25 +88,26 @@ namespace OWC::Graphics
 		virtual void UpdateBufferDataImpl(std::span<const std::byte> data, uSize size, uSize offset) = 0;
 	};
 
-	class TextureBuffer
+	class TextureImage
 	{
 	public:
-		TextureBuffer() = default;
-		virtual ~TextureBuffer() = default;
-		TextureBuffer(TextureBuffer&) = default;
-		TextureBuffer& operator=(const TextureBuffer&) = default;
-		TextureBuffer(TextureBuffer&&) noexcept = default;
-		TextureBuffer& operator=(TextureBuffer&&) noexcept = default;
+		TextureImage() = default;
+		virtual ~TextureImage() = default;
+		TextureImage(TextureImage&) = default;
+		TextureImage& operator=(const TextureImage&) = default;
+		TextureImage(TextureImage&&) noexcept = default;
+		TextureImage& operator=(TextureImage&&) noexcept = default;
 
 		virtual void UpdateBufferData(const std::vector<Vec4>& data) = 0;
+		virtual void UpdateBufferData(const std::span<const std::byte>& data) = 0;
 
-		static std::shared_ptr<TextureBuffer> CreateTextureBuffer(const ImageLoader<f32, 4, glm::aligned_highp>& image);
-		static std::shared_ptr<TextureBuffer> CreateTextureBuffer(u32 width, u32 height);
+		static std::shared_ptr<TextureImage> CreateStorageImage(const ImageLoader<f32, 4, glm::aligned_highp>& image);
+		static std::shared_ptr<TextureImage> CreateStorageImage(u32 width, u32 height, Format format);
 	};
 
 	class DynamicTextureBuffer // a texture that can be updated every frame
 	{
-		public:
+	public:
 		DynamicTextureBuffer() = default;
 		virtual ~DynamicTextureBuffer() = default;
 		DynamicTextureBuffer(DynamicTextureBuffer&) = default;
@@ -81,7 +136,7 @@ namespace OWC::Graphics
 			UpdateBufferDataImpl(data, count, offset);
 		}
 
-		virtual uSize GetDeviceBufferPtr() const = 0;
+		[[nodiscard]] virtual uSize GetDeviceBufferPtr() const = 0;
 
 		static std::shared_ptr<GeneralBuffer> CreateGeneralBuffer(uSize size, uSize alignment = 0);
 	};

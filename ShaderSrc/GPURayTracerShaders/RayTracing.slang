@@ -456,7 +456,7 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
         float3 normalTexXYZ = float3(normalTexXY, normalZ);*/
 
         float3 normalTexXYZ = normalTextures.SampleLevel(textureSampler, float3(hitData.UV[mat.normalTextureCoords], mat.normalTextureIndex), 0.0f).xyz * 2.0f - 1.0f;
-        float3x3 TBN = float3x3(tangent, normalize(bitangent), normalize(hitNormal));
+        float3x3 TBN = float3x3(tangent, normalize(bitangent), hitNormal);
         hitNormal = normalize(mul(normalTexXYZ, TBN));
     }
 

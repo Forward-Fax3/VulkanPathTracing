@@ -29,6 +29,7 @@ namespace OWC
 		std::shared_ptr<GPURayTracerRenderer> m_GPURayTracerLayer;
 
 		std::shared_ptr<Graphics::RenderPassData> m_EmptyRenderPass; // used to use the semaphore that needs waiting on
+		Graphics::DynamicRangeInfo m_DynamicRangeInfo;
 
 		u8 m_ActiveLayer = 0; // 1 for CPU Ray Tracer, 2 for GPU Ray Tracer
 		bool m_IsMinimized = false;

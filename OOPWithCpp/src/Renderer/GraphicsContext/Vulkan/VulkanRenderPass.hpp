@@ -21,7 +21,7 @@ namespace OWC::Graphics
 
 	private:
 		void PushConstant(const BaseShader& shader, uSize size, const void* dataPtr) override;
-		void TransitionImage(const std::shared_ptr<TextureBuffer>& textureBuffer, AccessMask dstAccessMask, StageMask dstStageMask, ImageLayout newLayout) override;
+		void TransitionImage(const std::shared_ptr<TextureImage>& textureBuffer, AccessMask dstAccessMask, StageMask dstStageMask, ImageLayout newLayout) override;
 		void BeginDynamicPass() override;
 		void BeginRasterPass() override;
 		void AddPipeline(const BaseShader& shader) override;
@@ -36,7 +36,7 @@ namespace OWC::Graphics
 
 		void RestartRenderPass() override;
 
-		void DrawImGui(ImDrawData* drawData) override;
+		void DrawImGui(std::shared_ptr<VertexBuffer>, std::shared_ptr<IndexBuffer>, ImDrawData* drawData) override;
 
 		static vk::AccessFlags2 GetVulkanAccessMask(AccessMask accessMask);
 		static vk::PipelineStageFlags2 GetVulkanPipelineStageMask(StageMask stageMask);

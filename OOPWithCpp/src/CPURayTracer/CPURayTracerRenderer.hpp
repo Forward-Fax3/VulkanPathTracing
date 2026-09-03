@@ -2,7 +2,7 @@
 #include "Layer.hpp"
 #include "BaseShader.hpp"
 #include "Renderer.hpp"
-#include "UniformBuffer.hpp"
+#include "GPUBuffers.hpp"
 #include "InterLayerData.hpp"
 
 #include <memory>
@@ -16,7 +16,6 @@ namespace OWC
 		struct UniformBufferObject
 		{
 			f32 divider = 0.0f;
-			f32 invGammaValue = 0.0f;
 		};
 
 	public:

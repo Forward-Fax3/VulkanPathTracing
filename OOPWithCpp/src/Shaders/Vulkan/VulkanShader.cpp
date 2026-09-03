@@ -1,7 +1,8 @@
 ﻿#include "Application.hpp"
 #include "VulkanCore.hpp"
 #include "VulkanShader.hpp"
-#include "VulkanUniformBuffer.hpp"
+#include "VulkanBuffers.hpp"
+#include "VulkanRendererCore.hpp"
 #include "Log.hpp"
 
 #include "VulkanTLAS.hpp"
@@ -45,9 +46,15 @@ namespace OWC::Graphics
 		device.updateDescriptorSets(writeDescriptorSets, {});
 	}
 
-	void VulkanBaseShader::BindTexture(u32 binding, const std::shared_ptr<TextureBuffer>& textureBuffer)
+	void VulkanBaseShader::BindTexture(u32 binding, const std::shared_ptr<TextureImage>& textureBuffer, const DescriptorType descriptorType)
 	{
-		const auto vulkanTextureBuffer = std::dynamic_pointer_cast<VulkanTextureBuffer>(textureBuffer);
+		if (descriptorType != DescriptorType::StorageImage && descriptorType != DescriptorType::SampledImage && descriptorType != DescriptorType::CombinedImageSampler)
+		{
+			Log<LogLevel::Error>("VulkanShader::BindTexture: Invalid descriptor type for texture binding. Expected StorageImage or SampledImage.");
+			return;
+		}
+
+		const auto vulkanTextureBuffer = std::dynamic_pointer_cast<VulkanStorageImage>(textureBuffer);
 		if (!vulkanTextureBuffer)
 		{
 			Log<LogLevel::Error>("VulkanShader::BindTexture: Invalid VulkanTextureBuffer pointer.");
@@ -58,7 +65,7 @@ namespace OWC::Graphics
 		const auto& device = vkCore.GetDevice();
 
 		const auto descriptorImageInfo = vk::DescriptorImageInfo()
-			.setImageLayout(vk::ImageLayout::eGeneral)
+			.setImageLayout(descriptorType == DescriptorType::StorageImage ? vk::ImageLayout::eGeneral : vk::ImageLayout::eShaderReadOnlyOptimal)
 			.setImageView(vulkanTextureBuffer->GetImageView())
 			.setSampler(vulkanTextureBuffer->GetSampler());
 
@@ -72,7 +79,7 @@ namespace OWC::Graphics
 				binding,
 				0,
 				1,
-				vk::DescriptorType::eStorageImage,
+				ConvertToVulkanDescriptorType(descriptorType),
 				&descriptorImageInfo
 			);
 		}
@@ -252,6 +259,20 @@ namespace OWC::Graphics
 		return static_cast<vk::ShaderStageFlagBits>(static_cast<u32>(stage)); // don't ask
 	}
 
+	vk::VertexInputRate VulkanBaseShader::ConvertToVulkanVertexInputRate(const VertexInputRate rate)
+	{
+		switch (rate)
+		{
+		case VertexInputRate::Vertex:
+			return vk::VertexInputRate::eVertex;
+		case VertexInputRate::Instance:
+			return vk::VertexInputRate::eInstance;
+		default:
+			Log<LogLevel::Error>("VulkanShader::ConvertToVulkanVertexInputRate: Unknown vertex input rate provided: {}!", std::to_underlying(rate));
+			return static_cast<vk::VertexInputRate>(0); // to silence compiler warning
+		}
+	}
+
 	vk::DescriptorType VulkanBaseShader::ConvertToVulkanDescriptorType(const DescriptorType type)
 	{
 		switch (type)
@@ -277,7 +298,7 @@ namespace OWC::Graphics
 	}
 
 
-	VulkanShader::VulkanShader(const std::span<ShaderData>& shaderDatas)
+	VulkanShader::VulkanShader(const std::span<ShaderData>& shaderDatas, const std::span<VertexBindings>& vertexBindings, const std::span<VertexAttributes>& vertexAttributes)
 	{
 		Log<LogLevel::Trace>("VulkanShader::VulkanShader: Creating Vulkan shader with {} shader stages.", shaderDatas.size());
 
@@ -302,10 +323,10 @@ namespace OWC::Graphics
 			vulkanShaderDatas.push_back(ProcessShaderData(shaderData, srcToShaderModuleMap));
 		}
 
-		CreateVulkanPipeline(vulkanShaderDatas, srcToShaderModuleMap);
+		CreateVulkanPipeline(vulkanShaderDatas, srcToShaderModuleMap, vertexBindings, vertexAttributes);
 	}
 
-	void VulkanShader::CreateVulkanPipeline(const std::span<VulkanShaderData>& vulkanShaderDatas, const std::map<std::vector<u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap)
+	void VulkanShader::CreateVulkanPipeline(const std::span<VulkanShaderData>& vulkanShaderDatas, const std::map<std::vector<u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap, const std::span<VertexBindings>& vertexBindings, const std::span<VertexAttributes>& vertexAttributes)
 	{
 		const auto& app = Application::GetConstInstance();
 
@@ -336,7 +357,29 @@ namespace OWC::Graphics
 		const auto dynamicStateCreateInfo = vk::PipelineDynamicStateCreateInfo()
 			.setDynamicStates(dynamicStates);
 
-		constexpr vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
+		std::vector<vk::VertexInputBindingDescription> bindingDescriptions;
+		bindingDescriptions.reserve(vertexBindings.size());
+		for (const auto& [stride, binding, inputRate] : vertexBindings)
+			bindingDescriptions.emplace_back(
+				binding,
+				stride,
+				ConvertToVulkanVertexInputRate(inputRate)
+			);
+
+		std::vector<vk::VertexInputAttributeDescription> attributeDescriptions;
+		attributeDescriptions.reserve(vertexAttributes.size());
+		for (const auto& [format, location, binding, offset] : vertexAttributes)
+			attributeDescriptions.emplace_back(
+				location,
+				binding,
+				ConvertFormatToVulkanFormat(format),
+				offset
+			);
+
+		const auto vertexInputInfo = vk::PipelineVertexInputStateCreateInfo()
+			.setVertexBindingDescriptions(bindingDescriptions)
+			.setVertexAttributeDescriptions(attributeDescriptions);
+
 		constexpr auto inputAssembly = vk::PipelineInputAssemblyStateCreateInfo()
 			.setTopology(vk::PrimitiveTopology::eTriangleList)
 			.setPrimitiveRestartEnable(vk::False);
@@ -362,7 +405,8 @@ namespace OWC::Graphics
 
 		constexpr auto rasterizer = vk::PipelineRasterizationStateCreateInfo()
 			.setPolygonMode(vk::PolygonMode::eFill)
-			.setLineWidth(1.0f);
+			.setLineWidth(1.0f)
+			.setCullMode(vk::CullModeFlagBits::eNone);
 
 		constexpr auto multisampling = vk::PipelineMultisampleStateCreateInfo()
 			.setSampleShadingEnable(vk::False)
@@ -375,7 +419,9 @@ namespace OWC::Graphics
 			.setSrcColorBlendFactor(vk::BlendFactor::eSrcAlpha)
 			.setDstColorBlendFactor(vk::BlendFactor::eOneMinusSrcAlpha)
 			.setColorBlendOp(vk::BlendOp::eAdd)
-			.setSrcAlphaBlendFactor(vk::BlendFactor::eOne);
+			.setSrcAlphaBlendFactor(vk::BlendFactor::eOne)
+			.setDstAlphaBlendFactor(vk::BlendFactor::eOneMinusSrcAlpha)
+			.setAlphaBlendOp(vk::BlendOp::eAdd);
 
 		const auto colorBlending = vk::PipelineColorBlendStateCreateInfo()
 			.setLogicOpEnable(vk::False)
@@ -400,8 +446,14 @@ namespace OWC::Graphics
 
 		SetDescriptorSetLayout(device.createDescriptorSetLayout(layoutInfo));
 
+		constexpr auto pushConstantRange = vk::PushConstantRange()
+			.setOffset(0)
+			.setSize(128) // TODO: make this configurable
+			.setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
+
 		const auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo()
-			.setSetLayouts(*GetDescriptorSetLayout());
+			.setSetLayouts(*GetDescriptorSetLayout())
+			.setPushConstantRanges(pushConstantRange);
 
 		SetPipelineLayout(device.createPipelineLayout(pipelineLayoutInfo));
 

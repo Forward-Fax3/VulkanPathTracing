@@ -4,7 +4,7 @@
 
 #include "VulkanTLAS.hpp"
 #include "VulkanSceneMesh.hpp"
-#include "VulkanUniformBuffer.hpp"
+#include "VulkanBuffers.hpp"
 
 
 namespace OWC

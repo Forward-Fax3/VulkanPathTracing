@@ -1,5 +1,5 @@
 ﻿#pragma once
-#include "UniformBuffer.hpp"
+#include "GPUBuffers.hpp"
 #include "BaseTLAS.hpp"
 
 #include <string>
@@ -39,6 +39,27 @@ namespace OWC::Graphics
 	{
 		return static_cast<ShaderType>(std::to_underlying(lhs) & std::to_underlying(rhs));
 	}
+
+	enum class VertexInputRate : u8
+	{
+		Vertex = 0,
+		Instance = 1
+	};
+
+	struct VertexBindings
+	{
+		u64 stride;
+		u32 binding;
+		VertexInputRate inputRate;
+	};
+
+	struct VertexAttributes
+	{
+		Format format;
+		u32 location;
+		u32 binding;
+		u32 offset;
+	};
 
 	enum class DescriptorType : u8
 	{
@@ -118,14 +139,14 @@ namespace OWC::Graphics
 		BaseShader& operator=(BaseShader&&) noexcept = default;
 
 		virtual void BindUniform(u32 binding, const std::shared_ptr<UniformBuffer>& uniformBuffer) = 0;
-		virtual void BindTexture(u32 binding, const std::shared_ptr<TextureBuffer>& textureBuffer) = 0;
+		virtual void BindTexture(u32 binding, const std::shared_ptr<TextureImage>& textureBuffer, DescriptorType descriptorType) = 0;
 		virtual void BindDynamicTexture(u32 binding, const std::shared_ptr<DynamicTextureBuffer>& dTextureBuffer) = 0;
 		virtual void BindSampler2D(u32 binding, const std::shared_ptr<TextureArraySampler>& sampler) = 0;
 		virtual void BindTextureArray(u32 binding, const std::shared_ptr<TextureArray>& textureArray) = 0;
 
 		virtual void BindTLAS(u32 binding, const std::shared_ptr<BaseTLAS>& tlasBuffer) = 0;
 
-		static std::unique_ptr<BaseShader> CreateShader(const std::span<ShaderData>& shaderDatas);
+		static std::unique_ptr<BaseShader> CreateShader(const std::span<ShaderData>& shaderDatas, const std::span<VertexBindings>& vertexBindings = {}, const std::span<VertexAttributes>& vertexAttributes = {});
 		static std::unique_ptr<BaseShader> CreateRTShader(const std::span<ShaderData>& shaderDatas);
 	};
 }

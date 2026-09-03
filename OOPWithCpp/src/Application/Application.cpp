@@ -62,7 +62,7 @@ namespace OWC
 
 			m_LayerStack->OnUpdate();
 
-			OWC::ImGuiLayer::Begin();
+			ImGuiLayer::Begin();
 			m_LayerStack->ImGuiRender();
 			imGui->End();
 

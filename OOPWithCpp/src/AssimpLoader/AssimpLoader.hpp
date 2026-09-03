@@ -8,7 +8,7 @@
 
 #include "SceneMesh.hpp"
 #include "BaseTLAS.hpp"
-#include "UniformBuffer.hpp"
+#include "GPUBuffers.hpp"
 
 #include "assimp/scene.h"
 

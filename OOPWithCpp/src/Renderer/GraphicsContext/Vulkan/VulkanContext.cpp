@@ -13,6 +13,7 @@
 #include "Application.hpp"
 #include "VulkanContext.hpp"
 #include "VulkanCore.hpp"
+#include "VulkanRenderPass.hpp"
 #include "Log.hpp"
 
 
@@ -381,7 +382,7 @@ namespace OWC::Graphics
 			endOfFrameFuncs.clear();
 
 			auto indices = static_cast<u32>(vkCore.GetCurrentFrameIndex());
-			const auto result = VulkanCore::GetConstInstance().GetPresentQueue().presentKHR(
+			auto result = VulkanCore::GetConstInstance().GetPresentQueue().presentKHR(
 				vk::PresentInfoKHR()
 				.setSwapchains(*vkCore.GetSwapchain())
 				.setSwapchainCount(1)
@@ -447,17 +448,6 @@ namespace OWC::Graphics
 
 		vkCore.SetCurrentFrameIndex(result.value);
 
-//		uSize retryCount = 0;
-//
-//		while (result == vk::Result::eSuboptimalKHR || result == vk::Result::eErrorOutOfDateKHR)
-//		{
-//			if (retryCount++ >= 3)
-//				Log<LogLevel::Critical>("VulkanContext::SwapPresentImage: Failed to acquire next image after 3 retries.");
-//
-//			RecreateSwapchain();
-//			result = vkCore.IncrementCurrentFrameIndex();
-//		}
-
 		std::array<std::string_view, 1> imageReadyName = { "ImageReady" };
 		if (!Application::GetConstInstance().IsFirstFrame())
 			imageAcquired.push_back(vkCore.GetLastFrameFinishedSemaphore());
@@ -498,9 +488,9 @@ namespace OWC::Graphics
 			const auto extensionsTemp = SDL_Vulkan_GetInstanceExtensions(&numberOfSDLExtensions);
 
 			if constexpr (!IsDistributionMode()) // +3 for debug utils and get physical device properties 2 and surface extensions
-				extensions.reserve(static_cast<uSize>(numberOfSDLExtensions) + 3);
+				extensions.reserve(static_cast<uSize>(numberOfSDLExtensions) + 4);
 			else // +2 for get physical device properties 2 and surface extensions
-				extensions.reserve(static_cast<uSize>(numberOfSDLExtensions) + 2);
+				extensions.reserve(static_cast<uSize>(numberOfSDLExtensions) + 3);
 
 			for (uSize i = 0; i < numberOfSDLExtensions; i++)
 				extensions.emplace_back(extensionsTemp[i]);
@@ -530,6 +520,9 @@ namespace OWC::Graphics
 
 		if (const auto [extensionsAvailable, missingExtension] = IsExtensionAvailable(instanceExtensionProperties, extensions); !extensionsAvailable)
 			Log<LogLevel::Critical>("Vulkan instance is missing required extension: {}", missingExtension);
+
+		if (IsExtensionAvailable(instanceExtensionProperties, vk::EXTSwapchainColorSpaceExtensionName))
+			extensions.emplace_back(vk::EXTSwapchainColorSpaceExtensionName);
 
 		constexpr auto appInfo = vk::ApplicationInfo()
 			.setPApplicationName("OOPWithCpp Application")
@@ -942,8 +935,25 @@ namespace OWC::Graphics
 		if (surfaceFormats.empty())
 			Log<LogLevel::Critical>("Failed to find any surface formats for the swapchain");
 
-		VulkanCore::GetInstance().SetSwapchainImageFormat((surfaceFormats[0].format == vk::Format::eUndefined) ? vk::Format::eR8G8B8A8Unorm : surfaceFormats[0].format);
-		const vk::ColorSpaceKHR colourSpace = surfaceFormats[0].colorSpace;
+		vk::Format imageFormat = surfaceFormats[0].format == vk::Format::eUndefined ? vk::Format::eR8G8B8A8Unorm : surfaceFormats[0].format;
+		vk::ColorSpaceKHR colourSpace = surfaceFormats[0].colorSpace;
+
+		for (const auto& surfaceFormat : surfaceFormats)
+			Log<LogLevel::Debug>("Vulkan Swapchain Surface Format supported: {}, colour space: {}", vk::to_string(surfaceFormat.format), vk::to_string(surfaceFormat.colorSpace));
+
+		Renderer::SetHDR(false);
+		for (const auto& surfaceFormat : surfaceFormats)
+		{
+			if (surfaceFormat.format == vk::Format::eA2B10G10R10UnormPack32 && surfaceFormat.colorSpace == vk::ColorSpaceKHR::eHdr10St2084EXT)
+			{
+				imageFormat = surfaceFormat.format;
+				colourSpace = surfaceFormat.colorSpace;
+				Renderer::SetHDR(true);
+				break;
+			}
+		}
+
+		VulkanCore::GetInstance().SetSwapchainImageFormat(imageFormat);
 
 		Log<LogLevel::Debug>("Vulkan Swapchain Surface Format selected:");
 		Log<LogLevel::Debug>(" Format: {}", vk::to_string(vkCore.GetSwapchainImageFormat()));
@@ -1024,6 +1034,9 @@ namespace OWC::Graphics
 
 		Log<LogLevel::Debug>("Vulkan Swapchain created with {} images", vkCore.GetSwapchainImages().size());
 
+		for (const auto& image : vkCore.GetSwapchainImages())
+			Log<LogLevel::Debug>(" Swapchain Image Handle: {}", static_cast<void*>(image));
+
 		std::vector<vk::raii::ImageView>& swapchainImageViews = VulkanCore::GetInstance().GetSwapchainImageViews();
 
 		for (const auto& image : vkCore.GetSwapchainImages())
@@ -1047,7 +1060,7 @@ namespace OWC::Graphics
 				);
 			swapchainImageViews.emplace_back(vkCore.GetDevice(), imageViewCreateInfo);
 
-			Log<LogLevel::Debug>(" Created image view for swapchain image with handle {}", static_cast<void*>(imageViewCreateInfo.image));
+			Log<LogLevel::Debug>(" Created image view for swapchain with handle {}", static_cast<void*>(*swapchainImageViews.back()));
 		}
 
 		Log<LogLevel::NewLine>();
@@ -1261,7 +1274,7 @@ namespace OWC::Graphics
 	
 	void VulkanContext::ImGuiInit()
 	{
-		const auto& vkCore = VulkanCore::GetConstInstance();
+		/*const auto& vkCore = VulkanCore::GetConstInstance();
 
 		std::array poolSizes = {
 			vk::DescriptorPoolSize()
@@ -1304,16 +1317,16 @@ namespace OWC::Graphics
 
 		initInfo.PipelineInfoMain.PipelineRenderingCreateInfo = pipelineInfo;
 
-		ImGui_ImplVulkan_Init(&initInfo);
+		ImGui_ImplVulkan_Init(&initInfo);*/
 	}
 
 	void VulkanContext::ImGuiShutdown()
 	{
-		ImGui_ImplVulkan_Shutdown();
+		//ImGui_ImplVulkan_Shutdown();
 	}
 
 	void VulkanContext::ImGuiNewFrame()
 	{
-		ImGui_ImplVulkan_NewFrame();
+		//ImGui_ImplVulkan_NewFrame();
 	}
 }

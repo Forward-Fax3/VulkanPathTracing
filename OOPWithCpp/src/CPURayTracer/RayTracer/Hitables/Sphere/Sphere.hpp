@@ -5,7 +5,7 @@
 
 #include <memory>
 
-#if defined(_WIN32) || defined(_WIN64)
+#if ((defined(_WIN32) || defined(_WIN64)) && defined(_MSC_VER))
 #pragma warning(push)
 #pragma warning(disable: 4324) // structure was padded due to alignment specifier
 #endif
@@ -40,6 +40,6 @@ namespace OWC
 	};
 }
 
-#if defined(_WIN32) || defined(_WIN64)
+#if ((defined(_WIN32) || defined(_WIN64)) && defined(_MSC_VER))
 #pragma warning(pop)
 #endif

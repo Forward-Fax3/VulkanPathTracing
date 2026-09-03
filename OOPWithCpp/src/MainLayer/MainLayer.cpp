@@ -13,10 +13,23 @@
 
 namespace OWC
 {
+	static u32 framesNeedingUpdatesForRangeInfo = 0;
+
 	MainLayer::MainLayer()
+		: m_DynamicRangeInfo({
+			.exposure = 1.0f,
+			.saturation = 1.0f,
+			.HDROn = Graphics::Renderer::GetHDR(),
+			.toneMappingSelector = 1, // Force ACES as AGX is broken
+			.paperWhiteNits = 203.0f,
+			.maxNits = 1000.0f,
+			.maxUINits = 203.0f,
+			.invGamma = 1.0f / 2.2f
+		})
 	{
 		m_EmptyRenderPass = Graphics::Renderer::GetStaticRenderPass();
 		Graphics::Renderer::EndPass(m_EmptyRenderPass);
+		framesNeedingUpdatesForRangeInfo = Graphics::Renderer::GetNumberOfFramesInFlight(m_EmptyRenderPass);
 	}
 
 	void MainLayer::OnUpdate()
@@ -84,7 +97,34 @@ namespace OWC
 				}
 			}
 		}
+		bool rangeInfoChanged = ImGui::DragFloat("Exposure", &m_DynamicRangeInfo.exposure, m_DynamicRangeInfo.exposure / 100.0f, 0.0f, 10.0f);
+		rangeInfoChanged |= ImGui::SliderFloat("Saturation", &m_DynamicRangeInfo.saturation, 0.0f, 2.0f);
+		if (m_DynamicRangeInfo.HDROn)
+		{
+			//ImGui::Checkbox(m_ToneMappingSelector ? "Current: ACES" : "Current: AGX", std::bit_cast<bool*>(&m_ToneMappingSelector));
+			rangeInfoChanged |= ImGui::SliderFloat("Paper White (nits)", &m_DynamicRangeInfo.paperWhiteNits, 1.0f, 1000.0f);
+			rangeInfoChanged |= ImGui::SliderFloat("Peak Brightness (nits)", &m_DynamicRangeInfo.maxNits, 1.0f, 10000.0f);
+			rangeInfoChanged |= ImGui::SliderFloat("UI Brightness (nits)", &m_DynamicRangeInfo.maxUINits, 1.0f, 500.0f);
+		}
+		else
+		{
+			f32 gamma = 1.0f / m_DynamicRangeInfo.invGamma;
+			rangeInfoChanged |= ImGui::DragFloat("Gamma", &gamma, 0.01f, 0.1f, 5.0f);
+			m_DynamicRangeInfo.invGamma = 1.0f / gamma;
+		}
 		ImGui::End();
+		if (m_DynamicRangeInfo.HDROn != Graphics::Renderer::GetHDR())
+		{
+			m_DynamicRangeInfo.HDROn = Graphics::Renderer::GetHDR();
+			rangeInfoChanged = true;
+		}
+		if (rangeInfoChanged)
+			framesNeedingUpdatesForRangeInfo = Graphics::Renderer::GetNumberOfFramesInFlight(m_EmptyRenderPass);
+		if (framesNeedingUpdatesForRangeInfo > 0)
+		{
+			framesNeedingUpdatesForRangeInfo--;
+			Graphics::Renderer::GetDynamicRageUniformBuffer()->UpdateBufferData(std::as_bytes(std::span(&m_DynamicRangeInfo, 1)));
+		}
 	}
 
 	void MainLayer::OnEvent(BaseEvent& event)

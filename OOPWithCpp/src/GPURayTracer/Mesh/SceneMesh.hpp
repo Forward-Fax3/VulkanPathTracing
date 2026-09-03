@@ -4,7 +4,7 @@
 
 #pragma once
 #include "Core.hpp"
-#include "UniformBuffer.hpp"
+#include "GPUBuffers.hpp"
 
 #include <tiny_gltf_v3.h>
 #include <assimp/scene.h>

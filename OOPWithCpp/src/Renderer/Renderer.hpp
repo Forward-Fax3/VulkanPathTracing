@@ -4,7 +4,7 @@
 #include "GraphicsContext.hpp"
 #endif
 #include "BaseShader.hpp"
-#include "UniformBuffer.hpp"
+#include "GPUBuffers.hpp"
 
 #include <imgui.h>
 #include <span>
@@ -13,6 +13,25 @@
 namespace OWC::Graphics
 {
 	class GraphicsContext;
+
+	struct DynamicRangeInfo {
+		f32 exposure = 1.0f;
+		f32 saturation = 1.0f;
+		u32 HDROn = 0;
+		u32 toneMappingSelector = 0;
+		f32 paperWhiteNits = 0.0f;
+		f32 maxNits = 0.0f;
+		f32 maxUINits = 0.0f;
+		f32 invGamma = 1.0f / 2.2f;
+	};
+
+	class RenderPassData;
+
+	struct ImGuiShaderData
+	{
+		std::shared_ptr<RenderPassData> renderPassData = nullptr;
+		std::shared_ptr<BaseShader> shader = nullptr;
+	};
 
 	enum class RendererAPI : u8
 	{
@@ -112,7 +131,7 @@ namespace OWC::Graphics
 
 	private:
 		void virtual PushConstant(const BaseShader& shader, uSize size, const void* dataPtr) = 0;
-		void virtual TransitionImage(const std::shared_ptr<TextureBuffer>& textureBuffer, AccessMask dstAccessMask, StageMask dstStageMask, ImageLayout newLayout) = 0;
+		void virtual TransitionImage(const std::shared_ptr<TextureImage>& textureBuffer, AccessMask dstAccessMask, StageMask dstStageMask, ImageLayout newLayout) = 0;
 		void virtual BeginDynamicPass() = 0;
 		void virtual BeginRasterPass() = 0;
 		void virtual AddPipeline(const BaseShader& shader) = 0;
@@ -127,7 +146,7 @@ namespace OWC::Graphics
 
 		void virtual RestartRenderPass() = 0;
 
-		void virtual DrawImGui(ImDrawData* drawData) = 0;
+		void virtual DrawImGui(std::shared_ptr<VertexBuffer>, std::shared_ptr<IndexBuffer>, ImDrawData* drawData) = 0;
 
 		[[nodiscard]] uSize virtual GetNumberOfFramesInFlight() const = 0;
 
@@ -156,7 +175,7 @@ namespace OWC::Graphics
 		static void BeginRasterPass(const std::shared_ptr<RenderPassData>& data);
 
 		static void PushConstant(const std::shared_ptr<RenderPassData>& data, const BaseShader& shader, uSize size, const void* dataPtr);
-		static void TransitionImage(const std::shared_ptr<RenderPassData>& data, const std::shared_ptr<TextureBuffer>& textureBuffer, AccessMask dstAccessMask, StageMask dstStageMask, ImageLayout newLayout);
+		static void TransitionImage(const std::shared_ptr<RenderPassData>& data, const std::shared_ptr<TextureImage>& textureBuffer, AccessMask dstAccessMask, StageMask dstStageMask, ImageLayout newLayout);
 		static void PipelineBind(const std::shared_ptr<RenderPassData>& data, const BaseShader& shader);
 		static void BindUniform(const std::shared_ptr<RenderPassData>& data, const BaseShader& shader);
 		static void BindTexture(const std::shared_ptr<RenderPassData>& data, const BaseShader& shader, u32 binding, u32 textureID);
@@ -169,19 +188,27 @@ namespace OWC::Graphics
 
 		static void RestartRenderPass(const std::shared_ptr<RenderPassData>& data);
 
-		static void DrawImGui(const std::shared_ptr<RenderPassData>& data, ImDrawData* drawData);
+		static void DrawImGui(const std::shared_ptr<RenderPassData>& data, const std::shared_ptr<VertexBuffer>& vertexBuffer, const std::shared_ptr<IndexBuffer>& indexBuffer, ImDrawData* drawData);
+		static void SetImGuiShader(const ImDrawList* parentList, const ImDrawCmd* cmd);
 
 		static void WaitTillIdle();
 		static void AddToEndOfFrameCleanUp(std::move_only_function<void()>&& func);
 
 		[[nodiscard]] static uSize GetNumberOfFramesInFlight(const std::shared_ptr<RenderPassData>& data);
 
+		[[nodiscard]] static OWC_FORCE_INLINE const std::shared_ptr<UniformBuffer>& GetDynamicRageUniformBuffer() { return s_DynamicRangeUniformBuffer; }
+
 		[[nodiscard]] static bool HasShaderExecutionSupport();
 
-		static inline RendererAPI GetAPI() { return s_API; }
+		static RendererAPI GetAPI() { return s_API; }
+
+		static OWC_FORCE_INLINE void SetHDR(const bool hasHDR) { s_HasHDR = hasHDR; }
+		[[nodiscard]] static OWC_FORCE_INLINE bool GetHDR() { return s_HasHDR; }
 
 	private:
 		static std::shared_ptr<GraphicsContext> s_GC;
 		static RendererAPI s_API;
+		static std::shared_ptr<UniformBuffer> s_DynamicRangeUniformBuffer;
+		static bool s_HasHDR;
 	};
 }

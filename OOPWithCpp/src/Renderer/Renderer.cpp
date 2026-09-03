@@ -11,13 +11,19 @@ namespace OWC::Graphics
 
 	RendererAPI Renderer::s_API = RendererAPI::Vulkan;
 
+	std::shared_ptr<UniformBuffer> Renderer::s_DynamicRangeUniformBuffer = nullptr;
+
+	bool Renderer::s_HasHDR = false;
+
 	void Renderer::Init()
 	{
 		s_GC = Application::GetInstance().GetWindow().GetGraphicsContextPtr().lock();
+		s_DynamicRangeUniformBuffer = UniformBuffer::CreateUniformBuffer(sizeof(DynamicRangeInfo));
 	}
 
 	void Renderer::Shutdown()
 	{
+		s_DynamicRangeUniformBuffer.reset();
 		s_GC.reset();
 	}
 
@@ -81,8 +87,7 @@ namespace OWC::Graphics
 		data->PushConstant(shader, size, dataPtr);
 	}
 
-	void Renderer::TransitionImage(const std::shared_ptr<RenderPassData>& data,
-		const std::shared_ptr<TextureBuffer>& textureBuffer, AccessMask dstAccessMask, StageMask dstStageMask, ImageLayout newLayout)
+	void Renderer::TransitionImage(const std::shared_ptr<RenderPassData>& data, const std::shared_ptr<TextureImage>& textureBuffer, AccessMask dstAccessMask, StageMask dstStageMask, ImageLayout newLayout)
 	{
 		data->TransitionImage(textureBuffer, dstAccessMask, dstStageMask, newLayout);
 	}
@@ -134,9 +139,15 @@ namespace OWC::Graphics
 		data->RestartRenderPass();
 	}
 
-	void Renderer::DrawImGui(const std::shared_ptr<RenderPassData>& data, ImDrawData* drawData)
+	void Renderer::DrawImGui(const std::shared_ptr<RenderPassData>& data, const std::shared_ptr<VertexBuffer>& vertexBuffer, const std::shared_ptr<IndexBuffer>& indexBuffer, ImDrawData* drawData)
 	{
-		data->DrawImGui(drawData);
+		data->DrawImGui(vertexBuffer, indexBuffer, drawData);
+	}
+
+	void Renderer::SetImGuiShader(const ImDrawList* parentList, const ImDrawCmd* cmd)
+	{
+		auto& [renderPassData, shader] = *std::bit_cast<ImGuiShaderData*>(cmd->UserCallbackData);
+		renderPassData->AddPipeline(*shader);
 	}
 
 	void Renderer::WaitTillIdle()

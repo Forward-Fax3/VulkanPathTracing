@@ -1,3 +1,7 @@
+#include "../GeneralHelperShaders/Core.slang"
+#include "../GeneralHelperShaders/HDR.slang"
+
+
 struct VertexData
 {
 	static float2[] data = {
@@ -13,14 +17,18 @@ struct VertexData
     };
 };
 
-[[vk::binding(0, 0)]]
-cbuffer image
+struct ImageInfo
 {
     float invNumberOfSamples;
-    float invGamma;
 };
 
+[[vk::binding(0, 0)]]
+ConstantBuffer<ImageInfo> imageInfo;
+
 [[vk::binding(1, 0)]]
+ConstantBuffer<DynamicRangeData> rangeData;
+
+[[vk::binding(2, 0)]]
 Sampler2D<float4> texture;
 
 struct VertexStageOutput
@@ -43,7 +51,17 @@ VertexStageOutput vertexMain(uint VetexIndex : SV_VertexID)
 [shader("fragment")]
 float4 fragmentMain(float2 uv : UV) : SV_Target
 {
-    float4 output;
-    output = pow(texture.Sample(uv) * invNumberOfSamples, invGamma);
-    return output;
+    //float4 output;
+    //output = pow(texture.Sample(uv) * imageInfo.invNumberOfSamples, invGamma);
+    //return output;
+
+    if (rangeData.hasHDR == 1)
+    {
+        float4 HDRInput = texture.Sample(uv) * imageInfo.invNumberOfSamples * rangeData.exposure;
+        float3 pqOutput = ApplySaturation(TonemapToHDR10(HDRInput.xyz, rangeData), rangeData.saturation);
+        return float4(pqOutput, 1.0f);
+    }
+
+    float3 output = ApplySaturation(pow(texture.Sample(uv).xyz * imageInfo.invNumberOfSamples * rangeData.exposure, rangeData.invGamma), rangeData.saturation);
+    return float4(output, 1.0f);
 }

@@ -14,7 +14,6 @@ namespace OWC
 		uSize numberOfSamples = 0;
 		Vec2u imageScreenSize{ 0, 0 };
 		std::bitset<2> ImageUpdates; // bit 0: update image, bit 1: image resize
-		f32 invGammaValue = 1.0f / 2.2f;
 
 		template<typename T>
 		OWC_FORCE_INLINE T GetNumberOfPixels() const requires (std::is_integral_v<T> || std::is_floating_point_v<T>)

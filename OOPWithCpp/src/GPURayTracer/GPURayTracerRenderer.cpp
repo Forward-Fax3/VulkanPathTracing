@@ -56,7 +56,7 @@ namespace OWC
 			const auto& app = Application::GetConstInstance();
 			const float deltaTime = app.GetDeltaTime();
 			const Vec3 movePos = m_KeyPressedOnVec3 * m_MoveSpeed * deltaTime;
-			m_CameraNeedsRefreshing = Graphics::Renderer::GetNumberOfFramesInFlight(m_RayTracingRenderPass) - 1;
+			m_CameraNeedsRefreshing = Renderer::GetNumberOfFramesInFlight(m_RayTracingRenderPass) - 1;
 			CalculateCamera(movePos);
 		}
 		else if (m_CameraNeedsRefreshing != 0)
@@ -64,7 +64,7 @@ namespace OWC
 			m_CameraNeedsRefreshing--;
 			CalculateCamera();
 		}
-		else // CalculateCamera already creates a new random but camera may not be moved so do it on its own
+		else // CalculateCamera already creates a new random but camera may not be moved so a new random is sent to the GPU here
 		{
 			m_StratifiedPosition = (m_StratifiedPosition + m_NumberOfSamples) % (m_StratifiedGridSize * m_StratifiedGridSize);
 			std::array newRandAndStratifiedPos{ Rand::LinearFastRandValue(0u, std::numeric_limits<u32>::max()), m_StratifiedPosition };
@@ -83,20 +83,16 @@ namespace OWC
 
 		m_NumberOfAccumulatedSamples = m_AccumulationOn ? m_NumberOfAccumulatedSamples + m_NumberOfSamples : m_NumberOfSamples;
 
-		UniformBufferObject ubo{
+		UniformBufferObject ubo {
 			.divider = 1.0f / static_cast<f32>(m_NumberOfAccumulatedSamples),
-			.invGammaValue = 1.0f / 2.2f
 		};
 
 		m_UniformBuffer->UpdateBufferData(std::as_bytes(std::span<const UniformBufferObject>(&ubo, 1)));
 
-		std::array<std::string_view, 1> releaseWaitSemaphoreNames = { "ImageReady" };
-		std::array<std::string_view, 1> releaseSignalSemaphoreNames = { "ImageRelease" };
-		std::array<std::string_view, 1> rayTracerWaitSemaphoreNames = { "ImageRelease" };
+		std::array<std::string_view, 1> rayTracerWaitSemaphoreNames = { "ImageReady" };
 		std::array<std::string_view, 1> rayTracerSignalSemaphoreNames = { "RayTracerDone" };
 		std::array<std::string_view, 1> displayWaitSemaphoreNames = { "RayTracerDone" };
 
-		Renderer::SubmitRenderPass(m_ImageReleaseRenderPass, releaseWaitSemaphoreNames, releaseSignalSemaphoreNames);
 		Renderer::SubmitRenderPass(m_RayTracingRenderPass, rayTracerWaitSemaphoreNames, rayTracerSignalSemaphoreNames);
 		Renderer::SubmitRenderPass(m_DisplayRenderPass, displayWaitSemaphoreNames);
 	}
@@ -195,8 +191,8 @@ namespace OWC
 				Graphics::Renderer::AddToEndOfFrameCleanUp([this]()
 				{
 					this->SetUpRenderImage();
-					this->m_RayTracingShader->BindTexture(0, m_RenderTarget);
-					this->m_DisplayShader->BindTexture(1, m_RenderTarget);
+					this->m_RayTracingShader->BindTexture(0, m_RenderTarget, Graphics::DescriptorType::StorageImage);
+					this->m_DisplayShader->BindTexture(1, m_RenderTarget, Graphics::DescriptorType::CombinedImageSampler);
 					this->SetupRenderPass();
 				});
 			}
@@ -210,8 +206,8 @@ namespace OWC
 				Graphics::Renderer::AddToEndOfFrameCleanUp([this]()
 				{
 					this->SetUpRenderImage();
-					this->m_RayTracingShader->BindTexture(0, m_RenderTarget);
-					this->m_DisplayShader->BindTexture(1, m_RenderTarget);
+					this->m_RayTracingShader->BindTexture(0, m_RenderTarget, Graphics::DescriptorType::StorageImage);
+					this->m_DisplayShader->BindTexture(1, m_RenderTarget, Graphics::DescriptorType::CombinedImageSampler);
 					this->SetupRenderPass();
 				});
 			}
@@ -279,8 +275,7 @@ namespace OWC
 			m_RayTracingResolution.x = Application::GetConstInstance().GetPixelWidth();
 			m_RayTracingResolution.y = Application::GetConstInstance().GetPixelHeight();
 			this->SetUpRenderImage();
-			this->m_RayTracingShader->BindTexture(0, m_RenderTarget);
-			this->m_DisplayShader->BindTexture(1, m_RenderTarget);
+			this->SetupPipeline();
 			this->SetupRenderPass();
 			m_ScreenNeedsRefreshing = true;
 			return false;
@@ -355,7 +350,7 @@ namespace OWC
 
 	void GPURayTracerRenderer::SetUpRenderImage() // used in a few places
 	{
-		m_RenderTarget = Graphics::TextureBuffer::CreateTextureBuffer(m_RayTracingResolution.x, m_RayTracingResolution.y);
+		m_RenderTarget = Graphics::TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Graphics::Format::R32G32B32A32_SFloat);
 	}
 
 	void GPURayTracerRenderer::SetupRenderPass()
@@ -394,19 +389,15 @@ namespace OWC
 		Renderer::EndPass(m_RayTracingRenderPass);
 
 		m_DisplayRenderPass = Renderer::GetStaticRenderPass();
-		Renderer::TransitionImage(m_DisplayRenderPass, m_RenderTarget, AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::General);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_RenderTarget, AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
 		Renderer::BeginRasterPass(m_DisplayRenderPass);
 		Renderer::PipelineBind(m_DisplayRenderPass, *m_DisplayShader);
 		Renderer::BindUniform(m_DisplayRenderPass, *m_DisplayShader);
 		Renderer::BindTexture(m_DisplayRenderPass, *m_DisplayShader, 1, 0);
 		Renderer::Draw(m_DisplayRenderPass, 6);
 		Renderer::EndRasterPass(m_DisplayRenderPass);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_RenderTarget, AccessMask::None, StageMask::TopOfPipe, ImageLayout::General);
 		Renderer::EndPass(m_DisplayRenderPass);
-
-		// this is done last so that the internal state of m_RenderTarget is still neutral
-		m_ImageReleaseRenderPass = Renderer::GetStaticRenderPass();
-		Renderer::TransitionImage(m_ImageReleaseRenderPass, m_RenderTarget, AccessMask::None, StageMask::TopOfPipe, ImageLayout::General);
-		Renderer::EndPass(m_ImageReleaseRenderPass);
 	}
 
 	void GPURayTracerRenderer::SetupPipeline()
@@ -497,7 +488,7 @@ namespace OWC
 			};
 
 			m_RayTracingShader = BaseShader::CreateRTShader(shaderDatas);
-			m_RayTracingShader->BindTexture(0, m_RenderTarget);
+			m_RayTracingShader->BindTexture(0, m_RenderTarget, DescriptorType::StorageImage);
 			m_RayTracingShader->BindTLAS(1, m_Scene->GetTLAS());
 			m_RayTracingShader->BindUniform(2, m_RayTracingGPUDataBuffer);
 			m_RayTracingShader->BindSampler2D(3, m_Scene->GetTextureArraySampler());
@@ -518,7 +509,13 @@ namespace OWC
 				{
 					.descriptorCount = 1,
 					.binding = 1,
-					.descriptorType = DescriptorType::StorageImage,
+					.descriptorType = DescriptorType::UniformBuffer,
+					.stageFlags = ShaderType::Fragment
+				},
+				{
+					.descriptorCount = 1,
+					.binding = 2,
+					.descriptorType = DescriptorType::CombinedImageSampler,
 					.stageFlags = ShaderType::Fragment
 				}
 			};
@@ -544,7 +541,8 @@ namespace OWC
 
 			m_DisplayShader = BaseShader::CreateShader(shaderDatas);
 			m_DisplayShader->BindUniform(0, m_UniformBuffer);
-			m_DisplayShader->BindTexture(1, m_RenderTarget);
+			m_DisplayShader->BindUniform(1, Renderer::GetDynamicRageUniformBuffer());
+			m_DisplayShader->BindTexture(2, m_RenderTarget, DescriptorType::CombinedImageSampler);
 		}
 	}
 

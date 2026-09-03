@@ -94,8 +94,8 @@ namespace OWC
 
 	void Window::ImGuiInit() const
 	{
-		ImGui_ImplSDL3_InitForVulkan(m_Window.get());
-		m_GraphicsContext->ImGuiInit();
+		//ImGui_ImplSDL3_InitForVulkan(m_Window.get());
+		ImGui_ImplSDL3_InitForOther(m_Window.get());
 	}
 
 	void Window::ImGuiShutdown() const
