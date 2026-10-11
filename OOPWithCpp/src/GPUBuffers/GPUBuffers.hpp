@@ -116,7 +116,7 @@ namespace OWC::Graphics
 		DynamicTextureBuffer& operator=(DynamicTextureBuffer&&) noexcept = default;
 		virtual void UpdateBufferData(const std::vector<Vec4>& data) = 0;
 
-		static std::shared_ptr<DynamicTextureBuffer> CreateDynamicTextureBuffer(u32 width, u32 height);
+		static std::shared_ptr<DynamicTextureBuffer> CreateDynamicTextureBuffer(u32 width, u32 height, Format format, AccessMask accessMask, StageMask stageMask, ImageLayout imageLayout);
 	};
 
 	class GeneralBuffer

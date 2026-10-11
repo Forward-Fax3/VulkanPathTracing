@@ -25,7 +25,7 @@ namespace OWC
 		ImGuiIO& io = ImGui::GetIO();
 
 		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-		//io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+		io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 		//io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 
 		const Vec2f32 windowPixelSize(Application::GetInstance().GetPixelSize());
@@ -111,14 +111,17 @@ namespace OWC
 		io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
 		m_ImGuiTexture = TextureImage::CreateStorageImage(width, height, Format::R8G8B8A8_UNorm);
 		m_ImGuiTexture->UpdateBufferData(std::as_bytes(std::span(pixels, width * height * 4)));
-		m_ImGuiVertexBuffer = VertexBuffer::CreateVertexBuffer(sizeof(ImDrawVert));
-		m_ImGuiIndexBuffer = IndexBuffer::CreateIndexBuffer();
+		m_ImGuiVertexBuffer.reserve(Renderer::GetNumberOfFramesInFlight());
+		m_ImGuiIndexBuffer.reserve(Renderer::GetNumberOfFramesInFlight());
+		for (uSize i = 0; i < Renderer::GetNumberOfFramesInFlight(); i++)
+		{
+			m_ImGuiVertexBuffer.emplace_back(VertexBuffer::CreateVertexBuffer(sizeof(ImDrawVert)));
+			m_ImGuiIndexBuffer.emplace_back(IndexBuffer::CreateIndexBuffer());
+		}
 
 		m_ImGuiShader = BaseShader::CreateShader(shaderDatas, vertexBindings, vertexAttributes);
 		m_ImGuiShader->BindTexture(0, m_ImGuiTexture, DescriptorType::CombinedImageSampler);
 		m_ImGuiShader->BindUniform(1, Renderer::GetDynamicRageUniformBuffer());
-		m_ImGuiShaderData.shader = m_ImGuiShader;
-		m_ImGuiShaderData.renderPassData = m_RenderPassData;
 	}
 
 	ImGuiLayer::~ImGuiLayer()
@@ -192,13 +195,11 @@ namespace OWC
 				Renderer::TransitionImage(m_RenderPassData, m_ImGuiTexture, AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
 			Renderer::BeginRasterPass(m_RenderPassData);
 			Renderer::PipelineBind(m_RenderPassData, *m_ImGuiShader);
-			Renderer::BindUniform(m_RenderPassData, *m_ImGuiShader);
-			Renderer::BindTexture(m_RenderPassData, *m_ImGuiShader, 0, 0);
 			Renderer::PushConstant(m_RenderPassData, *m_ImGuiShader, sizeof(pc), &pc);
 			Renderer::DrawImGui(m_RenderPassData, m_ImGuiVertexBuffer, m_ImGuiIndexBuffer, drawData);
 			Renderer::EndRasterPass(m_RenderPassData);
 			Renderer::EndPass(m_RenderPassData);
-			Renderer::SubmitRenderPass(m_RenderPassData, {}, {});
+			Renderer::SubmitRenderPass(m_RenderPassData);
 		}
 
 		if (testBitMask(static_cast<uint32_t>(ImGui::GetIO().ConfigFlags), static_cast<uint32_t>(ImGuiConfigFlags_ViewportsEnable)))

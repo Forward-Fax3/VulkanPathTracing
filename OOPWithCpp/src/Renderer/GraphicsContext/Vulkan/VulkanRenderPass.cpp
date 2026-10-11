@@ -1,4 +1,5 @@
 ﻿#include "VulkanRenderPass.hpp"
+#include "VulkanRendererCore.hpp"
 #include "Application.hpp"
 
 #include "VulkanCore.hpp"
@@ -42,29 +43,7 @@ namespace OWC::Graphics
 			Log<LogLevel::Critical>("Invalid RenderPassType specified when creating VulkanRenderPass");
 	}
 
-	VulkanRenderPass::~VulkanRenderPass() = default; /*
-	{
-		const VulkanCore& vkCore = VulkanCore::GetConstInstance();
-		const vk::Device& device = vkCore.GetDevice();
-
-
-		if (GetRenderPassType() == RenderPassType::Static)
-			for (auto& cmdBuf : m_CommandBuffers)
-				device.freeCommandBuffers(vkCore.GetGraphicsCommandPool(), *cmdBuf);
-		else if (GetRenderPassType() == RenderPassType::Dynamic)
-			for (auto& cmdBuf : m_CommandBuffers)
-				device.freeCommandBuffers(vkCore.GetDynamicGraphicsCommandPool(), *cmdBuf);
-		else if (GetRenderPassType() == RenderPassType::StaticRayTracing)
-			for (auto& cmdBuf : m_CommandBuffers)
-				device.freeCommandBuffers(vkCore.GetComputeCommandPool(), *cmdBuf);
-		else if (GetRenderPassType() == RenderPassType::DynamicRayTracing)
-			for (auto& cmdBuf : m_CommandBuffers)
-				device.freeCommandBuffers(vkCore.GetDynamicComputeCommandPool(), *cmdBuf);
-		else
-			std::unreachable();
-	}*/
-
-	void VulkanRenderPass::PushConstant(const BaseShader& shader, uSize size, const void* dataPtr)
+	void VulkanRenderPass::PushConstant(const BaseShader& shader, const uSize size, const void* dataPtr)
 	{
 		auto info = vk::PushConstantsInfo()
 			.setLayout(dynamic_cast<const VulkanBaseShader&>(shader).GetPipelineLayout())
@@ -84,7 +63,7 @@ namespace OWC::Graphics
 				cmdBuf.pushConstants2(info);
 	}
 
-	void VulkanRenderPass::TransitionImage(const std::shared_ptr<TextureImage>& textureBuffer, const AccessMask dstAccessMask, StageMask dstStageMask, const ImageLayout newLayout)
+	void VulkanRenderPass::TransitionImage(const std::shared_ptr<TextureImage>& textureBuffer, const AccessMask dstAccessMask, const StageMask dstStageMask, const ImageLayout newLayout)
 	{
 		const auto vulkanTextureBuffer = std::dynamic_pointer_cast<VulkanStorageImage>(textureBuffer);
 
@@ -119,6 +98,106 @@ namespace OWC::Graphics
 				cmdBuf.pipelineBarrier2(dependencyInfo);
 	}
 
+	void VulkanRenderPass::TransitionImage(const std::shared_ptr<DynamicTextureBuffer>& textureBuffer, const AccessMask dstAccessMask, const  StageMask dstStageMask, const ImageLayout newLayout)
+	{
+		const auto vulkanTextureBuffer = std::dynamic_pointer_cast<VulkanDynamicTextureBuffer>(textureBuffer);
+
+		auto barrier = vk::ImageMemoryBarrier2()
+			.setSrcAccessMask(vulkanTextureBuffer->GetCurrentAccessFlags())
+			.setDstAccessMask(GetVulkanAccessMask(dstAccessMask))
+			.setOldLayout(vulkanTextureBuffer->GetCurrentLayout())
+			.setNewLayout(GetVulkanImageLayout(newLayout))
+			.setSrcStageMask(vulkanTextureBuffer->GetCurrentPipelineStageFlags())
+			.setDstStageMask(GetVulkanPipelineStageMask(dstStageMask))
+			.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+			.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+			.setSubresourceRange(vk::ImageSubresourceRange()
+				.setAspectMask(vk::ImageAspectFlagBits::eColor)
+				.setBaseMipLevel(0)
+				.setLevelCount(1)
+				.setBaseArrayLayer(0)
+				.setLayerCount(1)
+			);
+
+		vulkanTextureBuffer->SetCurrentAccessFlags(GetVulkanAccessMask(dstAccessMask));
+		vulkanTextureBuffer->SetCurrentImageLayout(GetVulkanImageLayout(newLayout));
+		vulkanTextureBuffer->SetCurrentPipelineStageFlags(GetVulkanPipelineStageMask(dstStageMask));
+
+		const auto dependencyInfo = vk::DependencyInfo().setImageMemoryBarriers(barrier);
+
+		if (testBitMask(GetRenderPassType(), RenderPassType::Dynamic))
+		{
+			barrier.setImage(vulkanTextureBuffer->GetImage());
+
+			m_CommandBuffers[VulkanCore::GetConstInstance().GetCurrentFrameIndex()].pipelineBarrier2(dependencyInfo);
+		}
+		else
+			for (uSize i = 0; i < VulkanCore::GetConstInstance().GetNumberOfFramesInFlight(); i++)
+			{
+				const auto& cmdBuf = m_CommandBuffers[i];
+
+				barrier.setImage(*vulkanTextureBuffer->GetImages()[i]);
+
+				cmdBuf.pipelineBarrier2(dependencyInfo);
+			}
+	}
+
+	void VulkanRenderPass::CopyImage(const std::shared_ptr<TextureImage>& srcImage, const std::shared_ptr<DynamicTextureBuffer>& dstImage)
+	{
+		// vk::CopyImageInfo2
+		const auto vkSrcImage = std::dynamic_pointer_cast<VulkanStorageImage>(srcImage);
+		const auto vkDstImage = std::dynamic_pointer_cast<VulkanDynamicTextureBuffer>(dstImage);
+
+		if (vkSrcImage->GetWidth() != vkDstImage->GetWidth() || vkSrcImage->GetHeight() != vkDstImage->GetHeight())
+		{
+			Log<LogLevel::Error>("Attempted to copy image from source to destination with different dimensions. This is not allowed.");
+			return;
+		}
+
+		const auto imageCopy = vk::ImageCopy2()
+			.setSrcSubresource(vk::ImageSubresourceLayers()
+				.setAspectMask(vk::ImageAspectFlagBits::eColor)
+				.setMipLevel(0)
+				.setBaseArrayLayer(0)
+				.setLayerCount(1))
+			.setSrcOffset(vk::Offset3D(0, 0, 0))
+			.setDstSubresource(vk::ImageSubresourceLayers()
+				.setAspectMask(vk::ImageAspectFlagBits::eColor)
+				.setMipLevel(0)
+				.setBaseArrayLayer(0)
+				.setLayerCount(1))
+			.setDstOffset(vk::Offset3D(0, 0, 0))
+			.setExtent(vk::Extent3D(
+				vkSrcImage->GetWidth(),
+				vkSrcImage->GetHeight(),
+				1));
+
+		if (testBitMask(GetRenderPassType(), RenderPassType::Dynamic))
+		{
+			const auto copyInfo = vk::CopyImageInfo2()
+				.setSrcImage(vkSrcImage->GetImage())
+				.setDstImage(vkDstImage->GetImage())
+				.setSrcImageLayout(vkSrcImage->GetCurrentLayout())
+				.setDstImageLayout(vkDstImage->GetCurrentLayout())
+				.setRegions(imageCopy);
+
+			m_CommandBuffers[VulkanCore::GetConstInstance().GetCurrentFrameIndex()].copyImage2(copyInfo);
+		}
+		else
+			for (uSize i = 0; i < m_CommandBuffers.size(); i++)
+			{
+				const auto copyInfo = vk::CopyImageInfo2()
+					.setSrcImage(vkSrcImage->GetImage())
+					.setDstImage(vkDstImage->GetImages()[i])
+					.setSrcImageLayout(vkSrcImage->GetCurrentLayout())
+					.setDstImageLayout(vkDstImage->GetCurrentLayout())
+					.setRegions(imageCopy);
+
+				const auto& cmdBuf = m_CommandBuffers[i];
+				cmdBuf.copyImage2(copyInfo);
+			}
+	}
+
 	void VulkanRenderPass::BeginDynamicPass()
 	{
 		if (testBitMask(GetRenderPassType(), RenderPassType::Static))
@@ -140,7 +219,6 @@ namespace OWC::Graphics
 		}
 
 		VulkanCore& vkCore = VulkanCore::GetInstance();
-
 
 		if (testBitMask(GetRenderPassType(), RenderPassType::Dynamic))
 		{
@@ -216,72 +294,40 @@ namespace OWC::Graphics
 
 	void VulkanRenderPass::AddPipeline(const BaseShader& shader)
 	{
-		const auto bindPoint = testBitMask(GetRenderPassType(), RenderPassType::RayTracingBit) ? vk::PipelineBindPoint::eRayTracingKHR : vk::PipelineBindPoint::eGraphics;
-
 		const auto& vulkanShader = dynamic_cast<const VulkanBaseShader&>(shader);
+		const auto bindPoint = testBitMask(GetRenderPassType(), RenderPassType::RayTracingBit) ? vk::PipelineBindPoint::eRayTracingKHR : vk::PipelineBindPoint::eGraphics;
+		const auto& vkCore = VulkanCore::GetConstInstance();
+
 		if (testBitMask(GetRenderPassType(), RenderPassType::Dynamic))
 		{
-			const uSize frameIndex = VulkanCore::GetConstInstance().GetCurrentFrameIndex();
-			m_CommandBuffers[frameIndex].bindPipeline(bindPoint, vulkanShader.GetPipeline());
+			const auto& cmdBuf = m_CommandBuffers[vkCore.GetCurrentFrameIndex()];
+			cmdBuf.bindPipeline(bindPoint, vulkanShader.GetPipeline());
+
+			cmdBuf.bindDescriptorSets(
+				bindPoint,
+				vulkanShader.GetPipelineLayout(),
+				0,
+				*vulkanShader.GetDescriptorSet(),
+				{}
+			);
 		}
 		else
-			for (auto& cmdBuf : m_CommandBuffers)
+			for (uSize i = 0; i < vkCore.GetNumberOfFramesInFlight(); i++)
+			{
+				auto& cmdBuf = m_CommandBuffers[i];
 				cmdBuf.bindPipeline(bindPoint, vulkanShader.GetPipeline());
-	}
 
-	void VulkanRenderPass::BindUniform(const BaseShader& shader)
-	{
-		const auto bindPoint = testBitMask(GetRenderPassType(), RenderPassType::RayTracingBit) ? vk::PipelineBindPoint::eRayTracingKHR : vk::PipelineBindPoint::eGraphics;
-
-		const auto& vulkanShader = dynamic_cast<const VulkanBaseShader&>(shader);
-		if (testBitMask(GetRenderPassType(), RenderPassType::Dynamic))
-			m_CommandBuffers[VulkanCore::GetConstInstance().GetCurrentFrameIndex()].bindDescriptorSets(
-				bindPoint,
-				vulkanShader.GetPipelineLayout(),
-				0,
-				*vulkanShader.GetDescriptorSet(),
-				{}
-			);
-		else
-			for (const auto& cmdBuf : m_CommandBuffers)
 				cmdBuf.bindDescriptorSets(
 					bindPoint,
 					vulkanShader.GetPipelineLayout(),
 					0,
-					*vulkanShader.GetDescriptorSet(),
+					*vulkanShader.GetSpecificDescriptorSet(i),
 					{}
 				);
+			}
 	}
 
-	void VulkanRenderPass::BindTexture(const BaseShader& shader, u32 binding, u32 textureID)
-	{
-		const auto bindPoint = testBitMask(GetRenderPassType(), RenderPassType::RayTracingBit) ? vk::PipelineBindPoint::eRayTracingKHR : vk::PipelineBindPoint::eGraphics;
-
-		(void)binding;
-		(void)textureID;
-
-		const auto& vulkanShader = dynamic_cast<const VulkanBaseShader&>(shader);
-
-		if (testBitMask(GetRenderPassType(), RenderPassType::Dynamic))
-			m_CommandBuffers[VulkanCore::GetConstInstance().GetCurrentFrameIndex()].bindDescriptorSets(
-				bindPoint,
-				vulkanShader.GetPipelineLayout(),
-				0,
-				*vulkanShader.GetDescriptorSet(),
-				{}
-			);
-		else
-			for (const auto& cmdBuf : m_CommandBuffers)
-				cmdBuf.bindDescriptorSets(
-					bindPoint,
-					vulkanShader.GetPipelineLayout(),
-					0,
-					*vulkanShader.GetDescriptorSet(),
-					{}
-				);
-	}
-
-	void VulkanRenderPass::Draw(u32 vertexCount, u32 instanceCount /*= 1*/, u32 firstVertex /*= 0*/, u32 firstInstance /*= 0*/)
+	void VulkanRenderPass::Draw(const u32 vertexCount, const u32 instanceCount, const u32 firstVertex, const u32 firstInstance)
 	{
 		if (testBitMask(GetRenderPassType(), RenderPassType::RayTracingBit))
 		{
@@ -362,17 +408,15 @@ namespace OWC::Graphics
 				cmdBuf.end();
 	}
 
-	void VulkanRenderPass::submitRenderPass(std::span<std::string_view> waitSemaphoreNames, std::span<std::string_view> startSemaphore, bool waitForLastFrameToFinish)
+	void VulkanRenderPass::submitRenderPass(const std::span<std::string_view> waitSemaphoreNames, const std::span<std::string_view> startSemaphore, const std::span<std::string_view> waitPreviousFrameSemaphoreNames)
 	{
 		VulkanCore& vkCore = VulkanCore::GetInstance();
 
-		std::vector<vk::Semaphore> waitSemaphores = vkCore.GetSemaphoresFromNames(waitSemaphoreNames);
-		std::vector<vk::Semaphore> signalSemaphores = vkCore.GetSemaphoresFromNames(startSemaphore);
+		const std::vector<vk::Semaphore> waitSemaphores = vkCore.GetSemaphoresFromNames(waitSemaphoreNames);
+		const std::vector<vk::Semaphore> signalSemaphores = vkCore.GetSemaphoresFromNames(startSemaphore);
+		const std::vector<vk::Semaphore> waitPreviousFrameSemaphores = vkCore.GetPreviousFrameSemaphoresFromNames(waitPreviousFrameSemaphoreNames);
 
-		if (waitForLastFrameToFinish && !Application::GetConstInstance().IsFirstFrame())
-			waitSemaphores.push_back(vkCore.GetLastFrameFinishedSemaphore());
-
-		vk::PipelineStageFlags2 waitDestinationStageMask(vk::PipelineStageFlagBits2::eAllCommands);
+		constexpr vk::PipelineStageFlags2 waitDestinationStageMask(vk::PipelineStageFlagBits2::eAllCommands);
 
 		const auto cmdBufSubmitInfo = vk::CommandBufferSubmitInfo()
 			.setCommandBuffer(*m_CommandBuffers[vkCore.GetCurrentFrameIndex()]);
@@ -380,26 +424,48 @@ namespace OWC::Graphics
 		auto submitInfo = vk::SubmitInfo2()
 			.setCommandBufferInfos(cmdBufSubmitInfo);
 
-		vk::SemaphoreSubmitInfo waitSemaphoreSubmitInfo;
-		if (!waitSemaphores.empty())
+		std::vector<vk::SemaphoreSubmitInfo> waitSemaphoreSubmitInfos;
+		waitSemaphoreSubmitInfos.reserve(waitSemaphores.size() + waitPreviousFrameSemaphores.size());
+		if (!waitSemaphores.empty() || !waitPreviousFrameSemaphores.empty())
 		{
-			waitSemaphoreSubmitInfo = vk::SemaphoreSubmitInfo()
-				.setSemaphore(waitSemaphores.back())
-				.setStageMask(waitDestinationStageMask)
-				.setValue(0)
-				.setDeviceIndex(0);
+			for (const auto& semaphore : waitSemaphores)
+			{
+				waitSemaphoreSubmitInfos.emplace_back(
+					vk::SemaphoreSubmitInfo()
+						.setSemaphore(semaphore)
+						.setStageMask(waitDestinationStageMask)
+						.setValue(0)
+						.setDeviceIndex(0)
+				);
+			}
+			for (const auto& semaphore : waitPreviousFrameSemaphores)
+			{
+				waitSemaphoreSubmitInfos.emplace_back(
+					vk::SemaphoreSubmitInfo()
+						.setSemaphore(semaphore)
+						.setStageMask(waitDestinationStageMask)
+						.setValue(0)
+						.setDeviceIndex(0)
+				);
+			}
 
-			submitInfo.setWaitSemaphoreInfos(waitSemaphoreSubmitInfo);
+			submitInfo.setWaitSemaphoreInfos(waitSemaphoreSubmitInfos);
 		}
 
-		vk::SemaphoreSubmitInfo signalSemaphoreSubmitInfo;
+		std::vector<vk::SemaphoreSubmitInfo> signalSemaphoreSubmitInfo;
+		signalSemaphoreSubmitInfo.reserve(signalSemaphores.size());
 		if (!signalSemaphores.empty())
 		{
-			signalSemaphoreSubmitInfo = vk::SemaphoreSubmitInfo()
-				.setSemaphore(signalSemaphores.back())
-				.setStageMask(waitDestinationStageMask)
-				.setValue(0)
-				.setDeviceIndex(0);
+			for (const auto& semaphore : signalSemaphores)
+			{
+				signalSemaphoreSubmitInfo.emplace_back(
+					vk::SemaphoreSubmitInfo()
+						.setSemaphore(semaphore)
+						.setStageMask(waitDestinationStageMask)
+						.setValue(0)
+						.setDeviceIndex(0)
+				);
+			}
 
 			submitInfo.setSignalSemaphoreInfos(signalSemaphoreSubmitInfo);
 		}
@@ -419,7 +485,7 @@ namespace OWC::Graphics
 			Log<LogLevel::Critical>("RestartRenderPass can not be call on static render pass. This is not allowed.");
 	}
 
-	void VulkanRenderPass::DrawImGui(const std::shared_ptr<VertexBuffer> vertexBuffer, const std::shared_ptr<IndexBuffer> indexBuffer, ImDrawData* drawData)
+	void VulkanRenderPass::DrawImGui(const std::span<const std::shared_ptr<VertexBuffer>> vertexBuffer, const std::span<const std::shared_ptr<IndexBuffer>> indexBuffer, ImDrawData* drawData)
 	{
 		if (drawData->DisplaySize.x <= 0.0f || drawData->DisplaySize.y <= 0.0f)
 			return; // window minimized
@@ -427,15 +493,12 @@ namespace OWC::Graphics
 		if (drawData->TotalVtxCount == 0 || drawData->TotalIdxCount == 0)
 			return; // nothing to draw
 
-		const vk::CommandBuffer& cmd = m_CommandBuffers[VulkanCore::GetConstInstance().GetCurrentFrameIndex()];
-		const auto vulkanVertexBuffer = std::dynamic_pointer_cast<VulkanVertexBuffer>(vertexBuffer);
-		const auto vulkanIndexBuffer = std::dynamic_pointer_cast<VulkanIndexBuffer>(indexBuffer);
-		//ImGui_ImplVulkan_RenderDrawData(drawData, cmdBuf);
+		const auto& vkCore = VulkanCore::GetConstInstance();
 
-    	// --- 1. Upload vertex/index buffers ---
-    	// ImGui rebuilds these every frame; you need a per-frame (or per-in-flight-frame)
-    	// dynamically resized vertex/index buffer, similar to what the stock backend does
-    	// with its ImGui_ImplVulkanH_FrameRenderBuffers.
+		const vk::CommandBuffer& cmd = m_CommandBuffers[VulkanCore::GetConstInstance().GetCurrentFrameIndex()];
+		const auto vulkanVertexBuffer = std::dynamic_pointer_cast<VulkanVertexBuffer>(vertexBuffer[vkCore.GetCurrentFrameIndex()]);
+		const auto vulkanIndexBuffer = std::dynamic_pointer_cast<VulkanIndexBuffer>(indexBuffer[vkCore.GetCurrentFrameIndex()]);
+
     	if (drawData->TotalVtxCount > 0)
 		{
     		if (vulkanVertexBuffer->GetNumOfVertices() < drawData->TotalVtxCount)
@@ -464,7 +527,6 @@ namespace OWC::Graphics
     	cmd.bindVertexBuffers(0, vulkanVertexBuffer->GetBuffer(), { 0 });
     	cmd.bindIndexBuffer(vulkanIndexBuffer->GetBuffer(), 0, vk::IndexType::eUint32);
 
-    	// --- 3. Set viewport (full display, once) ---
     	vk::Viewport viewport{};
     	viewport.x = 0.0f;
     	viewport.y = 0.0f;
@@ -474,9 +536,6 @@ namespace OWC::Graphics
     	viewport.maxDepth = 1.0f;
     	cmd.setViewport(0, viewport);
 
-    	// --- 4. Push constants: ortho scale/translate (matches your Slang PushConstants) ---
-
-    	// --- 5. Walk command lists ---
     	const ImVec2 clipOff = drawData->DisplayPos;
     	const ImVec2 clipScale = drawData->FramebufferScale;
 
@@ -522,11 +581,6 @@ namespace OWC::Graphics
     	        scissor.extent.height = static_cast<uint32_t>(clipMax.y - clipMin.y);
     	        cmd.setScissor(0, scissor);
 
-    	        // Bind the texture this draw call wants
-    	        // TextureId is whatever you set via SetTexID / ImGui::Image() calls —
-    	        // treat it as your own descriptor-set handle / texture index
-    	        //BindTextureForDraw(cmd, drawCmd.TextureId); // your own function
-
     	    	cmd.drawIndexed(
     	            drawCmd.ElemCount, 1,
     	            drawCmd.IdxOffset + globalIdxOffset,
@@ -542,112 +596,6 @@ namespace OWC::Graphics
 	void VulkanRenderPass::AddToEndOfFrameCleanUp(std::move_only_function<void()>&& func)
 	{
 		VulkanCore::GetInstance().AddVulkanEndOfFrameCleanUpFunction(std::move(func));
-	}
-
-	vk::AccessFlags2 VulkanRenderPass::GetVulkanAccessMask(const AccessMask accessMask)
-	{
-		vk::AccessFlags2 accessFlags;
-
-		if (testBitMask(accessMask, AccessMask::IndirectCommandRead))
-			accessFlags |= vk::AccessFlagBits2::eIndirectCommandRead;
-		if (testBitMask(accessMask, AccessMask::IndexRead))
-			accessFlags |= vk::AccessFlagBits2::eIndexRead;
-		if (testBitMask(accessMask, AccessMask::VertexAttributeRead))
-			accessFlags |= vk::AccessFlagBits2::eVertexAttributeRead;
-		if (testBitMask(accessMask, AccessMask::UniformRead))
-			accessFlags |= vk::AccessFlagBits2::eUniformRead;
-		if (testBitMask(accessMask, AccessMask::InputAttachmentRead))
-			accessFlags |= vk::AccessFlagBits2::eInputAttachmentRead;
-		if (testBitMask(accessMask, AccessMask::ShaderRead))
-			accessFlags |= vk::AccessFlagBits2::eShaderRead;
-		if (testBitMask(accessMask, AccessMask::ShaderWrite))
-			accessFlags |= vk::AccessFlagBits2::eShaderWrite;
-		if (testBitMask(accessMask, AccessMask::ColorAttachmentRead))
-			accessFlags |= vk::AccessFlagBits2::eColorAttachmentRead;
-		if (testBitMask(accessMask, AccessMask::ColorAttachmentWrite))
-			accessFlags |= vk::AccessFlagBits2::eColorAttachmentWrite;
-		if (testBitMask(accessMask, AccessMask::DepthStencilAttachmentRead))
-			accessFlags |= vk::AccessFlagBits2::eDepthStencilAttachmentRead;
-		if (testBitMask(accessMask, AccessMask::DepthStencilAttachmentWrite))
-			accessFlags |= vk::AccessFlagBits2::eDepthStencilAttachmentWrite;
-		if (testBitMask(accessMask, AccessMask::TransferRead))
-			accessFlags |= vk::AccessFlagBits2::eTransferRead;
-		if (testBitMask(accessMask, AccessMask::TransferWrite))
-			accessFlags |= vk::AccessFlagBits2::eTransferWrite;
-
-		return accessFlags;
-	}
-
-	vk::PipelineStageFlags2 VulkanRenderPass::GetVulkanPipelineStageMask(const StageMask stageMask)
-	{
-		vk::PipelineStageFlags2 result;
-
-		if (testBitMask(stageMask, StageMask::TopOfPipe))
-			result |= vk::PipelineStageFlagBits2::eTopOfPipe;
-		if (testBitMask(stageMask, StageMask::BottomOfPipe))
-			result |= vk::PipelineStageFlagBits2::eBottomOfPipe;
-		if (testBitMask(stageMask, StageMask::FragmentShader))
-			result |= vk::PipelineStageFlagBits2::eFragmentShader;
-		if (testBitMask(stageMask, StageMask::VertexShader))
-			result |= vk::PipelineStageFlagBits2::eVertexShader;
-		if (testBitMask(stageMask, StageMask::GeometryShader))
-			result |= vk::PipelineStageFlagBits2::eGeometryShader;
-		if (testBitMask(stageMask, StageMask::ComputeShader))
-			result |= vk::PipelineStageFlagBits2::eComputeShader;
-		if (testBitMask(stageMask, StageMask::RayTracing))
-			result |= vk::PipelineStageFlagBits2::eRayTracingShaderKHR;
-
-		return result;
-	}
-
-	vk::ImageLayout VulkanRenderPass::GetVulkanImageLayout(const ImageLayout layout)
-	{
-		switch (layout)
-		{
-		case ImageLayout::Undefined:
-			return vk::ImageLayout::eUndefined;
-		case ImageLayout::ColorAttachmentOptimal:
-			return vk::ImageLayout::eColorAttachmentOptimal;
-		case ImageLayout::DepthStencilAttachmentOptimal:
-			return vk::ImageLayout::eDepthStencilAttachmentOptimal;
-		case ImageLayout::ShaderReadOnlyOptimal:
-			return vk::ImageLayout::eShaderReadOnlyOptimal;
-		case ImageLayout::TransferSrcOptimal:
-			return vk::ImageLayout::eTransferSrcOptimal;
-		case ImageLayout::TransferDstOptimal:
-			return vk::ImageLayout::eTransferDstOptimal;
-		case ImageLayout::General:
-			return vk::ImageLayout::eGeneral;
-		default:
-			Log<LogLevel::Error>("Invalid ImageLayout specified when converting to Vulkan image layout");
-			return vk::ImageLayout::eUndefined;
-		}
-	}
-
-	void VulkanRenderPass::BindDynamicTexture(const BaseShader& shader, u32 binding, u32 textureID)
-	{
-		const auto bindPoint = testBitMask(GetRenderPassType(), RenderPassType::RayTracingBit) ? vk::PipelineBindPoint::eRayTracingKHR : vk::PipelineBindPoint::eGraphics;
-
-		(void)binding;
-		(void)textureID;
-		const auto& vulkanShader = dynamic_cast<const VulkanBaseShader&>(shader);
-		if (testBitMask(GetRenderPassType(), RenderPassType::Dynamic))
-			m_CommandBuffers[VulkanCore::GetConstInstance().GetCurrentFrameIndex()].bindDescriptorSets(
-				bindPoint,
-				vulkanShader.GetPipelineLayout(),
-				0,
-				*vulkanShader.GetDescriptorSet(),
-				{}
-			);
-		else
-			for (const auto& cmdBuf : m_CommandBuffers)
-				cmdBuf.bindDescriptorSets(
-					bindPoint,
-					vulkanShader.GetPipelineLayout(),
-					0,
-					*vulkanShader.GetDescriptorSet(),
-					{}
-				);
 	}
 
 	uSize VulkanRenderPass::GetNumberOfFramesInFlight() const

@@ -70,6 +70,7 @@ namespace OWC
 			m_IsFirstFrame = false;
 			m_Window->Update();
 		}
+		Graphics::Renderer::WaitForGPUIdle();
 	}
 
 	void Application::OnEvent(BaseEvent& event) const

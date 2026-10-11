@@ -2,17 +2,27 @@
 #include "Core.hpp"
 
 #include <random>
-#include <array>
+#include <format>
+#include <chrono>
+#include <thread>
 
 
 namespace OWC::Rand
 {
-	static thread_local std::minstd_rand globalMtEngine;
+	static thread_local std::minstd_rand globalMtEngine = [] {
+		std::random_device rd;
+		std::seed_seq seq{
+			rd(), rd(),
+			static_cast<u32>(std::chrono::high_resolution_clock::now().time_since_epoch().count()),
+			static_cast<u32>(std::hash<std::thread::id>{}(std::this_thread::get_id()))
+		};
+		return std::minstd_rand(seq);
+	}();
 
 	OWC_FORCE_INLINE Vec2 LinearFastRandVec2(const Vec2& min, const Vec2& max)
 	{
 		std::uniform_real_distribution<f32> dist;
-		Vec2 randFloats(
+		const Vec2 randFloats(
 			dist(globalMtEngine),
 			dist(globalMtEngine)
 		);
@@ -23,7 +33,7 @@ namespace OWC::Rand
 	{
 		std::uniform_real_distribution<f32> dist;
 
-		Vec4 randFloats(
+		const Vec4 randFloats(
 			dist(globalMtEngine),
 			dist(globalMtEngine),
 			dist(globalMtEngine),

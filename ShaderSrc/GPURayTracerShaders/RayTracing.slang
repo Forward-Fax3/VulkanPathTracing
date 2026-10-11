@@ -320,7 +320,7 @@ void RayGenShader()
     uint pixelX = intThreadIdx.x;
     uint pixelY = intThreadIdx.y;
 
-    uint randVal  = PerFrameData.randSeed + pixelX + intScreenSize.x * pixelY;
+    uint randVal = PerFrameData.randSeed + pixelX + intScreenSize.x * pixelY;
 
     uint imageNeedsResetting = PerFrameData.imageReset;
     uint stratifiedGridPosition = PerFrameData.stratifiedGridPosition;

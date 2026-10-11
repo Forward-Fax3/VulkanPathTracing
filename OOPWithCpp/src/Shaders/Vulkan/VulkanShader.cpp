@@ -87,8 +87,14 @@ namespace OWC::Graphics
 		device.updateDescriptorSets(writeDescriptorSets, {});
 	}
 
-	void VulkanBaseShader::BindDynamicTexture(u32 binding, const std::shared_ptr<DynamicTextureBuffer>& dTextureBuffer)
+	void VulkanBaseShader::BindDynamicTextureImpl(u32 binding, const std::shared_ptr<DynamicTextureBuffer>& dTextureBuffer, const DescriptorType descriptorType, const i32 frameOffset)
 	{
+		if (descriptorType != DescriptorType::StorageImage && descriptorType != DescriptorType::SampledImage && descriptorType != DescriptorType::CombinedImageSampler)
+		{
+			Log<LogLevel::Error>("VulkanShader::BindTexture: Invalid descriptor type for texture binding. Expected StorageImage or SampledImage.");
+			return;
+		}
+
 		const auto vulkanDynamicTextureBuffer = std::dynamic_pointer_cast<VulkanDynamicTextureBuffer>(dTextureBuffer);
 		if (!vulkanDynamicTextureBuffer)
 		{
@@ -104,12 +110,15 @@ namespace OWC::Graphics
 		std::vector<vk::DescriptorImageInfo> descriptorImageInfos{}; // keep alive until updateDescriptorSets is called
 		descriptorImageInfos.reserve(vkCore.GetNumberOfFramesInFlight());
 
-		for (uSize i = 0; i < vkCore.GetNumberOfFramesInFlight(); i++)
+		for (i32 i = 0; i < vkCore.GetNumberOfFramesInFlight(); i++)
 		{
+			const i32 numFrames = static_cast<i32>(vkCore.GetNumberOfFramesInFlight());
+			const i32 viewIndex = ((i + frameOffset) % numFrames + numFrames) % numFrames;
+
 			descriptorImageInfos.emplace_back(
 				vulkanDynamicTextureBuffer->GetSampler(),
-				vulkanDynamicTextureBuffer->GetImageViews()[i],
-				vk::ImageLayout::eShaderReadOnlyOptimal
+				vulkanDynamicTextureBuffer->GetImageViews()[viewIndex],
+				descriptorType == DescriptorType::StorageImage ? vk::ImageLayout::eGeneral : vk::ImageLayout::eShaderReadOnlyOptimal
 			);
 
 			writeDescriptorSets.emplace_back(
@@ -117,7 +126,7 @@ namespace OWC::Graphics
 				binding,
 				0,
 				1,
-				vk::DescriptorType::eCombinedImageSampler,
+				ConvertToVulkanDescriptorType(descriptorType),
 				&descriptorImageInfos.back()
 			);
 		}

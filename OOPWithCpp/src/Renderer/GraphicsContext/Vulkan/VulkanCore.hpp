@@ -10,6 +10,7 @@
 
 #include <list>
 #include <mutex>
+#include <condition_variable>
 #include <memory>
 #include <map>
 #include <functional>
@@ -60,10 +61,58 @@ namespace OWC::Graphics
 		return { allAvailable, missingExt };
 	}
 
+	class TransferPoolToken;
+
 	class VulkanCore
 	{
 	private:
 		class PRIVATE {};
+
+		class TransferPoolRing
+		{
+		public:
+			[[nodiscard]] explicit TransferPoolRing(const size_t poolCount = 6)
+				: m_PoolCount(poolCount)
+			{
+				const auto& vkCore = GetInstance();
+				const auto& device = vkCore.GetDevice();
+
+				m_Pools.reserve(poolCount * 2);
+				m_FreeIndex.reserve(poolCount);
+				m_FreeIndexReusable.reserve(poolCount);
+				for (size_t i = 0; i < poolCount; i++)
+				{
+					m_Pools.emplace_back(device, vk::CommandPoolCreateInfo().setQueueFamilyIndex(vkCore.m_TransferQueueFamilyIndex));
+					m_FreeIndex.emplace_back(static_cast<u32>(i));
+				}
+
+				for (size_t i = 0; i < poolCount; i++)
+				{
+					m_Pools.emplace_back(device, vk::CommandPoolCreateInfo()
+						.setQueueFamilyIndex(vkCore.m_TransferQueueFamilyIndex)
+						.setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer));
+
+					m_FreeIndexReusable.emplace_back(static_cast<u32>(i) + poolCount);
+				}
+			}
+
+			~TransferPoolRing() = default;
+
+			[[nodiscard]] OWC_FORCE_INLINE const vk::raii::CommandPool& GetPool(const TransferPoolToken& token) const noexcept;
+
+			void ReturnPool(const TransferPoolToken& token);
+
+			[[nodiscard]] TransferPoolToken GetPool();
+			[[nodiscard]] TransferPoolToken GetReusablePool();
+
+		private:
+			std::vector<vk::raii::CommandPool> m_Pools;
+			std::vector<u32> m_FreeIndex;
+			std::vector<u32> m_FreeIndexReusable;
+			std::mutex m_Mutex;
+			std::condition_variable m_Cv;
+			size_t m_PoolCount = 0;
+		};
 
 	public:
 		VulkanCore() = delete;
@@ -88,19 +137,20 @@ namespace OWC::Graphics
 
 		[[nodiscard]] std::vector<vk::raii::CommandBuffer> GetGraphicsCommandBuffer() const;
 		[[nodiscard]] std::vector<vk::raii::CommandBuffer> GetComputeCommandBuffer() const;
-		[[nodiscard]] std::vector<vk::raii::CommandBuffer> GetTransferCommandBuffer() const;
+		[[nodiscard]] std::vector<vk::raii::CommandBuffer> GetTransferCommandBuffer(const TransferPoolToken& token) const;
 		[[nodiscard]] std::vector<vk::raii::CommandBuffer> GetDynamicGraphicsCommandBuffer() const;
 		[[nodiscard]] std::vector<vk::raii::CommandBuffer> GetDynamicComputeCommandBuffer() const;
-		[[nodiscard]] std::vector<vk::raii::CommandBuffer> GetDynamicTransferCommandBuffer() const;
+		[[nodiscard]] OWC_FORCE_INLINE std::vector<vk::raii::CommandBuffer> GetDynamicTransferCommandBuffer(const TransferPoolToken& token) const { return GetTransferCommandBuffer(token); }
 		[[nodiscard]] vk::raii::CommandBuffer GetSingleTimeGraphicsCommandBuffer() const;
 		[[nodiscard]] vk::raii::CommandBuffer GetSingleTimeComputeCommandBuffer() const;
-		[[nodiscard]] vk::raii::CommandBuffer GetSingleTimeTransferCommandBuffer() const;
+		[[nodiscard]] vk::raii::CommandBuffer GetSingleTimeTransferCommandBuffer(const TransferPoolToken& token) const;
 		[[nodiscard]] vk::raii::CommandBuffer GetSingleTimeReusableGraphicsCommandBuffer() const;
 		[[nodiscard]] vk::raii::CommandBuffer GetSingleTimeReusableComputeCommandBuffer() const;
-		[[nodiscard]] vk::raii::CommandBuffer GetSingleTimeReusableTransferCommandBuffer() const;
+		[[nodiscard]] OWC_FORCE_INLINE vk::raii::CommandBuffer GetSingleTimeReusableTransferCommandBuffer(const TransferPoolToken& token) const { return GetSingleTimeTransferCommandBuffer(token); }
 
 
 		[[nodiscard]] std::vector<vk::Semaphore> GetSemaphoresFromNames(std::span<std::string_view> semaphoreNames);
+		[[nodiscard]] std::vector<vk::Semaphore> GetPreviousFrameSemaphoresFromNames(std::span<std::string_view> semaphoreNames);
 		[[nodiscard]] vk::raii::Semaphore GetSingleSemaphore() const;
 
 		[[nodiscard]] u32 FindMemoryType(vk::DeviceSize size, vk::MemoryPropertyFlags properties) const;
@@ -113,13 +163,12 @@ namespace OWC::Graphics
 		[[nodiscard]] OWC_FORCE_INLINE const vk::Queue& GetPresentQueue() const { return m_PresentQueue; }
 		[[nodiscard]] OWC_FORCE_INLINE const vk::Queue& GetGraphicsQueue() const { return m_GraphicsQueue; }
 		[[nodiscard]] OWC_FORCE_INLINE const vk::Queue& GetComputeQueue() const { return m_ComputeQueue; }
-		[[nodiscard]] OWC_FORCE_INLINE const vk::Queue& GetTransferQueue() const { return m_TransferQueue; }
 		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::CommandPool& GetGraphicsCommandPool() const { return m_GraphicsCommandPool; }
 		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::CommandPool& GetComputeCommandPool() const { return m_ComputeCommandPool; }
-		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::CommandPool& GetTransferCommandPool() const { return m_TransferCommandPool; }
 		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::CommandPool& GetDynamicGraphicsCommandPool() const { return m_DynamicGraphicsCommandPool; }
 		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::CommandPool& GetDynamicComputeCommandPool() const { return m_DynamicComputeCommandPool; }
-		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::CommandPool& GetDynamicTransferCommandPool() const { return m_DynamicTransferCommandPool; }
+		[[nodiscard]] TransferPoolToken GetTransferPoolToken() const;
+		[[nodiscard]] TransferPoolToken GetReusableTransferPoolToken() const;
 		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::SwapchainKHR& GetSwapchain() const { return m_Swapchain; }
 		[[nodiscard]] OWC_FORCE_INLINE const vk::Format& GetSwapchainImageFormat() const { return m_SwapchainImageFormat; }
 		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::DescriptorPool& GetImGuiDescriptorPool() const { return m_ImGuiDescriptorPool; }
@@ -127,6 +176,7 @@ namespace OWC::Graphics
 		[[nodiscard]] OWC_FORCE_INLINE const std::vector<vk::raii::ImageView>& GetSwapchainImageViews() const { return m_SwapchainImageViews; }
 		[[nodiscard]] OWC_FORCE_INLINE const vma::raii::Allocator& GetVulkanMemoryAllocator() const { return m_Allocator; }
 		[[nodiscard]] OWC_FORCE_INLINE uSize GetCurrentFrameIndex() const { return m_CurrentFrameIndex; }
+		[[nodiscard]] OWC_FORCE_INLINE uSize GetPreviousFrameIndex() const { return m_PreviousFrameIndex; }
 		[[nodiscard]] OWC_FORCE_INLINE uSize GetNumberOfFramesInFlight() const { return m_SwapchainImageViews.size(); }
 
 		[[nodiscard]] OWC_FORCE_INLINE const vk::PhysicalDeviceRayTracingPipelinePropertiesKHR& GetRayTracingPipelineProperties() const { return m_RayTracingPipelineProperties; }
@@ -145,8 +195,6 @@ namespace OWC::Graphics
 		// Store end-of-frame cleanup callables as move-only type-erased wrappers (C++23)
 		[[nodiscard]] OWC_FORCE_INLINE std::vector<std::list<std::move_only_function<void()>>>& GetEndOfFrameCleanUp() { return m_EndOfFrameCleanUp; }
 
-		[[nodiscard]] OWC_FORCE_INLINE vk::Semaphore GetLastFrameFinishedSemaphore() const { return m_LastFrameWaitSemaphore; }
-
 		[[nodiscard]] OWC_FORCE_INLINE bool HasSERSupport() const { return hasSERSupport; }
 
 		OWC_FORCE_INLINE void SetInstance(vk::raii::Instance&& instance) { m_Instance = std::move(instance); }
@@ -162,19 +210,22 @@ namespace OWC::Graphics
 		OWC_FORCE_INLINE void SetTransferQueue(const vk::Queue& transferQueue) { m_TransferQueue = transferQueue; }
 		OWC_FORCE_INLINE void SetGraphicsCommandPool(vk::raii::CommandPool&& commandPool) { m_GraphicsCommandPool = std::move(commandPool); }
 		OWC_FORCE_INLINE void SetComputeCommandPool(vk::raii::CommandPool&& commandPool) { m_ComputeCommandPool = std::move(commandPool); }
-		OWC_FORCE_INLINE void SetTransferCommandPool(vk::raii::CommandPool&& commandPool) { m_TransferCommandPool = std::move(commandPool); }
 		OWC_FORCE_INLINE void SetDynamicGraphicsCommandPool(vk::raii::CommandPool&& commandPool) { m_DynamicGraphicsCommandPool = std::move(commandPool); }
 		OWC_FORCE_INLINE void SetDynamicComputeCommandPool(vk::raii::CommandPool&& commandPool) { m_DynamicComputeCommandPool = std::move(commandPool); }
-		OWC_FORCE_INLINE void SetDynamicTransferCommandPool(vk::raii::CommandPool&& commandPool) { m_DynamicTransferCommandPool = std::move(commandPool); }
 		OWC_FORCE_INLINE void SetSwapchainImageFormat(const vk::Format& format) { m_SwapchainImageFormat = format; }
 		OWC_FORCE_INLINE void SetImGuiDescriptorPool(vk::raii::DescriptorPool&& pool) { m_ImGuiDescriptorPool = std::move(pool);  }
 		OWC_FORCE_INLINE void SetSwapchain(vk::raii::SwapchainKHR&& swapchain) { m_Swapchain = std::move(swapchain); m_SwapchainImages = m_Swapchain.getImages(); }
 		OWC_FORCE_INLINE void SetSwapchainImageViews(std::vector<vk::raii::ImageView>&& swapchainImageViews) { m_SwapchainImageViews = std::move(swapchainImageViews); }
 		OWC_FORCE_INLINE void SetCurrentFrameIndex(const uSize newIndex) { m_CurrentFrameIndex = newIndex; }
+		OWC_FORCE_INLINE void SetPreviousFrameIndex(const uSize newIndex) { m_PreviousFrameIndex = newIndex; }
 		OWC_FORCE_INLINE void SetVulkanMemoryAllocator(vma::raii::Allocator&& allocator) { m_Allocator = std::move(allocator); }
 		OWC_FORCE_INLINE void AddVulkanEndOfFrameCleanUpFunction(std::move_only_function<void()>&& func) { m_EndOfFrameCleanUp[m_CurrentFrameIndex].emplace_back(std::move(func)); }
 
-		OWC_FORCE_INLINE void SetLastFrameWaitSemaphore(const vk::Semaphore semaphore) { m_LastFrameWaitSemaphore = semaphore; }
+		OWC_FORCE_INLINE void SubmitTransferCommandBuffer(const vk::SubmitInfo2& info, const vk::Fence& fence = {}) const
+		{
+			std::unique_lock lock(m_TransferCommandQueueMutex);
+			m_TransferQueue.submit2(info, fence);
+		}
 
 		OWC_FORCE_INLINE void SetSERSupport(const bool support) { hasSERSupport = support; }
 
@@ -199,6 +250,11 @@ namespace OWC::Graphics
 				m_UniqueQueueFamilyIndices.push_back(transferIndex);
 		}
 
+		OWC_FORCE_INLINE void SetupTransferPools()
+		{
+			m_TransferPoolRing = std::make_unique<TransferPoolRing>();
+		}
+
 		OWC_FORCE_INLINE void SetupSemaphores()
 		{
 			m_Semaphores.reserve(m_SwapchainImageViews.size());
@@ -209,6 +265,11 @@ namespace OWC::Graphics
 		OWC_FORCE_INLINE void DestroySemaphores()
 		{
 			m_Semaphores.clear();
+		}
+
+		OWC_FORCE_INLINE void ReturnTransferPoolToken(const TransferPoolToken& token) const
+		{
+			m_TransferPoolRing->ReturnPool(token);
 		}
 
 	private:
@@ -226,10 +287,9 @@ namespace OWC::Graphics
 		vk::Queue m_TransferQueue = vk::Queue();
 		vk::raii::CommandPool m_GraphicsCommandPool = nullptr;
 		vk::raii::CommandPool m_ComputeCommandPool = nullptr;
-		vk::raii::CommandPool m_TransferCommandPool = nullptr;
 		vk::raii::CommandPool m_DynamicGraphicsCommandPool = nullptr;
 		vk::raii::CommandPool m_DynamicComputeCommandPool = nullptr;
-		vk::raii::CommandPool m_DynamicTransferCommandPool = nullptr;
+		std::unique_ptr<TransferPoolRing> m_TransferPoolRing = nullptr;
 		vk::raii::SwapchainKHR m_Swapchain = nullptr;
 		vk::Format m_SwapchainImageFormat = vk::Format::eUndefined;
 		vk::raii::DescriptorPool m_ImGuiDescriptorPool = nullptr;
@@ -245,6 +305,7 @@ namespace OWC::Graphics
 
 		std::vector<std::map<std::string, vk::raii::Semaphore>> m_Semaphores{};
 		uSize m_CurrentFrameIndex = 0;
+		uSize m_PreviousFrameIndex = 0;
 
 		u32 m_GraphicsQueueFamilyIndex = 0;
 		u32 m_ComputeQueueFamilyIndex = 0;
@@ -252,14 +313,41 @@ namespace OWC::Graphics
 		u32 m_PresentQueueFamilyIndex = 0;
 		std::vector<u32> m_UniqueQueueFamilyIndices{};
 
-		vk::Semaphore m_LastFrameWaitSemaphore = vk::Semaphore();
-
 		bool hasSERSupport = false;
 
-		mutable std::mutex m_SingleUseTransferCommandPoolMutex;
+		mutable std::mutex m_TransferCommandQueueMutex;
 		mutable std::mutex m_SingleUseGraphicsCommandPoolMutex;
 		mutable std::mutex m_SingleUseComputeCommandPoolMutex;
 
 		static std::unique_ptr<VulkanCore> s_Instance;
+
+		friend class TransferPoolToken;
 	};
+
+	class TransferPoolToken
+	{
+	public:
+		TransferPoolToken() = delete;
+		OWC_FORCE_INLINE ~TransferPoolToken() { VulkanCore::GetInstance().ReturnTransferPoolToken(*this); }
+		TransferPoolToken(const TransferPoolToken&) = delete;
+		TransferPoolToken& operator=(const TransferPoolToken&) = delete;
+		OWC_FORCE_INLINE TransferPoolToken(const TransferPoolToken&& other) noexcept : m_CommandPoolIndex(other.m_CommandPoolIndex) { other.m_CommandPoolIndex = std::numeric_limits<u32>::max(); }
+		OWC_FORCE_INLINE TransferPoolToken& operator=(TransferPoolToken&& other) = delete;
+
+	private:
+		explicit OWC_FORCE_INLINE TransferPoolToken(const u32 commandPool) : m_CommandPoolIndex(commandPool) {}
+
+		[[nodiscard]] OWC_FORCE_INLINE u32 GetPoolIndex() const noexcept { return m_CommandPoolIndex; }
+
+	private:
+		mutable u32 m_CommandPoolIndex;
+
+		friend class VulkanCore;
+		friend class VulkanCore::TransferPoolRing;
+	};
+
+	const vk::raii::CommandPool& VulkanCore::TransferPoolRing::GetPool(const TransferPoolToken& token) const noexcept
+	{
+		return m_Pools[token.GetPoolIndex()];
+	}
 }

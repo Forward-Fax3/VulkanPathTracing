@@ -434,7 +434,7 @@ namespace OWC
                     light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 10000.0f, // intensity
                     colour, // colour
                     static_cast<f32>(light.range), // range
-                    radius < 1e-4 ? 0.0f : radius// radius
+                    radius < 1e-4 ? 0.0f : radius // radius
                 );
             }
             else if (tg3_str_equals_cstr(light.type, "directional"))

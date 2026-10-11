@@ -12,6 +12,7 @@
 
 #include "Application.hpp"
 #include "VulkanContext.hpp"
+
 #include "VulkanCore.hpp"
 #include "VulkanRenderPass.hpp"
 #include "Log.hpp"
@@ -334,6 +335,16 @@ namespace OWC::Graphics
 	VulkanContext::~VulkanContext()
 	{
 		WaitForIdle();
+		auto& finishingFuncs = VulkanCore::GetInstance().GetEndOfFrameCleanUp();
+		for (auto& frame : finishingFuncs)
+		{
+			for (auto& func : frame)
+				func();
+			frame.clear();
+		}
+		finishingFuncs.clear();
+		m_EndOfFrameFences.clear();
+
 		VulkanCore::GetInstance().DestroySemaphores();
 
 #ifndef DIST
@@ -361,52 +372,22 @@ namespace OWC::Graphics
 		{
 			std::array<std::string_view, 1> semaphoreNames = { "RenderFinished" };
 			auto semaphores = vkCore.GetSemaphoresFromNames(semaphoreNames);
-			vkCore.SetLastFrameWaitSemaphore(semaphores[0]);
 
-			vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eBottomOfPipe);
 			const vk::SubmitInfo submitInfo = vk::SubmitInfo()
 				.setSignalSemaphores(semaphores)
-				.setCommandBuffers(*m_EndRenderCmdBuf[vkCore.GetCurrentFrameIndex()])
-				.setWaitDstStageMask(waitDestinationStageMask)
-				.setWaitSemaphores(VK_NULL_HANDLE);
+				.setCommandBuffers(*m_EndRenderCmdBuf[vkCore.GetCurrentFrameIndex()]);
 
-			const vk::raii::Fence fence = device.createFence(vk::FenceCreateInfo());
-			vkCore.GetGraphicsQueue().submit(submitInfo, fence);
-
-			if (device.waitForFences(*fence, VK_TRUE, std::numeric_limits<uint32_t>::max()) != vk::Result::eSuccess)
-				Log<LogLevel::Critical>("Failed to wait for render finished fence");
-
-			auto& endOfFrameFuncs = vkCore.GetEndOfFrameCleanUp()[vkCore.GetCurrentFrameIndex()];
-			for (auto& func : endOfFrameFuncs)
-				func();
-			endOfFrameFuncs.clear();
+			device.resetFences(*m_EndOfFrameFences[vkCore.GetCurrentFrameIndex()]);
+			vkCore.GetGraphicsQueue().submit(submitInfo, m_EndOfFrameFences[vkCore.GetCurrentFrameIndex()]);
 
 			auto indices = static_cast<u32>(vkCore.GetCurrentFrameIndex());
-			auto result = VulkanCore::GetConstInstance().GetPresentQueue().presentKHR(
+			const auto _ = VulkanCore::GetConstInstance().GetPresentQueue().presentKHR(
 				vk::PresentInfoKHR()
 				.setSwapchains(*vkCore.GetSwapchain())
 				.setSwapchainCount(1)
 				.setImageIndices(indices)
 				.setWaitSemaphores(semaphores)
 			);
-
-			(void)result;
-
-//			uSize retryCount = 0;
-//			while (result == vk::Result::eSuboptimalKHR || result == vk::Result::eErrorOutOfDateKHR)
-//			{
-//				if (retryCount++ >= 3)
-//					Log<LogLevel::Critical>("VulkanContext::FinishRender: Failed to present image after 3 retries.");
-//	
-//				RecreateSwapchain();
-//	
-//				result = VulkanCore::GetConstInstance().GetPresentQueue().presentKHR(
-//					vk::PresentInfoKHR()
-//					.setSwapchains(vkCore.GetSwapchain())
-//					.setSwapchainCount(1)
-//					.setImageIndices(indices)
-//				);
-//			}
 		}
 	}
 
@@ -414,12 +395,11 @@ namespace OWC::Graphics
 	{
 		auto& vkCore = VulkanCore::GetInstance();
 
-		std::vector<std::string_view> imageAcquiredName = { "ImageAcquired" };
-		auto imageAcquired = vkCore.GetSemaphoresFromNames(imageAcquiredName);
+		auto currentFrameImageAcquired = vkCore.GetDevice().createSemaphore(vk::SemaphoreCreateInfo());
 
 		auto result = vkCore.GetDevice().acquireNextImage2KHR(vk::AcquireNextImageInfoKHR()
 			.setSwapchain(vkCore.GetSwapchain())
-			.setSemaphore(imageAcquired[0])
+			.setSemaphore(currentFrameImageAcquired)
 //			.setTimeout(16'666)
 			.setTimeout(std::numeric_limits<u32>::max())
 			.setDeviceMask(1)
@@ -430,7 +410,7 @@ namespace OWC::Graphics
 			RecreateSwapchain();
 			result = vkCore.GetDevice().acquireNextImage2KHR(vk::AcquireNextImageInfoKHR()
 				.setSwapchain(vkCore.GetSwapchain())
-				.setSemaphore(imageAcquired[0])
+				.setSemaphore(*currentFrameImageAcquired)
 //				.setTimeout(16'666)
 				.setTimeout(std::numeric_limits<u32>::max())
 				.setDeviceMask(1)
@@ -446,21 +426,29 @@ namespace OWC::Graphics
 		if (result.value >= vkCore.GetSwapchainImageViews().size())
 			Log<LogLevel::Critical>("Acquired image index {} is out of bounds for swapchain image views size {}", result.value, vkCore.GetSwapchainImageViews().size());
 
+		vkCore.SetPreviousFrameIndex(vkCore.GetCurrentFrameIndex());
 		vkCore.SetCurrentFrameIndex(result.value);
 
+		if (vkCore.GetDevice().waitForFences(*m_EndOfFrameFences[vkCore.GetCurrentFrameIndex()], true, std::numeric_limits<u32>::max()) != vk::Result::eSuccess)
+			Log<LogLevel::Critical>("Failed to wait for render finished fence");
+
+		auto& endOfFrameFuncs = vkCore.GetEndOfFrameCleanUp()[vkCore.GetCurrentFrameIndex()];
+		for (auto& func : endOfFrameFuncs)
+			func();
+		endOfFrameFuncs.clear();
+
 		std::array<std::string_view, 1> imageReadyName = { "ImageReady" };
-		if (!Application::GetConstInstance().IsFirstFrame())
-			imageAcquired.push_back(vkCore.GetLastFrameFinishedSemaphore());
 		auto imageReady = vkCore.GetSemaphoresFromNames(imageReadyName)[0];
 
 		vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
 		const auto submitInfo = vk::SubmitInfo()
-			.setWaitSemaphores(imageAcquired)
+			.setWaitSemaphores(*currentFrameImageAcquired)
 			.setSignalSemaphores(imageReady)
 			.setCommandBuffers(*m_BeginRenderCmdBuf[vkCore.GetCurrentFrameIndex()])
 			.setWaitDstStageMask(waitDestinationStageMask);
 
-		vkCore.GetGraphicsQueue().submit(submitInfo, VK_NULL_HANDLE);
+		vkCore.GetGraphicsQueue().submit(submitInfo);
+		vkCore.AddVulkanEndOfFrameCleanUpFunction([temp = std::move(currentFrameImageAcquired)](){});
 	}
 
 	void VulkanContext::WaitForIdle()
@@ -610,8 +598,6 @@ namespace OWC::Graphics
 				VulkanCore::GetInstance().SetSERSupport(extensionsAvailable);
 			}
 		}
-
-		VulkanCore::GetInstance().SetSERSupport(false);
 
 		if (const auto pDevice = VulkanCore::GetConstInstance().GetPhysicalDev(); pDevice == nullptr)
 			Log<LogLevel::Critical>("Failed to find a suitable GPU");
@@ -924,7 +910,7 @@ namespace OWC::Graphics
 			m_QueueFamilyIndices.UniqueIndices.emplace_back(familyIndex);
 	}
 
-	void VulkanContext::CreateSwapchain() const
+	void VulkanContext::CreateSwapchain()
 	{
 		if (m_IsMinimized)
 			return;
@@ -981,16 +967,15 @@ namespace OWC::Graphics
 		for (const auto& presentMode : presentModeCompatibilities)
 			Log<LogLevel::Debug>(" {}", vk::to_string(presentMode));
 
-		constexpr auto selectedPresentMode = vk::PresentModeKHR::eFifo; // guaranteed to be available
+		auto selectedPresentMode = vk::PresentModeKHR::eFifo; // guaranteed to be available
 		// prefer mailbox present mode if available
-		/*
-		for (const auto& presentMode : presentModeCompatibilities)
+		/*for (const auto& presentMode : presentModeCompatibilities)
 			if (presentMode == vk::PresentModeKHR::eMailbox)
 			{
-				selectedPresentMode = vk::PresentModeKHR::eMailbox;
+				selectedPresentMode = presentMode;
 				break;
-			}
-		*/
+			}*/
+
 		Log<LogLevel::Debug>("Vulkan Swapchain Present Mode selected: {}", vk::to_string(selectedPresentMode));
 
 		const vk::SurfaceTransformFlagBitsKHR preTransform = (surfaceCapabilities.surfaceCapabilities.supportedTransforms & vk::SurfaceTransformFlagBitsKHR::eIdentity)
@@ -1031,6 +1016,10 @@ namespace OWC::Graphics
 				.setOldSwapchain(*vkCore.GetSwapchain());
 
 		VulkanCore::GetInstance().SetSwapchain(vk::raii::SwapchainKHR(vkCore.GetDevice(), swapchainCreateInfo));
+
+		m_EndOfFrameFences.reserve(vkCore.GetSwapchainImages().size());
+		for (uSize i = 0; i < vkCore.GetSwapchainImages().size(); i++)
+			m_EndOfFrameFences.emplace_back(vkCore.GetDevice().createFence(vk::FenceCreateInfo().setFlags(vk::FenceCreateFlagBits::eSignaled)));
 
 		Log<LogLevel::Debug>("Vulkan Swapchain created with {} images", vkCore.GetSwapchainImages().size());
 
@@ -1083,13 +1072,6 @@ namespace OWC::Graphics
 			)
 		);
 
-		VulkanCore::GetInstance().SetTransferCommandPool(
-			VulkanCore::GetConstInstance().GetDevice().createCommandPool(
-				vk::CommandPoolCreateInfo()
-				.setQueueFamilyIndex(m_QueueFamilyIndices.TransferFamily)
-			)
-		);
-
 		VulkanCore::GetInstance().SetDynamicGraphicsCommandPool(
 			VulkanCore::GetConstInstance().GetDevice().createCommandPool(
 				vk::CommandPoolCreateInfo()
@@ -1106,14 +1088,7 @@ namespace OWC::Graphics
 			)
 		);
 
-		VulkanCore::GetInstance().SetDynamicTransferCommandPool(
-			VulkanCore::GetConstInstance().GetDevice().createCommandPool(
-				vk::CommandPoolCreateInfo()
-				.setQueueFamilyIndex(m_QueueFamilyIndices.TransferFamily)
-				.setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer)
-			)
-		);
-
+		VulkanCore::GetInstance().SetupTransferPools();
 		VulkanCore::GetInstance().SetupSemaphores();
 	}
 

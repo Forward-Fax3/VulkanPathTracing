@@ -78,7 +78,6 @@ namespace OWC
 		std::vector<ColourX2> m_BouncedColours;
 		i32 m_ActiveMaxBounces = 0;
 		bool m_EndThreads = false;
-		bool m_HoldAllThreads = false;
 		bool m_SingleThreadedModeNeedsSetup = true;
 		bool m_MultiThreadedModeNeedsSetup = true;
 	};

@@ -33,7 +33,7 @@ namespace OWC::Graphics
 
 		void BindUniform(u32 binding, const std::shared_ptr<UniformBuffer>& uniformBuffer) override;
 		void BindTexture(u32 binding, const std::shared_ptr<TextureImage>& textureBuffer, DescriptorType descriptorType) override;
-		void BindDynamicTexture(u32 binding, const std::shared_ptr<DynamicTextureBuffer>& dTextureBuffer) override;
+		void BindDynamicTextureImpl(u32 binding, const std::shared_ptr<DynamicTextureBuffer>& dTextureBuffer, DescriptorType descriptorType, i32 frameOffset) override;
 		void BindSampler2D(u32 binding, const std::shared_ptr<TextureArraySampler>& sampler) override;
 		void BindTextureArray(u32 binding, const std::shared_ptr<TextureArray>& textureArray) override;
 

@@ -29,7 +29,7 @@ namespace OWC
 	{
 		m_EmptyRenderPass = Graphics::Renderer::GetStaticRenderPass();
 		Graphics::Renderer::EndPass(m_EmptyRenderPass);
-		framesNeedingUpdatesForRangeInfo = Graphics::Renderer::GetNumberOfFramesInFlight(m_EmptyRenderPass);
+		framesNeedingUpdatesForRangeInfo = Graphics::Renderer::GetNumberOfFramesInFlight();
 	}
 
 	void MainLayer::OnUpdate()
@@ -66,12 +66,8 @@ namespace OWC
 				}
 				else
 				{
-					Graphics::Renderer::AddToEndOfFrameCleanUp([testLayer = std::move(m_TestLayer), cpuRayTracerLayer = std::move(m_CPURayTracerLayer), &app]()
-						{
-							app.PopLayer(testLayer);
-							app.PopLayer(cpuRayTracerLayer);
-						}
-					);
+					app.PopLayer(m_TestLayer);
+					app.PopLayer(m_CPURayTracerLayer);
 					m_ActiveLayer = 0;
 				}
 			}
@@ -88,11 +84,7 @@ namespace OWC
 				}
 				else
 				{
-					Graphics::Renderer::AddToEndOfFrameCleanUp([gpuRayTracerLayer = std::move(m_GPURayTracerLayer), &app]()
-						{
-							app.PopLayer(gpuRayTracerLayer);
-						}
-					);
+					app.PopLayer(m_GPURayTracerLayer);
 					m_ActiveLayer = 0;
 				}
 			}
@@ -119,7 +111,7 @@ namespace OWC
 			rangeInfoChanged = true;
 		}
 		if (rangeInfoChanged)
-			framesNeedingUpdatesForRangeInfo = Graphics::Renderer::GetNumberOfFramesInFlight(m_EmptyRenderPass);
+			framesNeedingUpdatesForRangeInfo = Graphics::Renderer::GetNumberOfFramesInFlight();
 		if (framesNeedingUpdatesForRangeInfo > 0)
 		{
 			framesNeedingUpdatesForRangeInfo--;

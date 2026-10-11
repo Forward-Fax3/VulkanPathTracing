@@ -12,7 +12,7 @@ namespace OWC::Graphics
 	public:
 		VulkanRenderPass() = delete;
 		explicit VulkanRenderPass(RenderPassType type);
-		~VulkanRenderPass() override;
+		~VulkanRenderPass() override = default;
 
 		VulkanRenderPass(const VulkanRenderPass&) = delete;
 		VulkanRenderPass& operator=(const VulkanRenderPass&) = delete;
@@ -22,25 +22,20 @@ namespace OWC::Graphics
 	private:
 		void PushConstant(const BaseShader& shader, uSize size, const void* dataPtr) override;
 		void TransitionImage(const std::shared_ptr<TextureImage>& textureBuffer, AccessMask dstAccessMask, StageMask dstStageMask, ImageLayout newLayout) override;
+		void TransitionImage(const std::shared_ptr<DynamicTextureBuffer>& textureBuffer, AccessMask dstAccessMask, StageMask dstStageMask, ImageLayout newLayout) override;
+		void CopyImage(const std::shared_ptr<TextureImage>& srcImage, const std::shared_ptr<DynamicTextureBuffer>& dstImage) override;
 		void BeginDynamicPass() override;
 		void BeginRasterPass() override;
 		void AddPipeline(const BaseShader& shader) override;
-		void BindUniform(const BaseShader& shader) override;
-		void BindTexture(const BaseShader& shader, u32 binding, u32 textureID) override;
-		void BindDynamicTexture(const BaseShader& shader, u32 binding, u32 textureID) override;
-		void Draw(u32 vertexCount, u32 instanceCount = 1, u32 firstVertex = 0, u32 firstInstance = 0) override;
+		void Draw(u32 vertexCount, u32 instanceCount, u32 firstVertex, u32 firstInstance) override;
 		void RayTrace(const BaseShader& shader, u32 width, u32 height, u32 depth) override;
 		void EndRenderPass() override;
 		void EndPass() override;
-		void submitRenderPass(std::span<std::string_view> waitSemaphoreNames, std::span<std::string_view> startSemaphore, bool waitForLastFrameToFinish) override;
+		void submitRenderPass(std::span<std::string_view> waitSemaphoreNames, std::span<std::string_view> startSemaphore, std::span<std::string_view> waitPreviousFrameSemaphoreNames) override;
 
 		void RestartRenderPass() override;
 
-		void DrawImGui(std::shared_ptr<VertexBuffer>, std::shared_ptr<IndexBuffer>, ImDrawData* drawData) override;
-
-		static vk::AccessFlags2 GetVulkanAccessMask(AccessMask accessMask);
-		static vk::PipelineStageFlags2 GetVulkanPipelineStageMask(StageMask stageMask);
-		static vk::ImageLayout GetVulkanImageLayout(ImageLayout layout);
+		void DrawImGui(std::span<const std::shared_ptr<VertexBuffer>> vertexBuffer, std::span<const std::shared_ptr<IndexBuffer>> indexBuffer, ImDrawData* drawData) override;
 
 		[[nodiscard]] uSize GetNumberOfFramesInFlight() const override;
 

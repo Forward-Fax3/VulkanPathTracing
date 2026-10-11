@@ -64,7 +64,7 @@ namespace OWC::Graphics
 		void CheckQueueFamilyValidity(const std::vector<vk::QueueFamilyProperties>& queueFamilies);
 		void GetAndStoreGlobalQueueFamilies() const;
 		void CreateLogicalDevice();
-		void CreateSwapchain() const;
+		void CreateSwapchain();
 		void CreateCommandPools() const;
 		void WriteCommandBuffers();
 		static void CreateVulkanMemoryAllocator();
@@ -77,6 +77,8 @@ namespace OWC::Graphics
 
 		std::vector<vk::raii::CommandBuffer> m_BeginRenderCmdBuf{};
 		std::vector<vk::raii::CommandBuffer> m_EndRenderCmdBuf{};
+
+		std::vector<vk::raii::Fence> m_EndOfFrameFences;
 
 		const WindowProperties& m_WindowProperties;
 

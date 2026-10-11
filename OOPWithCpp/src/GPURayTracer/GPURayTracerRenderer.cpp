@@ -45,6 +45,7 @@ namespace OWC
 		SetupPipeline();
 		SetupRenderPass();
 		CalculateCamera();
+		m_CameraNeedsRefreshing = Graphics::Renderer::GetNumberOfFramesInFlight();
 	}
 
 	void GPURayTracerRenderer::OnUpdate()
@@ -56,7 +57,7 @@ namespace OWC
 			const auto& app = Application::GetConstInstance();
 			const float deltaTime = app.GetDeltaTime();
 			const Vec3 movePos = m_KeyPressedOnVec3 * m_MoveSpeed * deltaTime;
-			m_CameraNeedsRefreshing = Renderer::GetNumberOfFramesInFlight(m_RayTracingRenderPass) - 1;
+			m_CameraNeedsRefreshing = Renderer::GetNumberOfFramesInFlight() - 1;
 			CalculateCamera(movePos);
 		}
 		else if (m_CameraNeedsRefreshing != 0)
@@ -84,17 +85,24 @@ namespace OWC
 		m_NumberOfAccumulatedSamples = m_AccumulationOn ? m_NumberOfAccumulatedSamples + m_NumberOfSamples : m_NumberOfSamples;
 
 		UniformBufferObject ubo {
-			.divider = 1.0f / static_cast<f32>(m_NumberOfAccumulatedSamples),
+			.divider = 1.0f / static_cast<f32>(m_NumberOfAccumulatedSamples)
 		};
 
 		m_UniformBuffer->UpdateBufferData(std::as_bytes(std::span<const UniformBufferObject>(&ubo, 1)));
 
-		std::array<std::string_view, 1> rayTracerWaitSemaphoreNames = { "ImageReady" };
+		std::array<std::string_view, 1> rayTracerWaitSemaphoreNames = { "PreviousFrameDisplayDone" };
 		std::array<std::string_view, 1> rayTracerSignalSemaphoreNames = { "RayTracerDone" };
-		std::array<std::string_view, 1> displayWaitSemaphoreNames = { "RayTracerDone" };
+		std::array<std::string_view, 2> displayWaitSemaphoreNames = { "ImageReady", "RayTracerDone" };
+		std::array<std::string_view, 1> displaySignalSemaphoreNames = { "PreviousFrameDisplayDone" };
 
-		Renderer::SubmitRenderPass(m_RayTracingRenderPass, rayTracerWaitSemaphoreNames, rayTracerSignalSemaphoreNames);
-		Renderer::SubmitRenderPass(m_DisplayRenderPass, displayWaitSemaphoreNames);
+		if (m_FirstFrame)
+		{
+			Renderer::SubmitRenderPass(m_RayTracingRenderPass, {}, rayTracerSignalSemaphoreNames);
+			m_FirstFrame = false;
+		}
+		else
+			Renderer::SubmitRenderPass(m_RayTracingRenderPass, {}, rayTracerSignalSemaphoreNames, rayTracerWaitSemaphoreNames);
+		Renderer::SubmitRenderPass(m_DisplayRenderPass, displayWaitSemaphoreNames, displaySignalSemaphoreNames);
 	}
 
 	void GPURayTracerRenderer::ImGuiRender()
@@ -108,61 +116,60 @@ namespace OWC
 
 		if (ImGui::Combo("Scene", &m_SceneIndex, scenes.data(), scenes.size()))
 		{
-			Graphics::Renderer::AddToEndOfFrameCleanUp([this]()
+			Graphics::Renderer::AddToEndOfFrameCleanUp([RTS = std::move(m_RayTracingShader), DTS = std::move(m_DisplayShader), RTRR = std::move(m_RayTracingRenderPass), DRR = std::move(m_DisplayRenderPass)](){});
+
+			Vec3 newPosition{ 0.0f };
+			Vec3 newRotation { 0.0f };
+			switch (m_SceneIndex)
 			{
-				Vec3 newPosition{ 0.0f };
-				Vec3 newRotation { 0.0f };
-				switch (m_SceneIndex)
-				{
-				case 0:
-				{
-					this->m_Scene = std::make_shared<MeshReuseInstancingExample>();
-					newPosition = Vec3(-1.0f, 0.2f, 0.0f);
-					newRotation = Vec3(0.0f, 90.0f, 0.0f);
-					break;
-				}
-				case 1:
-				{
-					this->m_Scene = std::make_shared<EXTMeshGPUInstancingExample>();
-					newPosition = Vec3(-25.0f, 15.0f, 15.0f);
-					newRotation = Vec3(-20.0f, 105.0f, 0.0f);
-					break;
-				}
-				case 2:
-				{
-					this->m_Scene = std::make_shared<SponzaPalace>();
-					newPosition = Vec3(0.0f, 1.5f, 0.0f);
-					break;
-				}
-				case 3:
-				{
-					this->m_Scene = std::make_shared<BistroExterior>();
-					newPosition = Vec3(-21.0f, 3.0f, -3.0f);
-					newRotation = Vec3(0.0f, 75.0f, 0.0f);
-					break;
-				}
-				case 4:
-				{
-					this->m_Scene = std::make_shared<BistroInterior>();
-					newPosition = Vec3(5.0f, 3.0f, 10.0f);
-					newRotation = Vec3(0.0f, 150.0f, 0.0f);
-					break;
-				}
-				default:
-				{
-					this->m_Scene = std::make_shared<MeshReuseInstancingExample>();
-					newRotation = Vec3(0.0f, 90.0f, 0.0f);
-					newPosition = Vec3(-1.0f, 0.2f, 0.0f);
-					this->m_SceneIndex = 0;
-					Log<LogLevel::Warn>("Invalid scene index selected, defaulting to MeshReuseInstancingExample");
-				}
-				}
-				this->m_CameraRotation = newRotation;
-				this->m_CameraPosition = newPosition;
-				this->SetupPipeline();
-				this->SetupRenderPass();
-			});
-			cameraMoved = true;
+			case 0:
+			{
+				this->m_Scene = std::make_shared<MeshReuseInstancingExample>();
+				newPosition = Vec3(-1.0f, 0.2f, 0.0f);
+				newRotation = Vec3(0.0f, 90.0f, 0.0f);
+				break;
+			}
+			case 1:
+			{
+				this->m_Scene = std::make_shared<EXTMeshGPUInstancingExample>();
+				newPosition = Vec3(-25.0f, 15.0f, 15.0f);
+				newRotation = Vec3(-20.0f, 105.0f, 0.0f);
+				break;
+			}
+			case 2:
+			{
+				this->m_Scene = std::make_shared<SponzaPalace>();
+				newPosition = Vec3(0.0f, 1.5f, 0.0f);
+				break;
+			}
+			case 3:
+			{
+				this->m_Scene = std::make_shared<BistroExterior>();
+				newPosition = Vec3(-21.0f, 3.0f, -3.0f);
+				newRotation = Vec3(0.0f, 75.0f, 0.0f);
+				break;
+			}
+			case 4:
+			{
+				this->m_Scene = std::make_shared<BistroInterior>();
+				newPosition = Vec3(5.0f, 3.0f, 10.0f);
+				newRotation = Vec3(0.0f, 150.0f, 0.0f);
+				break;
+			}
+			default:
+			{
+				this->m_Scene = std::make_shared<MeshReuseInstancingExample>();
+				newRotation = Vec3(0.0f, 90.0f, 0.0f);
+				newPosition = Vec3(-1.0f, 0.2f, 0.0f);
+				this->m_SceneIndex = 0;
+				Log<LogLevel::Warn>("Invalid scene index selected, defaulting to MeshReuseInstancingExample");
+			}
+			}
+			this->m_CameraRotation = newRotation;
+			this->m_CameraPosition = newPosition;
+			this->SetupPipeline();
+			this->SetupRenderPass();
+			this->m_CameraNeedsRefreshing = Graphics::Renderer::GetNumberOfFramesInFlight();
 		}
 
 		ImGui::Separator();
@@ -174,65 +181,52 @@ namespace OWC
 		cameraMoved |= ImGui::SliderFloat("Horizontal FOV", &m_HFOV, 1.0f, 179.0f);
 		if (ImGui::SliderInt("Number of Bounces", &m_NumberOfBounces, 0, 128))
 		{
+			Graphics::Renderer::AddToEndOfFrameCleanUp([RTRR = std::move(m_RayTracingRenderPass), DRR = std::move(m_DisplayRenderPass)](){});
 			m_NumberOfBounces = glm::clamp(m_NumberOfBounces, 0, 128);
 			m_ScreenNeedsRefreshing = true;
-			Graphics::Renderer::AddToEndOfFrameCleanUp([this]()
-			{
-				this->SetupRenderPass();
-			});
+			SetupRenderPass();
 		}
 		if (ImGui::Checkbox("Use Window Resolution", &m_UseWindowResolution))
         {
 			if (m_UseWindowResolution == true)
 			{
+				Graphics::Renderer::AddToEndOfFrameCleanUp([renderTarget = std::move(m_RenderTarget), RTS = std::move(m_RayTracingShader), DTS = std::move(m_DisplayShader), RTRR = std::move(m_RayTracingRenderPass), DRR = std::move(m_DisplayRenderPass)](){});
 				m_RayTracingResolution.x = Application::GetConstInstance().GetPixelWidth();
 				m_RayTracingResolution.y = Application::GetConstInstance().GetPixelHeight();
 				m_ScreenNeedsRefreshing = true;
-				Graphics::Renderer::AddToEndOfFrameCleanUp([this]()
-				{
-					this->SetUpRenderImage();
-					this->m_RayTracingShader->BindTexture(0, m_RenderTarget, Graphics::DescriptorType::StorageImage);
-					this->m_DisplayShader->BindTexture(1, m_RenderTarget, Graphics::DescriptorType::CombinedImageSampler);
-					this->SetupRenderPass();
-				});
+				SetUpRenderImage();
+				SetupPipeline();
+				SetupRenderPass();
 			}
         }
 		if (!m_UseWindowResolution)
 		{
-			// some static asserts to asure the position and size of ray tracing width and height will or with the short cuts ive set up
 			if (ImGui::OWC::SliderInt2WithAlignedText("Ray Tracing Resolution", "Width", "Height", glm::value_ptr(m_RayTracingResolution), 1, 8192, ImGuiSliderFlags_ClampOnInput))
 			{
+				Graphics::Renderer::AddToEndOfFrameCleanUp([renderTarget = std::move(m_RenderTarget), RTS = std::move(m_RayTracingShader), DTS = std::move(m_DisplayShader), RTRR = std::move(m_RayTracingRenderPass), DRR = std::move(m_DisplayRenderPass)](){});
 				m_ScreenNeedsRefreshing = true;
-				Graphics::Renderer::AddToEndOfFrameCleanUp([this]()
-				{
-					this->SetUpRenderImage();
-					this->m_RayTracingShader->BindTexture(0, m_RenderTarget, Graphics::DescriptorType::StorageImage);
-					this->m_DisplayShader->BindTexture(1, m_RenderTarget, Graphics::DescriptorType::CombinedImageSampler);
-					this->SetupRenderPass();
-				});
+				SetUpRenderImage();
+				SetupPipeline();
+				SetupRenderPass();
 			}
 		}
 		constexpr u32 minStratifiedGridSize = 1;
 		constexpr u32 maxStratifiedGridSize = 32;
 		if (ImGui::SliderScalar("Stratified Grid Size", ImGuiDataType_U32, &m_StratifiedGridSize, &minStratifiedGridSize, &maxStratifiedGridSize, "%d", ImGuiSliderFlags_ClampOnInput))
 		{
-			Graphics::Renderer::AddToEndOfFrameCleanUp([this]()
-			{
-				this->SetupRenderPass();
-			});
+			Graphics::Renderer::AddToEndOfFrameCleanUp([RTRR = std::move(m_RayTracingRenderPass), DRR = std::move(m_DisplayRenderPass)](){});
 			m_StratifiedPosition = 0;
 			m_ScreenNeedsRefreshing = true;
+			SetupRenderPass();
 		}
 		constexpr u32 minNumberOfSamples = 1;
 		constexpr u32 maxNumberOfSamples = 16;
 		if (ImGui::SliderScalar("Number Of Samples", ImGuiDataType_U32, &m_NumberOfSamples, &minNumberOfSamples, &maxNumberOfSamples, "%d", ImGuiSliderFlags_ClampOnInput))
 		{
+			Graphics::Renderer::AddToEndOfFrameCleanUp([RTRR = std::move(m_RayTracingRenderPass), DRR = std::move(m_DisplayRenderPass)](){});
 			m_ScreenNeedsRefreshing = true;
 			m_NumberOfAccumulatedSamples = 0;
-			Graphics::Renderer::AddToEndOfFrameCleanUp([this]()
-			{
-				this->SetupRenderPass();
-			});
+			SetupRenderPass();
 		}
 		if (ImGui::Checkbox("Accumulation On", &m_AccumulationOn))
 		{
@@ -242,7 +236,7 @@ namespace OWC
 		ImGui::End();
 
 		if (cameraMoved)
-			m_CameraNeedsRefreshing = Graphics::Renderer::GetNumberOfFramesInFlight(m_RayTracingRenderPass);
+			m_CameraNeedsRefreshing = Graphics::Renderer::GetNumberOfFramesInFlight();
 	}
 
 	void GPURayTracerRenderer::OnEvent(BaseEvent& e)
@@ -267,6 +261,7 @@ namespace OWC
 			});
 
 		dispatcher.Dispatch<WindowResize>([this](const WindowResize& /*event*/) {
+			m_FirstFrame = true;
 			if (m_UseWindowResolution == false)
 			{
 				this->SetupRenderPass();
@@ -383,8 +378,6 @@ namespace OWC
 		Renderer::TransitionImage(m_RayTracingRenderPass, m_RenderTarget, AccessMask::ShaderWrite | AccessMask::ShaderRead, StageMask::RayTracing, ImageLayout::General);
 		Renderer::PipelineBind(m_RayTracingRenderPass, *m_RayTracingShader);
 		Renderer::PushConstant(m_RayTracingRenderPass, *m_RayTracingShader, sizeof(PushConstantData), &pushConstantData);
-		Renderer::BindUniform(m_RayTracingRenderPass, *m_RayTracingShader);
-		Renderer::BindTexture(m_RayTracingRenderPass, *m_RayTracingShader, 0, 0);
 		Renderer::RayTrace(m_RayTracingRenderPass, *m_RayTracingShader, m_RayTracingResolution.x, m_RayTracingResolution.y, 1);
 		Renderer::EndPass(m_RayTracingRenderPass);
 
@@ -392,8 +385,6 @@ namespace OWC
 		Renderer::TransitionImage(m_DisplayRenderPass, m_RenderTarget, AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
 		Renderer::BeginRasterPass(m_DisplayRenderPass);
 		Renderer::PipelineBind(m_DisplayRenderPass, *m_DisplayShader);
-		Renderer::BindUniform(m_DisplayRenderPass, *m_DisplayShader);
-		Renderer::BindTexture(m_DisplayRenderPass, *m_DisplayShader, 1, 0);
 		Renderer::Draw(m_DisplayRenderPass, 6);
 		Renderer::EndRasterPass(m_DisplayRenderPass);
 		Renderer::TransitionImage(m_DisplayRenderPass, m_RenderTarget, AccessMask::None, StageMask::TopOfPipe, ImageLayout::General);
@@ -458,7 +449,7 @@ namespace OWC
 
 			std::vector<u32> shaderSrc;
 
-			if (Renderer::HasShaderExecutionSupport())
+			if (Renderer::HasShaderExecutionReorderingSupport())
 				shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/GPURayTracerShaders/RayTracing_SER.spv");
 			else
 				shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/GPURayTracerShaders/RayTracing.spv");

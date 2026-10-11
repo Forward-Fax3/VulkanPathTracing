@@ -140,7 +140,7 @@ namespace OWC::Graphics
 
 		virtual void BindUniform(u32 binding, const std::shared_ptr<UniformBuffer>& uniformBuffer) = 0;
 		virtual void BindTexture(u32 binding, const std::shared_ptr<TextureImage>& textureBuffer, DescriptorType descriptorType) = 0;
-		virtual void BindDynamicTexture(u32 binding, const std::shared_ptr<DynamicTextureBuffer>& dTextureBuffer) = 0;
+		void BindDynamicTexture(const u32 binding, const std::shared_ptr<DynamicTextureBuffer>& dTextureBuffer, const DescriptorType descriptorType, const i32 frameOffset = 0) { BindDynamicTextureImpl(binding, dTextureBuffer, descriptorType, frameOffset); }
 		virtual void BindSampler2D(u32 binding, const std::shared_ptr<TextureArraySampler>& sampler) = 0;
 		virtual void BindTextureArray(u32 binding, const std::shared_ptr<TextureArray>& textureArray) = 0;
 
@@ -148,5 +148,9 @@ namespace OWC::Graphics
 
 		static std::unique_ptr<BaseShader> CreateShader(const std::span<ShaderData>& shaderDatas, const std::span<VertexBindings>& vertexBindings = {}, const std::span<VertexAttributes>& vertexAttributes = {});
 		static std::unique_ptr<BaseShader> CreateRTShader(const std::span<ShaderData>& shaderDatas);
+
+	private:
+		virtual void BindDynamicTextureImpl(u32 binding, const std::shared_ptr<DynamicTextureBuffer>& dTextureBuffer, DescriptorType descriptorType, i32 frameOffset) = 0;
+
 	};
 }

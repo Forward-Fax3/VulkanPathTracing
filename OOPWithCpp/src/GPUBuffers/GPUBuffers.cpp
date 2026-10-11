@@ -42,10 +42,10 @@ namespace OWC::Graphics
 		return std::make_shared<VulkanStorageImage>(width, height, format);
 	}
 
-	std::shared_ptr<DynamicTextureBuffer> DynamicTextureBuffer::CreateDynamicTextureBuffer(u32 width, u32 height)
+	std::shared_ptr<DynamicTextureBuffer> DynamicTextureBuffer::CreateDynamicTextureBuffer(const u32 width, const u32 height, const Format format, const AccessMask accessMask, const StageMask stageMask, const ImageLayout imageLayout)
 	{
 		// For now, only Vulkan is supported
-		return std::make_shared<VulkanDynamicTextureBuffer>(width, height);
+		return std::make_shared<VulkanDynamicTextureBuffer>(width, height, format, accessMask, stageMask, imageLayout);
 	}
 
 	std::shared_ptr<GeneralBuffer> GeneralBuffer::CreateGeneralBuffer(uSize size, uSize alignment /*= 0*/)

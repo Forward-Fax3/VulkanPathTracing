@@ -74,6 +74,7 @@ namespace OWC
         bool m_AccumulationOn = false;
 
         bool m_UseWindowResolution = true;
+        bool m_FirstFrame = true;
 
         Vec3 m_KeyPressedOnVec3 = Vec3(0.0f);
 

@@ -49,7 +49,6 @@ namespace OWC
 			renderThreadData.StartIndex = 0;
 			renderThreadData.Step = 1;
 			renderThreadData.Hittables = hittables;
-			m_HoldAllThreads = true;
 			m_RenderThreads[0].detach();
 			UpdateCameraSettings();
 		}
@@ -81,7 +80,7 @@ namespace OWC
 			m_RenderThreadsData.clear();
 			m_RenderThreads.clear();
 			m_EndThreads = false;
-			uSize threadCount = std::thread::hardware_concurrency() - 1; // leave one core free for main thread
+			const uSize threadCount = std::thread::hardware_concurrency() - 1; // leave one core free for main thread
 			m_RenderThreadsData.resize(threadCount);
 			m_RenderThreads.reserve(threadCount);
 			for (uSize i = 0; i != threadCount; i++)
@@ -99,7 +98,6 @@ namespace OWC
 				renderThreadData.Step = threadCount;
 				renderThreadData.Hittables = hittables;
 			}
-			m_HoldAllThreads = true;
 			for (std::jthread& thread : m_RenderThreads)
 				thread.detach();
 			UpdateCameraSettings();
@@ -126,7 +124,6 @@ namespace OWC
 
 	void RTCamera::UpdateCameraSettings()
 	{
-		m_HoldAllThreads = true;
 		for (const ThreadData& data : m_RenderThreadsData)
 			while (!data.IsFinished)
 				std::this_thread::yield();
@@ -156,8 +153,6 @@ namespace OWC
 
 		Point viewportUpperLeft = m_Settings.Position - (m_Settings.FocalLength * forward) - 0.5f * (viewportU + viewportV);
 		m_Pixel100Location = viewportUpperLeft + 0.5f * (m_PixelDeltaU + m_PixelDeltaV);
-
-		m_HoldAllThreads = false;
 	}
 
 	Ray RTCamera::CreateRay(uSize i, uSize j) const
@@ -219,7 +214,7 @@ namespace OWC
 		while (true)
 		{
 			data.IsFinished = true;
-			while ((data.IsFinished || m_HoldAllThreads) && !m_EndThreads) { OWC_NO_OP; }
+			while (data.IsFinished && !m_EndThreads) { OWC_NO_OP; }
 				//std::this_thread::yield();
 
 			if (m_EndThreads)
@@ -229,7 +224,7 @@ namespace OWC
 			Vec2us screenSize(m_Settings.ScreenSize);
 
 			for (uSize pixel = data.StartIndex; pixel < screenSize.x * screenSize.y; pixel += data.Step)
-				for (i32 sample = 0; sample != m_Settings.NumberOfSamplesPerPass && !m_HoldAllThreads && !m_EndThreads; sample++)
+				for (i32 sample = 0; sample != m_Settings.NumberOfSamplesPerPass && !m_EndThreads; sample++)
 				{
 					Ray ray = CreateRay(pixel / screenSize.x, pixel % screenSize.x);
 

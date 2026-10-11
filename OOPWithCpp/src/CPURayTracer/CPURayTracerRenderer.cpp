@@ -24,7 +24,7 @@ namespace OWC
 		: m_ILD(ILD)
 	{
 		m_UniformBuffer = Graphics::UniformBuffer::CreateUniformBuffer(sizeof(UniformBufferObject));
-		m_Image = Graphics::DynamicTextureBuffer::CreateDynamicTextureBuffer(1, 1);
+		m_Image = Graphics::DynamicTextureBuffer::CreateDynamicTextureBuffer(1, 1, Graphics::Format::R32G32B32A32_SFloat, Graphics::AccessMask::ShaderRead, Graphics::StageMask::FragmentShader, Graphics::ImageLayout::ShaderReadOnlyOptimal);
 		const std::vector emptyImageData = { Vec4(0.0f) };
 		m_Image->UpdateBufferData(emptyImageData);
 		SetupPipeline();
@@ -47,14 +47,16 @@ namespace OWC
 		{
 			if (m_ILD->ImageUpdates[1] && m_ILD->imageScreenSize > 0u) // image resize
 			{
-				m_Image = DynamicTextureBuffer::CreateDynamicTextureBuffer(m_ILD->imageScreenSize.x, m_ILD->imageScreenSize.y);
+				Renderer::AddToEndOfFrameCleanUp([image = std::move(m_Image)](){});
+				m_Image = DynamicTextureBuffer::CreateDynamicTextureBuffer(m_ILD->imageScreenSize.x, m_ILD->imageScreenSize.y, Format::R32G32B32A32_SFloat, AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
 				m_Image->UpdateBufferData(m_ILD->imageData);
 				SetupPipeline();
 				SetupRenderPass();
 			}
 			else if (m_ILD->imageScreenSize.x == 0 || m_ILD->imageScreenSize.y == 0) // clear image
 			{
-				m_Image = DynamicTextureBuffer::CreateDynamicTextureBuffer(1, 1);
+				Renderer::AddToEndOfFrameCleanUp([image = std::move(m_Image)](){});
+				m_Image = DynamicTextureBuffer::CreateDynamicTextureBuffer(1, 1, Format::R32G32B32A32_SFloat, AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
 				const std::vector emptyImageData = { Vec4(0.0f) };
 				m_Image->UpdateBufferData(emptyImageData);
 				SetupPipeline();
@@ -70,13 +72,13 @@ namespace OWC
 
 			m_ILD->ImageUpdates.reset();
 		}
-		else if (framesUpdated != Renderer::GetNumberOfFramesInFlight(m_renderPass) && !m_ILD->imageData.empty()) // keep updating image for all frames in flight 
+		else if (framesUpdated != Renderer::GetNumberOfFramesInFlight() && !m_ILD->imageData.empty()) // keep updating image for all frames in flight
 		{
 			m_Image->UpdateBufferData(m_ILD->imageData);
 			framesUpdated++;
 		}
 
-		Renderer::SubmitRenderPass(m_renderPass, waitSemaphoreNames, {});
+		Renderer::SubmitRenderPass(m_renderPass, waitSemaphoreNames);
 	}
 
 	void CPURayTracerRenderer::OnEvent(BaseEvent& e)
@@ -89,7 +91,7 @@ namespace OWC
 			return false;
 			});
 
-		if (!IsActive())
+		if (!IsActive())			
 			return;
 
 		dispatcher.Dispatch<WindowMinimize>([this](const WindowMinimize& /*event*/) {
@@ -109,11 +111,10 @@ namespace OWC
 		using namespace OWC::Graphics;
 		constexpr u32 numberOfVertices = 6;
 
+		Renderer::AddToEndOfFrameCleanUp([renderPass = std::move(m_renderPass)](){});
 		m_renderPass = Renderer::GetStaticRenderPass();
 		Renderer::BeginRasterPass(m_renderPass);
 		Renderer::PipelineBind(m_renderPass, *m_Shader);
-		Renderer::BindUniform(m_renderPass, *m_Shader);
-		Renderer::BindDynamicTexture(m_renderPass, *m_Shader, 1, 0);
 		Renderer::Draw(m_renderPass, numberOfVertices);
 		Renderer::EndRasterPass(m_renderPass);
 		Renderer::EndPass(m_renderPass);
@@ -163,9 +164,10 @@ namespace OWC
 			}
 		};
 
+		Renderer::AddToEndOfFrameCleanUp([shader = std::move(m_Shader)](){});
 		m_Shader = BaseShader::CreateShader(shaderDatas);
 		m_Shader->BindUniform(0, m_UniformBuffer);
 		m_Shader->BindUniform(1, Renderer::GetDynamicRageUniformBuffer());
-		m_Shader->BindDynamicTexture(2, m_Image);
+		m_Shader->BindDynamicTexture(2, m_Image, DescriptorType::CombinedImageSampler);
 	}
 }
