@@ -67,9 +67,9 @@ namespace OWC
 		}
 		else // CalculateCamera already creates a new random but camera may not be moved so a new random is sent to the GPU here
 		{
-			m_StratifiedPosition = (m_StratifiedPosition + m_NumberOfSamples) % (m_StratifiedGridSize * m_StratifiedGridSize);
+			m_StratifiedPosition = (m_StratifiedPosition + m_NumberOfSamples);
 			std::array newRandAndStratifiedPos{ Rand::LinearFastRandValue(0u, std::numeric_limits<u32>::max()), m_StratifiedPosition };
-			m_RayTracingGPUDataBuffer->UpdateBufferData(std::as_bytes(std::span<const u32>(newRandAndStratifiedPos.data(), newRandAndStratifiedPos.size())), newRandAndStratifiedPos.size(), offsetof(GeneralGPUData, randSeed));
+			m_RayTracingGPUDataBuffer->UpdateBufferData(std::as_bytes(std::span<const u32>(newRandAndStratifiedPos.data(), newRandAndStratifiedPos.size())), sizeof(newRandAndStratifiedPos), offsetof(GeneralGPUData, randSeed));
 		}
 
 		u32 GPURefreshScreen = false;
@@ -125,21 +125,22 @@ namespace OWC
 			case 0:
 			{
 				this->m_Scene = std::make_shared<MeshReuseInstancingExample>();
-				newPosition = Vec3(-1.0f, 0.2f, 0.0f);
-				newRotation = Vec3(0.0f, 90.0f, 0.0f);
+				newPosition = Vec3(1.0f, 0.2f, 0.0f);
+				newRotation = Vec3(0.0f, -90.0f, 0.0f);
 				break;
 			}
 			case 1:
 			{
 				this->m_Scene = std::make_shared<EXTMeshGPUInstancingExample>();
-				newPosition = Vec3(-25.0f, 15.0f, 15.0f);
-				newRotation = Vec3(-20.0f, 105.0f, 0.0f);
+				newPosition = Vec3(-18.5f, 16.5f, -27.5f);
+				newRotation = Vec3(-20.0f, 50.0f, 0.0f);
 				break;
 			}
 			case 2:
 			{
 				this->m_Scene = std::make_shared<SponzaPalace>();
-				newPosition = Vec3(0.0f, 1.5f, 0.0f);
+				newPosition = Vec3(0.5f, 2.0f, 2.0f);
+				newRotation = Vec3(-2.5f, 110.0f, 0.0f);
 				break;
 			}
 			case 3:
@@ -215,7 +216,6 @@ namespace OWC
 		if (ImGui::SliderScalar("Stratified Grid Size", ImGuiDataType_U32, &m_StratifiedGridSize, &minStratifiedGridSize, &maxStratifiedGridSize, "%d", ImGuiSliderFlags_ClampOnInput))
 		{
 			Graphics::Renderer::AddToEndOfFrameCleanUp([RTRR = std::move(m_RayTracingRenderPass), DRR = std::move(m_DisplayRenderPass)](){});
-			m_StratifiedPosition = 0;
 			m_ScreenNeedsRefreshing = true;
 			SetupRenderPass();
 		}
@@ -555,10 +555,12 @@ namespace OWC
 		m_CameraPosition += up * movement.y;
 		m_CameraPosition += right * movement.z;
 
-		const Mat4 posMat = glm::translate(Mat4(1.0f), m_CameraPosition);
+		Mat4 mat{ 1.0f };
+		mat[2][2] = -1;
+		const Mat4 posMat = glm::translate(mat, m_CameraPosition);
 		const Mat4 invView = posMat * rotMat;
 
-		m_StratifiedPosition = m_NumberOfSamples;
+		m_StratifiedPosition += m_NumberOfSamples;
 		GeneralGPUData generalGPUData {
 			.InvProjection = glm::inverse(projectionMatrix),
 			.InvViewMatrix = glm::transpose(invView),

@@ -10,9 +10,6 @@ static const float pi2 = pi * pi;
 static const float oneOverPi = 1.0f / pi;
 static const float oneOverPi2 = 1.0f / pi2;
 
-static const uint CANDIDATE_AABB = 1;
-static const uint CANDIDATE_TRIANGLE = 2;
-
 void BuildOrthonormalBasis(float3 n, out float3 tangent, out float3 bitangent)
 {
     float sign = n.z >= 0.0 ? 1.0 : -1.0;

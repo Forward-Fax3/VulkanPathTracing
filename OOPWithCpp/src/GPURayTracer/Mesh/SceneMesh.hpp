@@ -19,7 +19,6 @@ namespace OWC
         u64 vertexOffset = 0;
         u32 materialIndex = 0;
         u32 is32BitIndices = 0;
-        u32 _[2] = { 0, 0 }; // pad to 32 bytes
     };
 
     struct GPUMaterialData

@@ -1,10 +1,12 @@
+#pragma once
+
+
 struct GeometryDescriptor
 {
     uint64_t indicesOffset;
     uint64_t vertexOffset;
     uint materialIndex;
     uint is32BitIndices;
-    uint pad[2]; // 32 bytes
 }
 
 struct MaterialData
@@ -22,7 +24,6 @@ struct MaterialData
     uint emissiveTextureIndex;
     uint emissiveTextureCoords;
     float alphaCutoff;
-    //uint pad[2]; // pad to 80 bytes
 }
 
 struct VertexData
@@ -42,8 +43,8 @@ struct LightData
     float intensity;
     float3 colour;
     float range;
-    float innerConeAngle;
-    float outerConeAngle;
+    float cosInnerConeAngle;
+    float cosOuterConeAngle;
     float radius;
     uint pad[1];
 }

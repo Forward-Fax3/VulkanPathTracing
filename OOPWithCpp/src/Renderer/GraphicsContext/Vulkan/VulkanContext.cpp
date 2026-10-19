@@ -269,7 +269,8 @@ namespace OWC::Graphics
 		vk::KHRDeferredHostOperationsExtensionName,
 		vk::KHRShaderNonSemanticInfoExtensionName,
 		vk::KHRRayQueryExtensionName,
-		vk::KHRRayTracingMaintenance1ExtensionName
+		vk::KHRRayTracingMaintenance1ExtensionName,
+		vk::KHRRayTracingPositionFetchExtensionName
 	};
 
 
@@ -286,6 +287,7 @@ namespace OWC::Graphics
 		vk::KHRShaderNonSemanticInfoExtensionName,
 		vk::KHRRayQueryExtensionName,
 		vk::KHRRayTracingMaintenance1ExtensionName,
+		vk::KHRRayTracingPositionFetchExtensionName,
 		vk::EXTRayTracingInvocationReorderExtensionName
 	};
 
@@ -830,8 +832,12 @@ namespace OWC::Graphics
 			.setPNext(&shaderObjectFeature)
 			.setRayTracingInvocationReorder(VulkanCore::GetConstInstance().HasSERSupport() ? vk::True : vk::False);
 
-		auto rayTracingMaintenance1 = vk::PhysicalDeviceRayTracingMaintenance1FeaturesKHR()
+		auto rayTracingPositionFetch = vk::PhysicalDeviceRayTracingPositionFetchFeaturesKHR()
 			.setPNext(&shaderExecutionReordering)
+			.setRayTracingPositionFetch(vk::True);
+
+		auto rayTracingMaintenance1 = vk::PhysicalDeviceRayTracingMaintenance1FeaturesKHR()
+			.setPNext(&rayTracingPositionFetch)
 			.setRayTracingMaintenance1(vk::True);
 
 		auto rayQueryFeature = vk::PhysicalDeviceRayQueryFeaturesKHR()

@@ -393,8 +393,8 @@ namespace OWC
                     light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 10.0f, // intensity
                     colour, // colour
                     static_cast<f32>(light.range), // range
-                    static_cast<f32>(light.spot.inner_cone_angle), // inner cone angle
-                    static_cast<f32>(light.spot.outer_cone_angle)  // outer cone angle
+                    glm::max(1e-6f, static_cast<f32>(glm::cos(light.spot.inner_cone_angle))), // cos inner cone angle
+                    static_cast<f32>(glm::cos(light.spot.outer_cone_angle))  // cos outer cone angle
                 );
             }
             else if (tg3_str_equals_cstr(light.type, "point"))
@@ -406,7 +406,7 @@ namespace OWC
                     Vec3p(parentTransform[3]), // position
                     1, // type (1 for point)
                     glm::normalize(Vec3p(-parentTransform[2])), // direction
-                    light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 10000.0f, // intensity
+                    light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 10.0f, // intensity
                     colour, // colour
                     static_cast<f32>(light.range), // range
                     radius < 1e-4 ? 0.0f : radius // radius
@@ -418,7 +418,7 @@ namespace OWC
                     Vec3p(parentTransform[3]), // position
                     2, // type (2 for directional)
                     glm::normalize(Vec3p(-parentTransform[2])), // direction
-                    light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 1000.0f, // intensity
+                    light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 100.0f, // intensity
                     colour, // colour
                     static_cast<f32>(light.range) // range
                 );

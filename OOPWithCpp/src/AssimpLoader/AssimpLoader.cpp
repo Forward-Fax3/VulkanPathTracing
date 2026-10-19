@@ -64,9 +64,9 @@ namespace OWC
 
         // the way the `aiProcess_JoinIdenticalVertices` works makes it incredibly slow on windows so this flag is disabled
 #if (defined(_WIN32) || defined(_WIN64)) && !defined(DIST)
-        constexpr u32 flags = aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_CalcTangentSpace | aiProcess_FindInstances | aiProcess_ValidateDataStructure | aiProcess_RemoveRedundantMaterials | aiProcess_OptimizeGraph | aiProcess_FindDegenerates | aiProcess_SortByPType | aiProcess_MakeLeftHanded;
+        constexpr u32 flags = aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_CalcTangentSpace | aiProcess_FindInstances | aiProcess_ValidateDataStructure | aiProcess_RemoveRedundantMaterials | aiProcess_OptimizeGraph | aiProcess_FindDegenerates | aiProcess_SortByPType;
 #else
-        constexpr u32 flags = aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_CalcTangentSpace | aiProcess_JoinIdenticalVertices | aiProcess_FindInstances | aiProcess_ValidateDataStructure | aiProcess_RemoveRedundantMaterials | aiProcess_OptimizeGraph | aiProcess_FindDegenerates | aiProcess_SortByPType | aiProcess_MakeLeftHanded;
+        constexpr u32 flags = aiProcess_Triangulate | aiProcess_GenNormals | aiProcess_CalcTangentSpace | aiProcess_JoinIdenticalVertices | aiProcess_FindInstances | aiProcess_ValidateDataStructure | aiProcess_RemoveRedundantMaterials | aiProcess_OptimizeGraph | aiProcess_FindDegenerates | aiProcess_SortByPType;
 #endif
 
         const aiScene* scene_ptr = importer.ReadFile(gltfFilePath.data(), flags);

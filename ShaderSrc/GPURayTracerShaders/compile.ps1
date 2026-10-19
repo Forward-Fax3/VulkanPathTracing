@@ -1,3 +1,3 @@
-./../../Slang/bin/slangc.exe -profile spirv_1_6 -capability spvRayQueryKHR+spvShaderInvocationReorderEXT -O3 RayTracing.slang -target spirv -o RayTracing.spv
-./../../Slang/bin/slangc.exe -profile spirv_1_6 -capability spvRayQueryKHR+spvShaderInvocationReorderEXT -O3 RayTracing.slang -DSER -target spirv -o RayTracing_SER.spv
+./../../Slang/bin/slangc.exe -profile spirv_1_6 -capability spvRayQueryKHR+spvRayTracingPositionFetchKHR -O3 RayTracing.slang -target spirv -o RayTracing.spv
+./../../Slang/bin/slangc.exe -profile spirv_1_6 -capability spvRayQueryKHR+spvRayTracingPositionFetchKHR+spvShaderInvocationReorderEXT -O3 RayTracing.slang -DSER -target spirv -o RayTracing_SER.spv
 ./../../Slang/bin/slangc.exe -profile spirv_1_6 -O3 DisplayImage.slang -target spirv -o DisplayImage.spv

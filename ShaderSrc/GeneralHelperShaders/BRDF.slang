@@ -11,16 +11,15 @@ struct GGXResult
 struct BRDFSample
 {
     float3 direction;
-    float3 value;
-    float pdf;
+    GGXResult ggx;
 }
 
 
 // Trowbridge-Reitz
-float TR_GGX(float NDotH, float alpha2)
+float TR_GGX(float sin2ThetaH, float NDotH, float alpha2)
 {
-    float denom = NDotH * NDotH * (alpha2 - 1.0f) + 1.0f;
-    return alpha2 / max(pi * denom * denom, 1e-9f);
+    float denom = sin2ThetaH + NDotH * NDotH * alpha2;
+    return alpha2 / max(pi * denom * denom, 1e-20f);
 }
 
 float V_SmithGGXCorrelated(float NDotV, float NDotL, float alpha2)
@@ -32,7 +31,8 @@ float V_SmithGGXCorrelated(float NDotV, float NDotL, float alpha2)
 
 float3 FresnelSchlick(float VDotH, float3 F0)
 {
-    return F0 + (1.0f - F0) * pow(1.0f - VDotH, 5.0f);
+    const float oneSubVDotH = 1.0f - VDotH;
+    return F0 + (1.0f - F0) * oneSubVDotH * oneSubVDotH * oneSubVDotH * oneSubVDotH * oneSubVDotH;
 }
 
 float PowerHeuristic(float pdfA, float pdfB)
@@ -60,12 +60,14 @@ GGXResult EvalGGXSpecular(float3 n, float3 v, float3 l, float roughness, float3 
 
     float alpha = max(roughness * roughness, 1e-4f);
     float alpha2 = alpha * alpha;
-    float D = TR_GGX(NDotH, alpha2);
+    float3 nxh = cross(n, h);
+    float D = TR_GGX(dot(nxh, nxh), NDotH, alpha2);
     float V = V_SmithGGXCorrelated(NDotV, NDotL, alpha2);
     float3 F = FresnelSchlick(VDotH, F0);
 
     result.value = (D * V) * F;
-    result.pdf = D * NDotH / max(4.0f * VDotH, 1e-9f);
+    float G1V = 2.0f * NDotV / (NDotV + sqrt(alpha2 + (1.0f - alpha2) * NDotV * NDotV));
+    result.pdf = D * G1V / max(4.0f * NDotV, 1e-9f);
     return result;
 }
 
@@ -94,8 +96,8 @@ BRDFSample SampleGGX(float3 n, float3 v, float roughness, float3 F0, float2 xi, 
 {
     BRDFSample result;
     result.direction = 0.0f;
-    result.value = 0.0f;
-    result.pdf = 0.0f;
+    result.ggx.value = 0.0f;
+    result.ggx.pdf = 0.0f;
 
     float alpha = max(roughness * roughness, 1e-4f);
     float3 vLocal = float3(dot(v, tangent), dot(v, bitangent), dot(v, n));
@@ -106,10 +108,8 @@ BRDFSample SampleGGX(float3 n, float3 v, float roughness, float3 F0, float2 xi, 
     float3 h = normalize(hLocal.x * tangent + hLocal.y * bitangent + hLocal.z * n);
     float3 l = reflect(-v, h);
 
-    GGXResult evalResult = EvalGGXSpecular(n, v, l, roughness, F0);
     result.direction = l;
-    result.value = evalResult.value;
-    result.pdf = evalResult.pdf;
+    result.ggx = EvalGGXSpecular(n, v, l, roughness, F0);
 
     return result;
 }

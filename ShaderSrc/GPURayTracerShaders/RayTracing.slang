@@ -1,5 +1,5 @@
 #include "../GeneralHelperShaders/Core.slang"
-#include "gltfData.h.slang"
+#include "../GeneralHelperShaders/gltfData.h.slang"
 #include "../GeneralHelperShaders/BRDF.slang"
 
 struct GetLightIndexReturn
@@ -24,17 +24,16 @@ struct GeneralData
     uint randSeed;
     uint stratifiedGridPosition;
     uint imageReset; // bool
-    uint stratifiedGridSize;
 };
 
 struct [raypayload] RayPayload
 {
-    float3 radiance : read(caller) : write(caller, closesthit);
-    float3 throughput : read(closesthit, miss) : write(caller, closesthit);
-    float3 newOrigin : read(caller) : write(closesthit);
-    float3 newDirection : read(caller) : write(closesthit);
-    uint randSeed : read(closesthit) : write(caller, closesthit);
-    uint depth : read(closesthit) : write(caller, closesthit, miss);
+    float3 radiance : read(caller, closesthit, miss) : write(caller, closesthit, miss);
+    float3 throughput : read(caller, closesthit, miss) : write(caller, closesthit);
+    float3 newOrigin : read(caller) : write(caller, closesthit);
+    float3 newDirection : read(caller) : write(caller, closesthit);
+    uint randSeed : read(caller, closesthit) : write(caller, closesthit);
+    uint depth : read(caller, closesthit) : write(caller, closesthit, miss);
 };
 
 struct PushConstantData
@@ -74,10 +73,17 @@ float Rand(inout uint rngState)
     rngState = rngState * 747796405 + 1;
     uint word = ((rngState >> ((rngState >> 28) + 4)) ^ rngState) * 277803737;
     word = (word >> 22) ^ word;
-    return float(word) / 4294967295.0f;
+    return float(word >> 8) * (1.0f / 16777216.0f);
 }
 
-float3 DiffuseReflection(float3 inRay, float3 normal, float3 tangent, float3 bitangent, inout uint rngState)
+uint PCGHash(uint v)
+{
+    uint state = v * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float3 DiffuseReflection(float3 normal, float3 tangent, float3 bitangent, inout uint rngState)
 {
     // Cosine-weighted hemisphere sampling: generate a random direction
     // centered around the normal with PDF = cos(theta) / pi.
@@ -103,24 +109,27 @@ __generic<T : IFloat> T GetTriangleAttributes(uint64_t bufferOffset, uint3 attri
 VertexData InterpolateVerticesData(uint64_t vertexOffset, uint3 attributeIndex, float3 barycentricCoords)
 {
     VertexData* vertices = reinterpret<VertexData*>(PC.mainBufferData + vertexOffset);
+    VertexData vertexX = vertices[attributeIndex.x];
+    VertexData vertexY = vertices[attributeIndex.y];
+    VertexData vertexZ = vertices[attributeIndex.z];
 
     VertexData result;
-    result.normal = float3(barycentricCoords.x) * vertices[attributeIndex.x].normal +
-                    float3(barycentricCoords.y) * vertices[attributeIndex.y].normal +
-                    float3(barycentricCoords.z) * vertices[attributeIndex.z].normal;
+    result.normal = float3(barycentricCoords.x) * vertexX.normal +
+                    float3(barycentricCoords.y) * vertexY.normal +
+                    float3(barycentricCoords.z) * vertexZ.normal;
 
-    result.tangent = float4(barycentricCoords.x) * vertices[attributeIndex.x].tangent +
-                     float4(barycentricCoords.y) * vertices[attributeIndex.y].tangent +
-                     float4(barycentricCoords.z) * vertices[attributeIndex.z].tangent;
+    result.tangent = float4(barycentricCoords.x) * vertexX.tangent +
+                     float4(barycentricCoords.y) * vertexY.tangent +
+                     float4(barycentricCoords.z) * vertexZ.tangent;
 
-    result.colour = float4(barycentricCoords.x) * vertices[attributeIndex.x].colour +
-                    float4(barycentricCoords.y) * vertices[attributeIndex.y].colour +
-                    float4(barycentricCoords.z) * vertices[attributeIndex.z].colour;
+    result.colour = float4(barycentricCoords.x) * vertexX.colour +
+                    float4(barycentricCoords.y) * vertexY.colour +
+                    float4(barycentricCoords.z) * vertexZ.colour;
 
     for (uint i = 0; i < 2; i++)
-        result.UV[i] = float2(barycentricCoords.x) * vertices[attributeIndex.x].UV[i] +
-                       float2(barycentricCoords.y) * vertices[attributeIndex.y].UV[i] +
-                       float2(barycentricCoords.z) * vertices[attributeIndex.z].UV[i];
+        result.UV[i] = float2(barycentricCoords.x) * vertexX.UV[i] +
+                       float2(barycentricCoords.y) * vertexY.UV[i] +
+                       float2(barycentricCoords.z) * vertexZ.UV[i];
 
     return result;
 }
@@ -147,13 +156,15 @@ float LightWeight(LightData light, float3 position, float3 normal)
     if (light.range > 0.0f && distance > light.range)
         return 0.0f;
 
-    float attenuation = light.range > 0.0 ? saturate(1.0f - pow(distance / light.range, 4.0)) : 1.0f;
+    float attenuation = 1.0f;
+    if (light.range > 0.0f)
+    {
+        const float dOverR =distance / light.range;
+        float k = saturate(1.0f - dOverR * dOverR * dOverR * dOverR);
+        attenuation = k * k;
+    }
 
-    float approxSolidAngle = 1.0f;
-    if (light.radius > 0.0f)
-        approxSolidAngle = pi * light.radius * light.radius;
-
-    return luminosity * normalDotDelta * attenuation * approxSolidAngle / max(distance2, 1e-4);
+    return luminosity * normalDotDelta * attenuation / max(distance2, 1e-4);
 }
 
 GetLightIndexReturn GetLightIndex(float3 position, float3 normal, float randVal)
@@ -168,20 +179,23 @@ GetLightIndexReturn GetLightIndex(float3 position, float3 normal, float randVal)
         total += iWeight;
     }
 
-    if (total < 1e-6)
-        return { 0, 1.0f / PC.numOfLights };
+    if (total <= 0.0f)
+        return { -1, 0.0f };
 
     float t = randVal * total;
     float accumulation = 0.0f;
 
-    for (uint i = 0; i < PC.numOfLights - 1; i++)
+    for (int i = 0; i < PC.numOfLights - 1; i++)
     {
         accumulation += weights[i];
-        if (t <= accumulation)
+        if (weights[i] > 0.0f && t <= accumulation)
             return { i, weights[i] / total };
     }
 
-    return { PC.numOfLights - 1, weights[PC.numOfLights - 1] / total };
+    for (int i = int(PC.numOfLights) - 1; i >= 0; i--)   // float rounding fallback
+        if (weights[i] > 0.0f)
+            return { i, weights[i] / total };
+    return { -1, 0.0f };
 }
 
 float GetRangeAttenuation(float range, float distance)
@@ -189,22 +203,19 @@ float GetRangeAttenuation(float range, float distance)
     if (range <= 0.0f)
         return 1.0f / (distance * distance);
 
-    float num = clamp(1.0f - pow(distance / range, 4.0f), 0.0f, 1.0f);
+    const float dOverR = distance / range;
+    float num = saturate(1.0f - dOverR * dOverR * dOverR * dOverR);
     return (num * num) / max(distance * distance, 1e-4);
 }
 
 float GetSpotAttenuation(LightData light, float3 toLight)
 {
     float cd = dot(-toLight, light.direction);
-    float cosLightOuterConeAngle = cos(light.outerConeAngle);
-    float agularAttenuation = clamp(
-        (cd - cosLightOuterConeAngle) / (cos(light.innerConeAngle) - cosLightOuterConeAngle),
-        0.0f, 1.0f
-    );
-    return agularAttenuation * agularAttenuation;
+    float angularAttenuation = saturate((cd - light.cosOuterConeAngle) / max(1e-8, light.cosInnerConeAngle - light.cosOuterConeAngle));
+    return angularAttenuation * angularAttenuation;
 }
 
-LightSample SampleLight(LightData light, float3 position, float randVal)
+LightSample SampleLight(LightData light, float3 position)
 {
     if (light.type == directionalLight)
         return { -light.direction, 1e6, light.colour * light.intensity, 1.0f };
@@ -224,67 +235,120 @@ LightSample SampleLight(LightData light, float3 position, float randVal)
 
 LightSample SampleSphereLight(LightData light, float3 position, inout uint rngState)
 {
-    float z = 2.0 * Rand(rngState) - 1.0;
-    float t = 2.0 * pi * Rand(rngState);
-    float w = sqrt(1.0 - z * z);
-    float3 localDir = float3(w * cos(t), w * sin(t), z);
-
-    float3 samplePt = light.position + light.radius * localDir;
-    float3 lightNormal = normalize(samplePt - light.position);
-
-    float3 toLight = samplePt - position;
-    float dist = length(toLight);
-    float3 Ldir = toLight / dist;
-
-    float cosLight = dot(-Ldir, lightNormal);
-    if (cosLight <= 0.0)
-    { // miss/invalid
+    float3 toCentre = light.position - position;
+    float d2 = dot(toCentre, toCentre);
+    float d = sqrt(d2);
+    float r = light.radius;
+    if (d <= r)
+    {
         LightSample invalid;
-        invalid.direction = float3(0,0,0);
-        invalid.distance = 0;
-        invalid.radiance = float3(0,0,0);
-        invalid.pdf = 0.0;
+        invalid.direction = float3(0.0f);
+        invalid.distance = 0.0f;
+        invalid.radiance = float3(0.0f);
+        invalid.pdf = 0.0f;
         invalid.cosineLight = 0.0f;
         return invalid;
     }
 
-    float3 emittedRadiance = light.colour * light.intensity * GetRangeAttenuation(light.range, dist);
+    float cosThetaMax = sqrt(max(0.0f, 1.0f - (r * r) / d2));
+    float3 w = toCentre / d;
+    float3 u, v;
+    BuildOrthonormalBasis(w, u, v);
 
-    float pdfArea = 1.0 / (4.0 * pi * light.radius * light.radius);
+    float cosTheta = 1.0f - Rand(rngState) * (1.0f - cosThetaMax);
+    float sinTheta = sqrt(max(0.0f, 1.0f - cosTheta * cosTheta));
+    float phi = 2.0f * pi * Rand(rngState);
+    float3 dir = normalize(u * (cos(phi) * sinTheta) + v * (sin(phi) * sinTheta) + w * cosTheta);
+
+    float t = d * cosTheta - sqrt(max(0.0f, r * r - d2 * sinTheta * sinTheta));
+
+    float atten = 1.0f;
+    if (light.range > 0.0f)
+    {
+        const float tOverR = t / light.range;
+        float k = saturate(1.0f - tOverR * tOverR * tOverR * tOverR);
+        atten = k * k;
+    }
 
     LightSample result;
-    result.direction = Ldir;
-    result.distance = dist;
-    result.radiance = emittedRadiance * cosLight;
-    result.pdf = pdfArea;
-    result.cosineLight = cosLight;
+    result.direction = dir;
+    result.distance = t;
+    result.radiance = light.colour * light.intensity / (pi * r * r) * atten;
+    result.pdf = 1.0f / (2.0f * pi * (1.0f - cosThetaMax));
+    result.cosineLight = 1.0f;
     return result;
 }
 
-bool IsVisible(float3 position, float3 normal, float3 lightDirection, float lightDistance)
+bool IsVisible(float3 position, float3 lightDirection, float lightDistance, inout uint rngState)
 {
-    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER> rayQuery;
+    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> rayQuery;
 
     RayDesc ray;
-    ray.Origin = position + normal * 1e-3;
+    ray.Origin = position;
     ray.Direction = lightDirection;
     ray.TMin = 0.0f;
 
     float tMax = lightDistance - 1e-3;
     if (tMax < 1e-4)
-        tMax = 0.0f;
+        return true;
     ray.TMax = tMax;
 
     rayQuery.TraceRayInline(sceneBVH, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xFF, ray);
     while (rayQuery.Proceed())
     {
         uint candType = rayQuery.CandidateType();
-        if (candType == CANDIDATE_TRIANGLE)
+        switch (candType)
         {
-            if (candType == CANDIDATE_NON_OPAQUE_TRIANGLE)
-                return false;
-            else // for now just continue
-                continue;
+        case CANDIDATE_NON_OPAQUE_TRIANGLE:
+        {
+            float3 barycentricCoords = float3(1 - rayQuery.CandidateTriangleBarycentrics().x - rayQuery.CandidateTriangleBarycentrics().y, rayQuery.CandidateTriangleBarycentrics().x, rayQuery.CandidateTriangleBarycentrics().y);
+
+            uint instanceID = rayQuery.CandidateInstanceID();
+            uint geometryIndex = rayQuery.CandidateRayGeometryIndex();
+            uint primitiveIndex = rayQuery.CandidatePrimitiveIndex();
+
+            GeometryDescriptor geometry = PC.geometryData[instanceID + geometryIndex];
+
+            uint3 attributeIndex;
+            if (geometry.is32BitIndices == 1)
+                attributeIndex = reinterpret<uint3*>(PC.mainBufferData + geometry.indicesOffset)[primitiveIndex];
+            else
+            {
+                uint16_t* attributeIndex16bit = reinterpret<uint16_t*>(PC.mainBufferData + geometry.indicesOffset);
+                attributeIndex = uint3(attributeIndex16bit[primitiveIndex * 3 + 0], attributeIndex16bit[primitiveIndex * 3 + 1], attributeIndex16bit[primitiveIndex * 3 + 2]);
+            }
+
+            VertexData hitData = InterpolateVerticesData(geometry.vertexOffset, attributeIndex, barycentricCoords);
+
+            MaterialData mat;
+            if (geometry.materialIndex != 0xFFFFFFFFUL)
+            {
+                mat = PC.materialData[geometry.materialIndex];
+            }
+            else
+            {
+                mat.baseColourTextureIndex = 0xFFFFFFFFUL;
+                mat.baseColourFactor = float4(1.0f);
+                mat.normalTextureIndex = 0xFFFFFFFFUL;
+                mat.metallicRoughnessTextureIndex = 0xFFFFFFFFUL;
+                mat.metallicFactor = 0.0f;
+                mat.roughnessFactor = 0.5f;
+                mat.emissiveTextureIndex = 0xFFFFFFFFUL;
+                mat.emissiveFactor = float3(0.0f);
+            }
+
+            float4 colour4 = hitData.colour * mat.baseColourFactor;
+
+            if (mat.baseColourTextureIndex != 0xFFFFFFFFUL)
+                colour4 *= colourTextures.SampleLevel(textureSampler, float3(hitData.UV[mat.baseColourTextureCoords], mat.baseColourTextureIndex), 0.0f);
+
+            if (Rand(rngState) < colour4.w)
+                rayQuery.CommitNonOpaqueTriangleHit();
+
+            break;
+        }
+        default:
+            continue;
         }
     }
 
@@ -320,28 +384,26 @@ void RayGenShader()
     uint pixelX = intThreadIdx.x;
     uint pixelY = intThreadIdx.y;
 
-    uint randVal = PerFrameData.randSeed + pixelX + intScreenSize.x * pixelY;
+    const uint pixelIndex = pixelX + intScreenSize.x * pixelY;
+    uint randVal = PCGHash(pixelIndex + PerFrameData.randSeed);
+
+    const uint pixelHash = PCGHash(pixelX + intScreenSize.x * pixelY);
+    const uint rotX = pixelHash % PC.stratifiedGridSize;
+    const uint rotY = PCGHash(pixelHash) % PC.stratifiedGridSize;
 
     uint imageNeedsResetting = PerFrameData.imageReset;
     uint stratifiedGridPosition = PerFrameData.stratifiedGridPosition;
 
     for (uint i = 0; i < PC.numberOfSamples; i++)
     {
-        float rx = Rand(randVal);
-        float ry = Rand(randVal);
-
-        uint rotX = min(uint(rx * PC.stratifiedGridSize), PC.stratifiedGridSize - 1);
-        uint rotY = min(uint(ry * PC.stratifiedGridSize), PC.stratifiedGridSize - 1);
-
-        uint baseStratumX = stratifiedGridPosition % PC.stratifiedGridSize;
-        uint baseStratumY = stratifiedGridPosition / PC.stratifiedGridSize;
-
-        uint stratumX = (baseStratumX + rotX) % PC.stratifiedGridSize;
-        uint stratumY = (baseStratumY + rotY) % PC.stratifiedGridSize;
+        uint cell = stratifiedGridPosition % (PC.stratifiedGridSize * PC.stratifiedGridSize);
+        uint stratumX = (cell % PC.stratifiedGridSize + rotX) % PC.stratifiedGridSize;
+        uint stratumY = (cell / PC.stratifiedGridSize + rotY) % PC.stratifiedGridSize;
 
         float jitterX = (float(stratumX) + Rand(randVal)) / float(PC.stratifiedGridSize);
         float jitterY = (float(stratumY) + Rand(randVal)) / float(PC.stratifiedGridSize);
-        const float2 screenCoords = (threadIdx + float2(jitterX, jitterY) - 0.5f) / screenSize * 2.0 - 1.0;
+
+        const float2 screenCoords = (threadIdx + float2(jitterX, jitterY)) / screenSize * 2.0 - 1.0;
         const float4 viewCoords = mul(float4(screenCoords, 1.0, 1.0), PerFrameData.InvProjectionMatrix);
 
         RayDesc ray;
@@ -369,7 +431,13 @@ void RayGenShader()
 #else
             TraceRay(sceneBVH, rayFlags, 0xFF, 0, 0, 0, ray, payload);
 #endif
+
+            if (any(isnan(payload.radiance)) || any(isinf(payload.radiance)))
+                break;
         }
+
+        if (any(isnan(payload.radiance)) || any(isinf(payload.radiance)))
+            payload.radiance = 0.0f;
 
         if (imageNeedsResetting == 1)
         {
@@ -398,6 +466,11 @@ void MissShader(inout RayPayload payload)
 [shader("closesthit")]
 void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
+    /*float n = sqrt(-float(PC.numberOfBounces) - 1.0f);   // runtime NaN, the compiler can't fold it
+    payload.radiance = float3(isnan(n) ? 1.0f : 0.0f, BadF(n) ? 1.0f : 0.0f, 0.0f);
+    payload.depth = 0;
+    return;*/
+
     float3 barycentricCoords = float3(1 - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
 
     uint instanceID = InstanceID();
@@ -426,10 +499,14 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
     }
     else
     {
-        mat.baseColourFactor = float4(1.0f);
         mat.baseColourTextureIndex = 0xFFFFFFFFUL;
+        mat.baseColourFactor = float4(1.0f);
+        mat.normalTextureIndex = 0xFFFFFFFFUL;
+        mat.metallicRoughnessTextureIndex = 0xFFFFFFFFUL;
         mat.metallicFactor = 0.0f;
         mat.roughnessFactor = 0.5f;
+        mat.emissiveTextureIndex = 0xFFFFFFFFUL;
+        mat.emissiveFactor = float3(0.0f);
     }
 
     float4 colour4 = hitData.colour * mat.baseColourFactor;
@@ -442,12 +519,52 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
     //return;
 
     float3 hitLocation = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
+
+    if (colour4.w < 1.0f && Rand(payload.randSeed) > colour4.w)
+    {
+        payload.newOrigin = hitLocation + 0.0001f * WorldRayDirection();
+        return;
+    }
+
     float3x3 normalMatrix = transpose((float3x3)WorldToObject3x4());
     float3 hitNormal = normalize(mul(normalMatrix, hitData.normal));
 
-    float3 tangent = normalize(mul(normalMatrix, hitData.tangent.xyz));
-    tangent = normalize(tangent - hitNormal * dot(hitNormal, tangent));
-    float3 bitangent = cross(hitNormal, tangent) * hitData.tangent.w;
+    float3 tangent = mul((float3x3)ObjectToWorld3x4(), hitData.tangent.xyz);
+    tangent -= hitNormal * dot(hitNormal, tangent);
+    float3 bitangent;
+    if (dot(tangent, tangent) > 1e-8f)
+    {
+        tangent = normalize(tangent);
+
+        const float mirrored = determinant((float3x3)ObjectToWorld3x4()) < 0.0f ? -1.0f : 1.0f;
+        const float handedness = hitData.tangent.w < 0.0f ? -1.0f : 1.0f;
+        bitangent = cross(hitNormal, tangent) * handedness * mirrored;
+    }
+    else
+        BuildOrthonormalBasis(hitNormal, tangent, bitangent);
+
+    const float3 p0 = HitTriangleVertexPosition(0);
+    const float3 p1 = HitTriangleVertexPosition(1);
+    const float3 p2 = HitTriangleVertexPosition(2);
+
+    const float3 objectGeoNormal = cross(p1 - p0, p2 - p0);
+    float3 geometricNormal;
+    if (dot(objectGeoNormal, objectGeoNormal) > 1e-30f)
+        geometricNormal = normalize(mul(normalMatrix, objectGeoNormal));
+    else
+        geometricNormal = hitNormal; // degenerate triangle: use the shading normal
+
+    if (dot(WorldRayDirection(), geometricNormal) > 0.0f)
+        geometricNormal = -geometricNormal;
+
+    /*payload.radiance = (geometricNormal + 1.0f) / 2.0f;
+    payload.depth = 0;
+    return;*/
+
+    if (dot(hitNormal, geometricNormal) < 0.0f)
+    {
+        hitNormal = -hitNormal; tangent = -tangent; bitangent = -bitangent;
+    }
 
     if (mat.normalTextureIndex != 0xFFFFFFFFUL)
     {
@@ -460,10 +577,23 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
         hitNormal = normalize(mul(normalTexXYZ, TBN));
     }
 
-    bool frontFace = dot(WorldRayDirection(), hitNormal) <= 0.0f;
-    hitNormal = frontFace ? hitNormal : -hitNormal;
+    float3 V = -WorldRayDirection();
+    float nv = dot(hitNormal, V);
+    if (nv < 1e-3f)
+        hitNormal = normalize(hitNormal + V * (1e-3f - nv));
 
-    /*payload.radiance = hitNormal;
+    float3 t = tangent - hitNormal * dot(hitNormal, tangent);
+    if (dot(t, t) > 1e-8f)
+    {
+        tangent = normalize(t);
+        bitangent = cross(hitNormal, tangent);
+    }
+    else
+    {
+        BuildOrthonormalBasis(hitNormal, tangent, bitangent);
+    }
+
+    /*payload.radiance = (hitNormal + 1.0f) / 2.0f;
     payload.depth = 0;
     return;*/
 
@@ -476,6 +606,8 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
         roughness *= metallicRoughness.y;
     }
 
+    roughness = max(roughness, 0.03f); // avoid singularities in GGX
+
     /*payload.radiance = float3(0.0, metallicness, roughness);
     payload.depth = 0;
     return;*/
@@ -486,109 +618,84 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
 
     payload.radiance += payload.throughput * emissive;
 
-    if (Rand(payload.randSeed) > colour4.w)
+    float3 albedo = colour4.xyz;
+    float3 F0 = lerp(float3(0.04f), colour4.xyz, metallicness);
+
+    float diffuseLum = dot(albedo * (1.0f - metallicness), float3(0.2126f, 0.7152f, 0.0722f));
+    float specularLum = dot(F0, float3(0.2126f, 0.7152f, 0.0722f));
+    float diffuseWeight = clamp(diffuseLum / max(diffuseLum + specularLum, 1e-4f), 0.05f, 0.95f);
+    float3 newRayDirection;
+
+    GGXResult evalResult;
+    if (Rand(payload.randSeed) < diffuseWeight)
     {
-        payload.newOrigin = hitLocation + 0.0001f * WorldRayDirection();
-        payload.depth++;
+        newRayDirection = DiffuseReflection(hitNormal, tangent, bitangent, payload.randSeed);
+        evalResult = EvalGGXSpecular(hitNormal, -WorldRayDirection(), newRayDirection, roughness, F0);
     }
     else
     {
-        float3 albedo = colour4.xyz * (1.0f - metallicness);
-        float3 F0 = lerp(float3(0.04f), colour4.xyz, metallicness);
+        BRDFSample gs = SampleGGX(hitNormal, -WorldRayDirection(), roughness, F0, float2(Rand(payload.randSeed), Rand(payload.randSeed)), tangent, bitangent);
+        newRayDirection = gs.direction;
+        evalResult = gs.ggx;
+    }
 
-        float diffuseLum = dot(albedo, float3(0.2126f, 0.7152f, 0.0722f));
-        float specularLum = dot(F0, float3(0.2126f, 0.7152f, 0.0722f));
-        float diffuseWeight = clamp(diffuseLum / max(diffuseLum + specularLum, 1e-4f), 0.05f, 0.95f);
-        float3 newRayDirection;
+    float NdotV = max(dot(hitNormal, -WorldRayDirection()), 0.0f);
+    float3 Fview = FresnelSchlick(NdotV, F0);
+    float3 kD = (1.0f - Fview) * (1.0f - metallicness);
 
-        if (Rand(payload.randSeed) < diffuseWeight)
+    float3 diffuseValue = kD * albedo * oneOverPi;
+
+    const float3 brdfValue = diffuseValue + evalResult.value;
+    const float NDotL = max(dot(hitNormal, newRayDirection), 0.0f);
+    float cosinePdf = NDotL * oneOverPi;
+    const float brdfpdf = diffuseWeight * cosinePdf + (1.0f - diffuseWeight) * evalResult.pdf;
+
+    payload.newOrigin = hitLocation + geometricNormal * 1e-4;
+    payload.newDirection = newRayDirection;
+
+    if (PC.numOfLights > 0)
+    {
+        GetLightIndexReturn lightIndex = GetLightIndex(payload.newOrigin, hitNormal, Rand(payload.randSeed));
+        if (lightIndex.lightIndex != -1 && lightIndex.pdf > 0.0f)
         {
-            newRayDirection = DiffuseReflection(WorldRayDirection(), hitNormal, tangent, bitangent, payload.randSeed);
-        }
-        else
-        {
-            BRDFSample gs = SampleGGX(hitNormal, -WorldRayDirection(), roughness, F0,
-                                       float2(Rand(payload.randSeed), Rand(payload.randSeed)),
-                                       tangent, bitangent);
-            newRayDirection = gs.direction;
-        }
-
-        float NdotV = max(dot(hitNormal, -WorldRayDirection()), 0.0f);
-        float3 Fview = FresnelSchlick(NdotV, F0);
-        float3 kD = (1.0f - Fview) * (1.0f - metallicness);
-
-        float3 diffuseValue = kD * albedo * oneOverPi;
-        GGXResult evalResult = EvalGGXSpecular(hitNormal, -WorldRayDirection(), newRayDirection, roughness, F0);
-
-        float3 brdfValue = diffuseValue + evalResult.value;
-        float NDotL = max(dot(hitNormal, newRayDirection), 0.0f);
-        float cosinePdf = NDotL * oneOverPi;
-        float brdfpdf = diffuseWeight * cosinePdf + (1.0f - diffuseWeight) * evalResult.pdf;
-
-        payload.newOrigin = hitLocation + hitNormal * 0.00001f;
-        payload.newDirection = newRayDirection;
-        payload.throughput *= (brdfpdf > 0.0f) ? (brdfValue * NDotL / brdfpdf) : float3(0.0f);
-
-        if (PC.numOfLights > 0)
-        {
-            GetLightIndexReturn lightIndex = GetLightIndex(payload.newOrigin, hitNormal, Rand(payload.randSeed));
             LightData lightData = PC.lightsBuffer[lightIndex.lightIndex];
 
             LightSample light;
             if (lightData.type == pointLight && lightData.radius > 0.0)
-            {
-                light = SampleSphereLight(lightData, payload.newOrigin, payload.randSeed);
-
-                if (light.pdf <= 0.0)
-                {
-                    payload.depth--;
-                    return;
-                }
-            }
+                light = SampleSphereLight(lightData, payload.newOrigin, payload.randSeed); // pdf = 0 if invalid
             else
-                light = SampleLight(lightData, payload.newOrigin, Rand(payload.randSeed));
+                light = SampleLight(lightData, payload.newOrigin);
 
-            if (light.pdf > 1e-6 && IsVisible(payload.newOrigin, hitNormal, light.direction, light.distance))
+            if (light.radiance.x > 0.0f || light.radiance.y > 0.0f || light.radiance.z > 0.0f)
             {
                 float NdotL_light = max(dot(hitNormal, light.direction), 0.0f);
 
-                float3 diffuseValLight = kD * albedo * oneOverPi;
-                GGXResult specEvalLight = EvalGGXSpecular(hitNormal, -WorldRayDirection(), light.direction, roughness, F0);
-                float3 brdfValueLight = diffuseValLight + specEvalLight.value;
-
-                float cosinePdfLight = NdotL_light * oneOverPi;
-                float brdfPdfLight = diffuseWeight * cosinePdfLight + (1.0f - diffuseWeight) * specEvalLight.pdf;
-
-                bool isDeltaLight = lightData.type == directionalLight || lightData.type == spotLight || (lightData.type == pointLight && lightData.radius <= 0.0);
-
-                float lightPdfForMIS = light.pdf;
-
-                if (lightData.type == pointLight && lightData.radius > 0.0)
+                if (light.pdf > 1e-6 && NdotL_light > 0.0f && dot(geometricNormal, light.direction) > 0.0f && IsVisible(payload.newOrigin, light.direction, light.distance, payload.randSeed))
                 {
-                    lightPdfForMIS = light.pdf * (light.distance * light.distance) / max(light.cosineLight, 1e-6f);
+                    GGXResult specLight = EvalGGXSpecular(hitNormal, -WorldRayDirection(), light.direction, roughness, F0);
+                    float3 brdfValueLight = kD * albedo * oneOverPi + specLight.value;
+
+                    payload.radiance += payload.throughput * brdfValueLight * NdotL_light * light.radiance / (light.pdf * lightIndex.pdf);
                 }
-
-                float lightCombinedPDF = lightPdfForMIS * lightIndex.pdf;
-
-                float MISWeight;
-                if (isDeltaLight)
-                    MISWeight = 1.0;
-                else
-                    MISWeight = PowerHeuristic(lightCombinedPDF, brdfPdfLight);
-
-                payload.radiance += payload.throughput * brdfValueLight * NdotL_light * light.radiance * MISWeight / (light.pdf * lightIndex.pdf);
             }
         }
-
-        float rrP = min(max(max(payload.throughput.x, payload.throughput.y), payload.throughput.z), 0.95f);
-        if (Rand(payload.randSeed) > rrP)
-        {
-            payload.depth = 0;
-            return;
-        }
-
-        payload.throughput /= rrP;
     }
+    payload.throughput *= (brdfpdf > 0.0f) ? (brdfValue * NDotL / brdfpdf) : float3(0.0f);
+
+    if (brdfpdf <= 0.0f || NDotL <= 0.0f || dot(geometricNormal, newRayDirection) <= 0.0f)
+    {
+        payload.depth = 0;
+        return;
+    }
+
+    float rrP = clamp(max(max(payload.throughput.x, payload.throughput.y), payload.throughput.z), 0.05f, 0.95f);
+    if (Rand(payload.randSeed) > rrP)
+    {
+        payload.depth = 0;
+        return;
+    }
+
+    payload.throughput /= rrP;
 
     payload.depth--;
 }
