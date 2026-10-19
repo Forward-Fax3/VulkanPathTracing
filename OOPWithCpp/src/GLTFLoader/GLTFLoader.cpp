@@ -123,10 +123,7 @@ namespace OWC
         m_GPUBuffer = Graphics::GeneralBuffer::CreateGeneralBuffer(bufferSize, maxAlignment);
         m_GPUBuffer->UpdateBufferData(std::bit_cast<const u8*>(indicesTotalData.data()), totalSizeOfIndices, indicesBufferOffset);
 
-        bool colourThreadDone = true;
-        bool normalThreadDone = true;
-        bool metallicRoughnessThreadDone = true;
-        bool emissiveTextureThreadDone = true;
+        std::array<std::jthread, 4> threads;
 
         if (model.materials_count > 0)
         {
@@ -209,61 +206,38 @@ namespace OWC
 
             Log<LogLevel::Debug>("{}", materialDataToPrint);
 
-            colourThreadDone = false;
-            normalThreadDone = false;
-            metallicRoughnessThreadDone = false;
-            emissiveTextureThreadDone = false;
-            std::jthread colourTextureThread([&, colourTexturesOrderIndex = std::move(colourTexturesOrderIndex)]()
+            if (!colourTexturesOrderIndex.empty() || !normalTexturesOrderIndex.empty() || !metallicRoughnessTexturesOrderIndex.empty() || !emissiveTexturesOrderIndex.empty())
             {
-                const std::filesystem::path gltfPath(gltfFilePath);
-                if (!colourTexturesOrderIndex.empty())
-                    m_ColourTextureArray = Graphics::TextureArray::CreateColourTextureArray(model, colourTexturesOrderIndex, gltfPath.parent_path().string());
-                colourThreadDone = true;
-            });
-            std::jthread normalTextureThread([&, normalTexturesOrderIndex = std::move(normalTexturesOrderIndex)]()
-            {
-                const std::filesystem::path gltfPath(gltfFilePath);
-                if (!normalTexturesOrderIndex.empty())
-                    m_NormalTextureArray = Graphics::TextureArray::CreateNormalTextureArray(model, normalTexturesOrderIndex, gltfPath.parent_path().string());
-                normalThreadDone = true;
-            });
-            std::jthread metallicRoughnessTextureThread([&, metallicRoughnessTexturesOrderIndex = std::move(metallicRoughnessTexturesOrderIndex)]()
-            {
-                const std::filesystem::path gltfPath(gltfFilePath);
-                if (!metallicRoughnessTexturesOrderIndex.empty())
-                    m_MetallicRoughnessTextureArray = Graphics::TextureArray::CreateMetallicRoughnessTextureArray(model, metallicRoughnessTexturesOrderIndex, gltfPath.parent_path().string());
-                metallicRoughnessThreadDone = true;
-            });
-            std::jthread emissiveTextureThread([&, emissiveTexturesOrderIndex = std::move(emissiveTexturesOrderIndex)]()
-            {
-                const std::filesystem::path gltfPath(gltfFilePath);
-                if (!emissiveTexturesOrderIndex.empty())
-                    m_EmissiveTextureArray = Graphics::TextureArray::CreateEmissiveTextureArray(model, emissiveTexturesOrderIndex, gltfPath.parent_path().string());
-                emissiveTextureThreadDone = true;
-            });
-            colourTextureThread.detach();
-            normalTextureThread.detach();
-            metallicRoughnessTextureThread.detach();
-            emissiveTextureThread.detach();
-            //if (!colourTexturesOrderIndex.empty())
-            //    m_ColourTextureArray = Graphics::TextureArray::CreateColourTextureArray(model, colourTexturesOrderIndex, gltfPath.parent_path().string());
-            //if (!normalTexturesOrderIndex.empty())
-            //    m_NormalTextureArray = Graphics::TextureArray::CreateNormalTextureArray(model, normalTexturesOrderIndex, gltfPath.parent_path().string());
-            //if (!metallicRoughnessTexturesOrderIndex.empty())
-            //    m_MetallicRoughnessTextureArray = Graphics::TextureArray::CreateMetallicRoughnessTextureArray(model, metallicRoughnessTexturesOrderIndex, gltfPath.parent_path().string());
-            //if (!emissiveTexturesOrderIndex.empty())
-            //    m_EmissiveTextureArray = Graphics::TextureArray::CreateEmissiveTextureArray(model, emissiveTexturesOrderIndex, gltfPath.parent_path().string());
+                threads[0] = std::jthread([&, colourTexturesOrderIndex = std::move(colourTexturesOrderIndex)]()
+                {
+                    const std::filesystem::path gltfPath(gltfFilePath);
+                    if (!colourTexturesOrderIndex.empty())
+                        m_ColourTextureArray = Graphics::TextureArray::CreateColourTextureArray(model, colourTexturesOrderIndex, gltfPath.parent_path().string());
+                });
+                threads[1] = std::jthread([&, normalTexturesOrderIndex = std::move(normalTexturesOrderIndex)]()
+                {
+                    const std::filesystem::path gltfPath(gltfFilePath);
+                    if (!normalTexturesOrderIndex.empty())
+                        m_NormalTextureArray = Graphics::TextureArray::CreateNormalTextureArray(model, normalTexturesOrderIndex, gltfPath.parent_path().string());
+                });
+                threads[2] = std::jthread([&, metallicRoughnessTexturesOrderIndex = std::move(metallicRoughnessTexturesOrderIndex)]()
+                {
+                    const std::filesystem::path gltfPath(gltfFilePath);
+                    if (!metallicRoughnessTexturesOrderIndex.empty())
+                        m_MetallicRoughnessTextureArray = Graphics::TextureArray::CreateMetallicRoughnessTextureArray(model, metallicRoughnessTexturesOrderIndex, gltfPath.parent_path().string());
+                });
+                threads[3] = std::jthread([&, emissiveTexturesOrderIndex = std::move(emissiveTexturesOrderIndex)]()
+                {
+                    const std::filesystem::path gltfPath(gltfFilePath);
+                    if (!emissiveTexturesOrderIndex.empty())
+                        m_EmissiveTextureArray = Graphics::TextureArray::CreateEmissiveTextureArray(model, emissiveTexturesOrderIndex, gltfPath.parent_path().string());
+                });
 
-            //if (colourTextureThread.joinable())
-            //    colourTextureThread.join();
-            //if (normalTextureThread.joinable())
-            //    normalTextureThread.join();
-            //if (metallicRoughnessTextureThread.joinable())
-            //    metallicRoughnessTextureThread.join();
-            //if (emissiveTextureThread.joinable())
-            //    emissiveTextureThread.join();
+                if (model.samplers_count > 0)
+                    m_TextureArraySampler = Graphics::TextureArraySampler::CreateTextureArraySampler(model.samplers[0]); // for now only 1 sampler is supported
+                // else use non overloaded sampler
+            }
 
-            m_TextureArraySampler = Graphics::TextureArraySampler::CreateTextureArraySampler(model.samplers[0]); // for now only 1 sampler is supported
             m_GPUBuffer->UpdateBufferData(std::bit_cast<u8*>(materialData.data()), materialBufferSize, m_MaterialBufferOffset);
         }
 
@@ -293,8 +267,9 @@ namespace OWC
         m_Layer = std::make_shared<GLTFLayer>(m_GPUBuffer, m_LightBufferOffset, std::move(lightData), layerName);
         Application::GetInstance().PushLayer(m_Layer);
 
-        while (!colourThreadDone || !normalThreadDone || !metallicRoughnessThreadDone || !emissiveTextureThreadDone)
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        for (auto& thread : threads)
+            if (thread.joinable())
+                thread.join();
 
         if (errorStack.has_error)
             tg3_error_stack_free(&errorStack);
