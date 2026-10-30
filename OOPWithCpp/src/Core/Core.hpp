@@ -213,4 +213,11 @@ namespace OWC
 			return static_cast<T>((static_cast<uSize>(value) + alignment - 1) & ~(alignment - 1));
 		}
 	}
+
+	template <std::size_t N>
+	static consteval auto spvBytesToDWords(const unsigned char (&b)[N]) {
+		static_assert(N % 4 == 0, "SPIR-V size must be a multiple of 4");
+		static_assert(std::endian::native == std::endian::little);
+		return std::bit_cast<std::array<u32, N / 4>>(b);
+	}
 }

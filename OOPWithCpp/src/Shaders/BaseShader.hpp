@@ -119,13 +119,13 @@ namespace OWC::Graphics
 		}
 
 //		std::string source;
-		std::vector<u32>& bytecode; // for SPIR-V
+		std::span<const u32> bytecode; // for SPIR-V
 		
 		ShaderType type;
 		ShaderLanguage language;
-		std::span<BindingDescription> descriptorType;
+		std::span<const BindingDescription> descriptorType;
 
-		std::string entryPoint; // optional, if left empty "main" will be assumed
+		std::string_view entryPoint; // optional, if left empty "main" will be assumed
 	};
 
 	class BaseShader
@@ -146,8 +146,8 @@ namespace OWC::Graphics
 
 		virtual void BindTLAS(u32 binding, const std::shared_ptr<BaseTLAS>& tlasBuffer) = 0;
 
-		static std::unique_ptr<BaseShader> CreateShader(const std::span<ShaderData>& shaderDatas, const std::span<VertexBindings>& vertexBindings = {}, const std::span<VertexAttributes>& vertexAttributes = {});
-		static std::unique_ptr<BaseShader> CreateRTShader(const std::span<ShaderData>& shaderDatas);
+		static std::unique_ptr<BaseShader> CreateShader(const std::span<const ShaderData>& shaderDatas, const std::span<VertexBindings>& vertexBindings = {}, const std::span<VertexAttributes>& vertexAttributes = {});
+		static std::unique_ptr<BaseShader> CreateRTShader(const std::span<const ShaderData>& shaderDatas);
 
 	private:
 		virtual void BindDynamicTextureImpl(u32 binding, const std::shared_ptr<DynamicTextureBuffer>& dTextureBuffer, DescriptorType descriptorType, i32 frameOffset) = 0;

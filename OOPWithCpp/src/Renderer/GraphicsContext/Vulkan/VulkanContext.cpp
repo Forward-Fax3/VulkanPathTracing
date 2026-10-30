@@ -850,7 +850,8 @@ namespace OWC::Graphics
 
 		auto rayTracingPipelineFeature = vk::PhysicalDeviceRayTracingPipelineFeaturesKHR()
 			.setPNext(&accelerationStructureFeature)
-			.setRayTracingPipeline(vk::True);
+			.setRayTracingPipeline(vk::True)
+			.setRayTraversalPrimitiveCulling(vk::True);
 
 		auto swapchainMaintenance1Feature = vk::PhysicalDeviceSwapchainMaintenance1FeaturesKHR()
 			.setPNext(&rayTracingPipelineFeature)

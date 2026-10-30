@@ -43,7 +43,7 @@ namespace OWC
 
 		FileOpened:
 
-		std::streamsize fileSize = fileStream.tellg();
+		const std::streamsize fileSize = fileStream.tellg();
 		fileStream.seekg(0, std::ios::beg);
 
 		if (fileSize % sizeof(T) != 0)

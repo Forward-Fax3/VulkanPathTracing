@@ -208,7 +208,7 @@ namespace OWC::Graphics
 		device.updateDescriptorSets(writeDescriptorSets, {});
 	}
 
-	VulkanShaderData VulkanBaseShader::ProcessShaderData(const ShaderData& shaderData, std::map<std::vector<u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap)
+	VulkanShaderData VulkanBaseShader::ProcessShaderData(const ShaderData& shaderData, std::map<const std::span<const u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap)
 	{
 		Log<LogLevel::Trace>("VulkanShader::ProcessShaderData: Processing shader data of type {}.", shaderData.ShaderTypeToString());
 
@@ -307,7 +307,7 @@ namespace OWC::Graphics
 	}
 
 
-	VulkanShader::VulkanShader(const std::span<ShaderData>& shaderDatas, const std::span<VertexBindings>& vertexBindings, const std::span<VertexAttributes>& vertexAttributes)
+	VulkanShader::VulkanShader(const std::span<const ShaderData>& shaderDatas, const std::span<VertexBindings>& vertexBindings, const std::span<VertexAttributes>& vertexAttributes)
 	{
 		Log<LogLevel::Trace>("VulkanShader::VulkanShader: Creating Vulkan shader with {} shader stages.", shaderDatas.size());
 
@@ -317,7 +317,7 @@ namespace OWC::Graphics
 		std::vector<VulkanShaderData> vulkanShaderDatas;
 		vulkanShaderDatas.reserve(shaderDatas.size());
 
-		std::map<std::vector<u32>*, vk::ShaderModuleCreateInfo> srcToShaderModuleMap;
+		std::map<const std::span<const u32>*, vk::ShaderModuleCreateInfo> srcToShaderModuleMap;
 
 		for (const auto& shaderData : shaderDatas)
 		{
@@ -335,7 +335,7 @@ namespace OWC::Graphics
 		CreateVulkanPipeline(vulkanShaderDatas, srcToShaderModuleMap, vertexBindings, vertexAttributes);
 	}
 
-	void VulkanShader::CreateVulkanPipeline(const std::span<VulkanShaderData>& vulkanShaderDatas, const std::map<std::vector<u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap, const std::span<VertexBindings>& vertexBindings, const std::span<VertexAttributes>& vertexAttributes)
+	void VulkanShader::CreateVulkanPipeline(const std::span<VulkanShaderData>& vulkanShaderDatas, const std::map<const std::span<const u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap, const std::span<VertexBindings>& vertexBindings, const std::span<VertexAttributes>& vertexAttributes)
 	{
 		const auto& app = Application::GetConstInstance();
 
@@ -530,7 +530,7 @@ namespace OWC::Graphics
 		SetDescriptorSets(std::move(descriptorSets));
 	}
 
-	VulkanRayTracingShader::VulkanRayTracingShader(const std::span<ShaderData>& shaderDatas)
+	VulkanRayTracingShader::VulkanRayTracingShader(const std::span<const ShaderData>& shaderDatas)
 	{
 		Log<LogLevel::Trace>("VulkanShader::VulkanShader: Creating Vulkan shader with {} shader stages.", shaderDatas.size());
 
@@ -540,7 +540,7 @@ namespace OWC::Graphics
 		std::vector<VulkanShaderData> vulkanShaderDatas;
 		vulkanShaderDatas.reserve(shaderDatas.size());
 
-		std::map<std::vector<u32>*, vk::ShaderModuleCreateInfo> srcToShaderModuleMap;
+		std::map<const std::span<const u32>*, vk::ShaderModuleCreateInfo> srcToShaderModuleMap;
 
 		for (const auto& shaderData : shaderDatas)
 		{
@@ -591,7 +591,7 @@ namespace OWC::Graphics
 		device.updateDescriptorSets(writeDescriptorSets, {});
 	}
 
-	void VulkanRayTracingShader::CreateVulkanRayTracingPipeline(const std::span<VulkanShaderData>& vulkanShaderDatas, const std::map<std::vector<u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap)
+	void VulkanRayTracingShader::CreateVulkanRayTracingPipeline(const std::span<VulkanShaderData>& vulkanShaderDatas, const std::map<const std::span<const u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap)
 	{
 		//const auto& app = Application::GetConstInstance();
 
@@ -606,6 +606,11 @@ namespace OWC::Graphics
 		shaderGroups.reserve(vulkanShaderDatas.size());
 
 		std::vector<vk::DescriptorSetLayoutBinding> bindings;
+
+		u32 raygenIdx = VK_SHADER_UNUSED_KHR;
+		u32 missIdx   = VK_SHADER_UNUSED_KHR;
+		u32 chitIdx   = VK_SHADER_UNUSED_KHR;
+		u32 ahitIdx   = VK_SHADER_UNUSED_KHR;
 
 		for (u32 i = 0; i < vulkanShaderDatas.size(); i++)
 		{
@@ -622,27 +627,12 @@ namespace OWC::Graphics
 
 			switch (stage)
 			{
-			case vk::ShaderStageFlagBits::eRaygenKHR:
-				shaderGroups.emplace_back(
-					vk::RayTracingShaderGroupTypeKHR::eGeneral,
-					i
-				);
-				break;
-			case vk::ShaderStageFlagBits::eClosestHitKHR:
-				shaderGroups.emplace_back(
-					vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
-					VK_SHADER_UNUSED_KHR,
-					i
-				);
-				break;
-			case vk::ShaderStageFlagBits::eMissKHR:
-				shaderGroups.emplace_back(
-					vk::RayTracingShaderGroupTypeKHR::eGeneral,
-					i
-				);
-				break;
+			case vk::ShaderStageFlagBits::eRaygenKHR:     raygenIdx = i; break;
+			case vk::ShaderStageFlagBits::eMissKHR:       missIdx   = i; break;
+			case vk::ShaderStageFlagBits::eClosestHitKHR: chitIdx   = i; break;
+			case vk::ShaderStageFlagBits::eAnyHitKHR:     ahitIdx   = i; break;
 			default:
-				Log<LogLevel::Error>("VulkanShader::CreateVulkanRayTracingPipeline: Unsupported shader stage for ray tracing pipeline: {}!", vk::to_string(stage));
+				Log<LogLevel::Error>("...Unsupported shader stage: {}!", vk::to_string(stage));
 			}
 
 			for (const auto& [descriptorCount, binding, descriptorType, stageFlags] : bindingDescriptions)
@@ -654,6 +644,10 @@ namespace OWC::Graphics
 				);
 		}
 
+		shaderGroups.emplace_back(vk::RayTracingShaderGroupTypeKHR::eGeneral, raygenIdx);
+		shaderGroups.emplace_back(vk::RayTracingShaderGroupTypeKHR::eGeneral, missIdx);
+		shaderGroups.emplace_back(vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,VK_SHADER_UNUSED_KHR, chitIdx, ahitIdx);
+
 		const auto layoutInfo = vk::DescriptorSetLayoutCreateInfo()
 			.setBindings(bindings);
 
@@ -662,7 +656,7 @@ namespace OWC::Graphics
 		constexpr auto pushConstantRange = vk::PushConstantRange()
 			.setOffset(0)
 			.setSize(128) // TODO: make this configurable
-			.setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eMissKHR);
+			.setStageFlags(vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eMissKHR | vk::ShaderStageFlagBits::eAnyHitKHR);
 
 		const auto pipelineLayoutInfo = vk::PipelineLayoutCreateInfo()
 			.setSetLayouts(*GetDescriptorSetLayout())
@@ -670,10 +664,13 @@ namespace OWC::Graphics
 
 		SetPipelineLayout(device.createPipelineLayout(pipelineLayoutInfo));
 
+		constexpr auto rayTracingPipelineInfoFlagsInfo = vk::PipelineCreateFlags2CreateInfo(vk::PipelineCreateFlagBits2::eRayTracingSkipAabbsKHR | vk::PipelineCreateFlagBits2::eLinkTimeOptimizationEXT);
+
 		const auto rayTracingPipelineInfo = vk::RayTracingPipelineCreateInfoKHR()
+			.setPNext(&rayTracingPipelineInfoFlagsInfo)
 			.setStages(shaderStages)
 			.setGroups(shaderGroups)
-			.setMaxPipelineRayRecursionDepth(8) // TODO: make this configurable
+			.setMaxPipelineRayRecursionDepth(1) // TODO: make this configurable
 			.setLayout(GetPipelineLayout());
 
 		SetPipeline(vk::raii::Pipeline(device, nullptr, nullptr, rayTracingPipelineInfo));
@@ -750,15 +747,15 @@ namespace OWC::Graphics
 		auto alignUp = [](auto value, size_t alignment) noexcept { return ((value + alignment - 1) & ~(alignment - 1)); };
 		const u32 handleSizeAligned = alignUp(handleSize, handleAlignment);
 		const u32 recordStride = alignUp(handleSizeAligned, baseAlignment);
-		u32 raygenSize   = recordStride;
-		u32 missSize     = recordStride;
-		u32 hitSize      = recordStride;
-		u32 callableSize = 0; // Callable shaders not supported yet
+		const u32 raygenSize   = recordStride;
+		const u32 missSize     = recordStride;
+		const u32 hitSize      = recordStride;
+		const u32 callableSize = recordStride; // Callable shaders not supported yet
 
-		u32 raygenOffset   = 0;
-		u32 missOffset     = raygenOffset + raygenSize;
-		u32 hitOffset      = missOffset + missSize;
-		u32 callableOffset = hitOffset + hitSize;
+		constexpr u32 raygenOffset   = 0;
+		const u32 missOffset     = raygenOffset + raygenSize;
+		const u32 hitOffset      = missOffset + missSize;
+		const u32 callableOffset = hitOffset + hitSize;
 
 		const vk::DeviceSize bufferSize = callableOffset + callableSize;
 
@@ -790,6 +787,7 @@ namespace OWC::Graphics
 		std::memcpy(pData + raygenOffset, m_ShaderHandles.data() + 0 * handleSize, handleSize);
 		std::memcpy(pData + missOffset, m_ShaderHandles.data() + 1 * handleSize, handleSize);
 		std::memcpy(pData + hitOffset, m_ShaderHandles.data() + 2 * handleSize, handleSize);
+		std::memcpy(pData + callableOffset, m_ShaderHandles.data() + 3 * handleSize, handleSize);
 
 		const auto SBTBufferDeviceAddress = vkCore.GetDevice().getBufferAddress(vk::BufferDeviceAddressInfo().setBuffer(m_SBTBuffer));
 

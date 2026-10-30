@@ -396,50 +396,50 @@ namespace OWC
 		using namespace OWC::Graphics;
 
 		{
-			std::vector<BindingDescription> bindingDescriptions = {
-				{
+			static constexpr std::array bindingDescriptions = {
+				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 0,
 					.descriptorType = DescriptorType::StorageImage,
 					.stageFlags = ShaderType::RayGen
 				},
-				{
+				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 1,
 					.descriptorType = DescriptorType::TLAS,
-					.stageFlags = (ShaderType::RayGen | ShaderType::RayClosestHit)
+					.stageFlags = (ShaderType::RayGen | ShaderType::RayClosestHit | ShaderType::RayAnyHit)
 				},
-				{
+				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 2,
 					.descriptorType = DescriptorType::UniformBuffer,
-					.stageFlags = ShaderType::RayGen
+					.stageFlags = ShaderType::RayGen | ShaderType::RayAnyHit
 				},
-				{
+				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 3,
 					.descriptorType = DescriptorType::Sampler,
-					.stageFlags = ShaderType::RayClosestHit
+					.stageFlags = ShaderType::RayClosestHit | ShaderType::RayAnyHit
 				},
-				{
+				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 4,
 					.descriptorType = DescriptorType::SampledImage,
-					.stageFlags = ShaderType::RayClosestHit
+					.stageFlags = ShaderType::RayClosestHit | ShaderType::RayAnyHit
 				},
-				{
+				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 5,
 					.descriptorType = DescriptorType::SampledImage,
 					.stageFlags = ShaderType::RayClosestHit
 				},
-				{
+				 BindingDescription{
 					.descriptorCount = 1,
 					.binding = 6,
 					.descriptorType = DescriptorType::SampledImage,
 					.stageFlags = ShaderType::RayClosestHit
 				},
-				{
+				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 7,
 					.descriptorType = DescriptorType::SampledImage,
@@ -447,38 +447,90 @@ namespace OWC
 				},
 			};
 
+#if defined(__has_embed) && __has_embed("../../../ShaderSrc/GPURayTracerShaders/RayTracing.spv") == __STDC_EMBED_FOUND__ && __has_embed("../../../ShaderSrc/GPURayTracerShaders/RayTracing_SER.spv") == __STDC_EMBED_FOUND__ && DIST
+			static constexpr auto makeDatas = [](const std::span<const u32> code) {
+				return std::array {
+					ShaderData {
+						.bytecode = code,
+						.type = ShaderType::RayGen,
+						.language = ShaderData::ShaderLanguage::SPIRV,
+						.descriptorType = bindingDescriptions,
+						.entryPoint = "RayGenShader"
+					},
+					ShaderData {
+						.bytecode = code,
+						.type = ShaderType::RayMiss,
+						.language = ShaderData::ShaderLanguage::SPIRV,
+						.descriptorType = {},
+						.entryPoint = "MissShader"
+					},
+					ShaderData {
+						.bytecode = code,
+						.type = ShaderType::RayClosestHit,
+						.language = ShaderData::ShaderLanguage::SPIRV,
+						.descriptorType = {},
+						.entryPoint = "ClosestHitShader"
+					},
+				};
+			};
+
+#if defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wc23-extensions"
+#endif
+			static constexpr unsigned char spvBytesSER[] = {
+#embed "../../../ShaderSrc/GPURayTracerShaders/RayTracing_SER.spv"
+			};
+			static constexpr unsigned char spvBytes[] = {
+#embed "../../../ShaderSrc/GPURayTracerShaders/RayTracing.spv"
+			};
+#if defined(__clang__)
+#  pragma clang diagnostic pop
+#endif
+
+			static constexpr auto shaderSrcSER = spvBytesToDWords(spvBytesSER);
+			static constexpr auto shaderSrc    = spvBytesToDWords(spvBytes);
+			static_assert(shaderSrcSER[0] == 0x07230203 && shaderSrc[0] == 0x07230203, "bad SPIR-V magic");
+
+			static constexpr auto shaderDatasSER = makeDatas(shaderSrcSER);
+			static constexpr auto shaderDatas    = makeDatas(shaderSrc);
+
+			m_RayTracingShader = BaseShader::CreateRTShader(Renderer::HasShaderExecutionReorderingSupport() ? shaderDatasSER : shaderDatas);
+#else
 			std::vector<u32> shaderSrc;
 
 			if (Renderer::HasShaderExecutionReorderingSupport())
-				shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/GPURayTracerShaders/RayTracing_SER.spv");
+				shaderSrc = LoadFileToBytecode<u32>("../../../ShaderSrc/GPURayTracerShaders/RayTracing_SER.spv");
 			else
-				shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/GPURayTracerShaders/RayTracing.spv");
+				shaderSrc = LoadFileToBytecode<u32>("../../../ShaderSrc/GPURayTracerShaders/RayTracing.spv");
 
-			std::vector<ShaderData> shaderDatas = {
-				{
+			const std::array shaderDatas = {
+				ShaderData {
 					.bytecode = shaderSrc,
 					.type = ShaderType::RayGen,
 					.language = ShaderData::ShaderLanguage::SPIRV,
 					.descriptorType = bindingDescriptions,
-					.entryPoint = "RayGenShader",
+					.entryPoint = "RayGenShader"
 				},
-				{
+				ShaderData {
 					.bytecode = shaderSrc,
 					.type = ShaderType::RayMiss,
 					.language = ShaderData::ShaderLanguage::SPIRV,
 					.descriptorType = {},
-					.entryPoint = "MissShader",
+					.entryPoint = "MissShader"
 				},
-				{
+				ShaderData {
 					.bytecode = shaderSrc,
 					.type = ShaderType::RayClosestHit,
 					.language = ShaderData::ShaderLanguage::SPIRV,
 					.descriptorType = {},
-					.entryPoint = "ClosestHitShader",
+					.entryPoint = "ClosestHitShader"
 				},
 			};
 
 			m_RayTracingShader = BaseShader::CreateRTShader(shaderDatas);
+#endif
+
 			m_RayTracingShader->BindTexture(0, m_RenderTarget, DescriptorType::StorageImage);
 			m_RayTracingShader->BindTLAS(1, m_Scene->GetTLAS());
 			m_RayTracingShader->BindUniform(2, m_RayTracingGPUDataBuffer);
@@ -490,20 +542,20 @@ namespace OWC
 		}
 
 		{
-			std::vector<BindingDescription> fragmentBindingDescriptions = {
-				{
+			static constexpr std::array fragmentBindingDescriptions = {
+				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 0,
 					.descriptorType = DescriptorType::UniformBuffer,
 					.stageFlags = ShaderType::Fragment
 				},
-				{
+				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 1,
 					.descriptorType = DescriptorType::UniformBuffer,
 					.stageFlags = ShaderType::Fragment
 				},
-				{
+				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 2,
 					.descriptorType = DescriptorType::CombinedImageSampler,
@@ -511,17 +563,30 @@ namespace OWC
 				}
 			};
 
-			auto shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/GPURayTracerShaders/DisplayImage.spv");
+#if defined(__has_embed) && __has_embed("../../../ShaderSrc/GPURayTracerShaders/DisplayImage.spv") == __STDC_EMBED_FOUND__ && DIST
+#if defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wc23-extensions"
+#endif
+			static constexpr unsigned char spvBytes[] = {
+#embed "../../../ShaderSrc/GPURayTracerShaders/DisplayImage.spv"
+			};
+#if defined(__clang__)
+#  pragma clang diagnostic pop
+#endif
 
-			std::vector<ShaderData> shaderDatas = {
-				{
+			static constexpr auto shaderSrc = spvBytesToDWords(spvBytes);
+			static_assert(shaderSrc[0] == 0x07230203, "bad SPIR-V magic");
+
+			static constexpr std::array shaderDatas = {
+				ShaderData {
 					.bytecode = shaderSrc,
 					.type = ShaderType::Vertex,
 					.language = ShaderData::ShaderLanguage::SPIRV,
 					.descriptorType = {},
 					.entryPoint = "vertexMain"
 				},
-				{
+				ShaderData {
 					.bytecode = shaderSrc,
 					.type = ShaderType::Fragment,
 					.language = ShaderData::ShaderLanguage::SPIRV,
@@ -529,6 +594,26 @@ namespace OWC
 					.entryPoint = "fragmentMain"
 				}
 			};
+#else
+			auto shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/GPURayTracerShaders/DisplayImage.spv");
+
+			const std::array shaderDatas = {
+				ShaderData {
+					.bytecode = shaderSrc,
+					.type = ShaderType::Vertex,
+					.language = ShaderData::ShaderLanguage::SPIRV,
+					.descriptorType = {},
+					.entryPoint = "vertexMain"
+				},
+				ShaderData {
+					.bytecode = shaderSrc,
+					.type = ShaderType::Fragment,
+					.language = ShaderData::ShaderLanguage::SPIRV,
+					.descriptorType = fragmentBindingDescriptions,
+					.entryPoint = "fragmentMain"
+				}
+			};
+#endif
 
 			m_DisplayShader = BaseShader::CreateShader(shaderDatas);
 			m_DisplayShader->BindUniform(0, m_UniformBuffer);

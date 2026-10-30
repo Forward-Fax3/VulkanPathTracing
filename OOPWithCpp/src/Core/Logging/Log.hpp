@@ -17,7 +17,7 @@ namespace OWC
 	};
 
 	template<LogLevel level, typename... Args>
-	void Log(const std::format_string<Args...> str, Args&&... args);
+	void Log(std::format_string<Args...> str, Args&&... args);
 }
 
 #include "Log.inl"

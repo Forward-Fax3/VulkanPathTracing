@@ -124,20 +124,20 @@ namespace OWC
 	{
 		using namespace OWC::Graphics;
 
-		std::vector<BindingDescription> fragmentBindingDescriptions = {
-			{
+		static constexpr std::array fragmentBindingDescriptions = {
+			BindingDescription {
 				.descriptorCount = 1,
 				.binding = 0,
 				.descriptorType = DescriptorType::UniformBuffer,
 				.stageFlags = ShaderType::Fragment
 			},
-			{
+			BindingDescription {
 				.descriptorCount = 1,
 				.binding = 1,
 				.descriptorType = DescriptorType::UniformBuffer,
 				.stageFlags = ShaderType::Fragment
 			},
-			{
+			BindingDescription {
 				.descriptorCount = 1,
 				.binding = 2,
 				.descriptorType = DescriptorType::CombinedImageSampler,
@@ -145,17 +145,30 @@ namespace OWC
 			}
 		};
 
-		auto shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/CPURayTracerShaders/CPUShader.spv");
+#if defined(__has_embed) && __has_embed("../../../ShaderSrc/CPURayTracerShaders/CPUShader.spv") == __STDC_EMBED_FOUND__ && DIST
+#if defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wc23-extensions"
+#endif
+		static constexpr unsigned char spvBytes[] = {
+#embed "../../../ShaderSrc/CPURayTracerShaders/CPUShader.spv"
+		};
+#if defined(__clang__)
+#  pragma clang diagnostic pop
+#endif
 
-		std::vector<ShaderData> shaderDatas = {
-			{
+		static constexpr auto shaderSrc = spvBytesToDWords(spvBytes);
+		static_assert(shaderSrc[0] == 0x07230203, "bad SPIR-V magic");
+
+		static constexpr std::array shaderDatas = {
+			ShaderData {
 				.bytecode = shaderSrc,
 				.type = ShaderType::Vertex,
 				.language = ShaderData::ShaderLanguage::SPIRV,
 				.descriptorType = {},
 				.entryPoint = "vertexMain"
 			},
-			{
+			ShaderData {
 				.bytecode = shaderSrc,
 				.type = ShaderType::Fragment,
 				.language = ShaderData::ShaderLanguage::SPIRV,
@@ -163,6 +176,26 @@ namespace OWC
 				.entryPoint = "fragmentMain"
 			}
 		};
+#else
+		auto shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/CPURayTracerShaders/CPUShader.spv");
+
+		std::array shaderDatas = {
+			ShaderData {
+				.bytecode = shaderSrc,
+				.type = ShaderType::Vertex,
+				.language = ShaderData::ShaderLanguage::SPIRV,
+				.descriptorType = {},
+				.entryPoint = "vertexMain"
+			},
+			ShaderData {
+				.bytecode = shaderSrc,
+				.type = ShaderType::Fragment,
+				.language = ShaderData::ShaderLanguage::SPIRV,
+				.descriptorType = fragmentBindingDescriptions,
+				.entryPoint = "fragmentMain"
+			}
+		};
+#endif
 
 		Renderer::AddToEndOfFrameCleanUp([shader = std::move(m_Shader)](){});
 		m_Shader = BaseShader::CreateShader(shaderDatas);
