@@ -30,7 +30,7 @@ namespace OWC
         SplitBVH(SplitBVH&&) = delete;
         SplitBVH& operator=(SplitBVH&&) = delete;
 
-		bool VECTORCALL IsHit(const Ray& ray, Interval& range, HitData& hitData) const override;
+		bool VECTORCALL IsHit(const Ray& ray, Interval& range, HitData& hitData) const noexcept override;
 
 		[[nodiscard]] AABB GetAABB() const override { return m_AABB; }
 
@@ -47,6 +47,7 @@ namespace OWC
 		}
 
 	private:
+    	GLM_NEVER_INLINE bool VECTORCALL IsHitChildren(const Ray& ray, Interval& range, HitData& hitData) const noexcept;
 		static bool BoxComparison(const std::shared_ptr<BaseHitable>& a, const std::shared_ptr<BaseHitable>& b, AABB::Axis axis);
 
     private:

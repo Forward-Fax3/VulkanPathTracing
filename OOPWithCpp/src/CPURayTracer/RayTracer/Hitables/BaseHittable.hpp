@@ -271,7 +271,7 @@ namespace OWC
 		BaseHitable(BaseHitable&&) = delete;
 		BaseHitable& operator=(BaseHitable&&) = delete;
 
-		virtual bool VECTORCALL IsHit(const Ray& ray, Interval& range, HitData& hitData) const = 0;
+		virtual bool VECTORCALL IsHit(const Ray& ray, Interval& range, HitData& hitData) const noexcept = 0;
 
 		virtual AABB GetAABB() const = 0;
 
@@ -293,7 +293,7 @@ namespace OWC
 		NoHit(NoHit&&) = delete;
 		NoHit& operator=(NoHit&&) = delete;
 
-		bool VECTORCALL IsHit(const Ray&, Interval&, HitData&) const override
+		bool VECTORCALL IsHit(const Ray&, Interval&, HitData&) const noexcept override
 		{
 			return false;
 		}

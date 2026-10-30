@@ -23,7 +23,7 @@ namespace OWC
 		OWC_FORCE_INLINE void ClearObjects() { m_Hitables.clear(); }
 		OWC_FORCE_INLINE const std::function<Colour(const Ray& ray)>& GetBackgroundFunction() const { return m_BackgroundFunction; }
 
-		bool VECTORCALL IsHit(const Ray& ray, Interval& range, HitData& hitData) const override;
+		bool VECTORCALL IsHit(const Ray& ray, Interval& range, HitData& hitData) const noexcept override;
 
 		AABB GetAABB() const override { return m_AABB; }
 

@@ -25,7 +25,7 @@ namespace OWC
 		Sphere(Sphere&&) = delete;
 		Sphere& operator=(Sphere&&) = delete;
 
-		bool VECTORCALL IsHit(const Ray& ray, Interval& range, HitData& hitData) const override;
+		bool VECTORCALL IsHit(const Ray& ray, Interval& range, HitData& hitData) const noexcept override;
 
 		AABB GetAABB() const override;
 
