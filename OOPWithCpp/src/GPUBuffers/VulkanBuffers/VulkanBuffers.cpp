@@ -422,7 +422,7 @@ namespace OWC::Graphics
 			.setWaitSemaphoreInfos(graphicsSemaphore)
 		);
 
-		VulkanCore::GetInstance().AddVulkanEndOfFrameCleanUpFunction([stagingBuffer = std::move(stagingBuffer), semaphore = std::move(semaphore), cmdTransBuf = std::move(cmdTransBuf), cmdGraphicsBuffer = std::move(cmdGraphicsBuffer)](){});
+		VulkanCore::AddVulkanEndOfFrameCleanUpFunction([stagingBuffer = std::move(stagingBuffer), semaphore = std::move(semaphore), cmdTransBuf = std::move(cmdTransBuf), cmdGraphicsBuffer = std::move(cmdGraphicsBuffer)](){});
 	}
 
 	//--------------------------------------------------------
