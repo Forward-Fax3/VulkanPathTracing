@@ -163,7 +163,7 @@ static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugMessageFunc( // TODO: add objects i
 		}
 	}
 
-	return vk::False;
+	return vk::True;
 }
 #endif
 
@@ -337,7 +337,7 @@ namespace OWC::Graphics
 	VulkanContext::~VulkanContext()
 	{
 		WaitForIdle();
-		auto& finishingFuncs = VulkanCore::GetInstance().GetEndOfFrameCleanUp();
+		auto& finishingFuncs = VulkanCore::GetEndOfFrameCleanUp();
 		for (auto& frame : finishingFuncs)
 		{
 			for (auto& func : frame)
@@ -347,7 +347,7 @@ namespace OWC::Graphics
 		finishingFuncs.clear();
 		m_EndOfFrameFences.clear();
 
-		VulkanCore::GetInstance().DestroySemaphores();
+		VulkanCore::DestroySemaphores();
 
 #ifndef DIST
 		// flush any remaining logged messages before destroying the debug messenger
@@ -373,7 +373,7 @@ namespace OWC::Graphics
 		if (!m_IsMinimized)
 		{
 			std::array<std::string_view, 1> semaphoreNames = { "RenderFinished" };
-			auto semaphores = vkCore.GetSemaphoresFromNames(semaphoreNames);
+			auto semaphores = VulkanCore::GetSemaphoresFromNames(semaphoreNames);
 
 			const vk::SubmitInfo submitInfo = vk::SubmitInfo()
 				.setSignalSemaphores(semaphores)
@@ -428,19 +428,19 @@ namespace OWC::Graphics
 		if (result.value >= vkCore.GetSwapchainImageViews().size())
 			Log<LogLevel::Critical>("Acquired image index {} is out of bounds for swapchain image views size {}", result.value, vkCore.GetSwapchainImageViews().size());
 
-		vkCore.SetPreviousFrameIndex(vkCore.GetCurrentFrameIndex());
-		vkCore.SetCurrentFrameIndex(result.value);
+		VulkanCore::SetPreviousFrameIndex(vkCore.GetCurrentFrameIndex());
+		VulkanCore::SetCurrentFrameIndex(result.value);
 
 		if (vkCore.GetDevice().waitForFences(*m_EndOfFrameFences[vkCore.GetCurrentFrameIndex()], true, std::numeric_limits<u32>::max()) != vk::Result::eSuccess)
 			Log<LogLevel::Critical>("Failed to wait for render finished fence");
 
-		auto& endOfFrameFuncs = vkCore.GetEndOfFrameCleanUp()[vkCore.GetCurrentFrameIndex()];
+		auto& endOfFrameFuncs = VulkanCore::GetEndOfFrameCleanUp()[vkCore.GetCurrentFrameIndex()];
 		for (auto& func : endOfFrameFuncs)
 			func();
 		endOfFrameFuncs.clear();
 
 		std::array<std::string_view, 1> imageReadyName = { "ImageReady" };
-		auto imageReady = vkCore.GetSemaphoresFromNames(imageReadyName)[0];
+		auto imageReady = VulkanCore::GetSemaphoresFromNames(imageReadyName)[0];
 
 		vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
 		const auto submitInfo = vk::SubmitInfo()
@@ -450,7 +450,7 @@ namespace OWC::Graphics
 			.setWaitDstStageMask(waitDestinationStageMask);
 
 		vkCore.GetGraphicsQueue().submit(submitInfo);
-		vkCore.AddVulkanEndOfFrameCleanUpFunction([temp = std::move(currentFrameImageAcquired)](){});
+		VulkanCore::AddVulkanEndOfFrameCleanUpFunction([temp = std::move(currentFrameImageAcquired)](){});
 	}
 
 	void VulkanContext::WaitForIdle()
@@ -528,7 +528,7 @@ namespace OWC::Graphics
 
 		const auto& vkCore = VulkanCore::GetConstInstance();
 
-		VulkanCore::GetInstance().SetInstance(vk::raii::Instance(vkCore.GetVKContext(), createInfo));
+		VulkanCore::SetInstance(vk::raii::Instance(vkCore.GetVKContext(), createInfo));
 		const auto& vkInstance = vkCore.GetVKInstance();
 
 		pfnVkCreateRayTracingPipelinesKHR = std::bit_cast<PFN_vkCreateRayTracingPipelinesKHR>(vkInstance.getProcAddr("vkCreateRayTracingPipelinesKHR"));
@@ -563,7 +563,7 @@ namespace OWC::Graphics
 			vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation
 			).setPfnUserCallback(debugMessageFunc);
 
-		VulkanCore::GetInstance().SetDebugCallback(vk::raii::DebugUtilsMessengerEXT(vkInstance, debugUtilsCreateInfo));
+		VulkanCore::SetDebugCallback(vk::raii::DebugUtilsMessengerEXT(vkInstance, debugUtilsCreateInfo));
 	}
 #endif
 
@@ -575,7 +575,7 @@ namespace OWC::Graphics
 		SDL_Vulkan_CreateSurface(&windowHandle, *VulkanCore::GetInstance().GetVKInstance(), nullptr, &surface);
 
 		vk::raii::SurfaceKHR raiiSurface(vkCore.GetVKInstance(), surface);
-		VulkanCore::GetInstance().SetSurface(std::move(raiiSurface));
+		VulkanCore::SetSurface(std::move(raiiSurface));
 	}
 
 	void VulkanContext::SelectPhysicalDevice()
@@ -595,9 +595,9 @@ namespace OWC::Graphics
 				isSuitable && score > highestScore)
 			{
 				highestScore = score;
-				VulkanCore::GetInstance().SetPhysicalDevice(device);
+				VulkanCore::SetPhysicalDevice(device);
 				const bool extensionsAvailable = IsExtensionAvailable(supportedExtensions, vk::EXTRayTracingInvocationReorderExtensionName);
-				VulkanCore::GetInstance().SetSERSupport(extensionsAvailable);
+				VulkanCore::SetSERSupport(extensionsAvailable);
 			}
 		}
 
@@ -618,7 +618,9 @@ namespace OWC::Graphics
 				vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
 				vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
 
-			VulkanCore::GetInstance().SetRTPhysicalDeviceProperties(
+			VulkanCore::SetPhysicalDeviceProps(chain.get<vk::PhysicalDeviceProperties2>().properties);
+
+			VulkanCore::SetRTPhysicalDeviceProperties(
 				chain.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>(),
 				chain.get<vk::PhysicalDeviceAccelerationStructurePropertiesKHR>()
 				);
@@ -765,18 +767,18 @@ namespace OWC::Graphics
 			return VulkanCore::GetConstInstance().GetDevice().getQueue(familyIndex, queueFamilyUsageCount[familyIndex]++);
 		};
 		
-		VulkanCore::GetInstance().SetGraphicsQueue(l_getQueue(m_QueueFamilyIndices.GraphicsFamily));
-		VulkanCore::GetInstance().SetComputeQueue(l_getQueue(m_QueueFamilyIndices.ComputeFamily));
-		VulkanCore::GetInstance().SetTransferQueue(l_getQueue(m_QueueFamilyIndices.TransferFamily));
+		VulkanCore::SetGraphicsQueue(l_getQueue(m_QueueFamilyIndices.GraphicsFamily));
+		VulkanCore::SetComputeQueue(l_getQueue(m_QueueFamilyIndices.ComputeFamily));
+		VulkanCore::SetTransferQueue(l_getQueue(m_QueueFamilyIndices.TransferFamily));
 
 		if (queueFamilyUsageCount.contains(m_QueueFamilyIndices.PresentFamily))
-			VulkanCore::GetInstance().SetPresentQueue(
+			VulkanCore::SetPresentQueue(
 				VulkanCore::GetConstInstance().GetDevice().getQueue(m_QueueFamilyIndices.PresentFamily, 0)
 			);
 		else
-			VulkanCore::GetInstance().SetPresentQueue(l_getQueue(m_QueueFamilyIndices.PresentFamily));
+			VulkanCore::SetPresentQueue(l_getQueue(m_QueueFamilyIndices.PresentFamily));
 
-		VulkanCore::GetInstance().SetQueueFamilyIndexes(
+		VulkanCore::SetQueueFamilyIndexes(
 			m_QueueFamilyIndices.GraphicsFamily,
 			m_QueueFamilyIndices.ComputeFamily,
 			m_QueueFamilyIndices.TransferFamily,
@@ -910,7 +912,7 @@ namespace OWC::Graphics
 		else
 			deviceCreateInfo.setPEnabledExtensionNames(g_DeviceExtensions);
 
-		VulkanCore::GetInstance().SetDevice(vk::raii::Device(VulkanCore::GetConstInstance().GetPhysicalDev(), deviceCreateInfo));
+		VulkanCore::SetDevice(vk::raii::Device(VulkanCore::GetConstInstance().GetPhysicalDev(), deviceCreateInfo));
 
 		m_QueueFamilyIndices.UniqueIndices.reserve(uniqueQueueFamiliesMap.size());
 		for (const auto& familyIndex : std::views::keys(uniqueQueueFamiliesMap))
@@ -946,7 +948,7 @@ namespace OWC::Graphics
 			}
 		}
 
-		VulkanCore::GetInstance().SetSwapchainImageFormat(imageFormat);
+		VulkanCore::SetSwapchainImageFormat(imageFormat);
 
 		Log<LogLevel::Debug>("Vulkan Swapchain Surface Format selected:");
 		Log<LogLevel::Debug>(" Format: {}", vk::to_string(vkCore.GetSwapchainImageFormat()));
@@ -1022,7 +1024,7 @@ namespace OWC::Graphics
 				.setPQueueFamilyIndices(m_QueueFamilyIndices.UniqueIndices.data())
 				.setOldSwapchain(*vkCore.GetSwapchain());
 
-		VulkanCore::GetInstance().SetSwapchain(vk::raii::SwapchainKHR(vkCore.GetDevice(), swapchainCreateInfo));
+		VulkanCore::SetSwapchain(vk::raii::SwapchainKHR(vkCore.GetDevice(), swapchainCreateInfo));
 
 		m_EndOfFrameFences.reserve(vkCore.GetSwapchainImages().size());
 		for (uSize i = 0; i < vkCore.GetSwapchainImages().size(); i++)
@@ -1033,7 +1035,8 @@ namespace OWC::Graphics
 		for (const auto& image : vkCore.GetSwapchainImages())
 			Log<LogLevel::Debug>(" Swapchain Image Handle: {}", static_cast<void*>(image));
 
-		std::vector<vk::raii::ImageView>& swapchainImageViews = VulkanCore::GetInstance().GetSwapchainImageViews();
+		std::vector<vk::raii::ImageView> swapchainImageViews;
+		swapchainImageViews.reserve(vkCore.GetSwapchainImages().size());
 
 		for (const auto& image : vkCore.GetSwapchainImages())
 		{
@@ -1058,45 +1061,53 @@ namespace OWC::Graphics
 
 			Log<LogLevel::Debug>(" Created image view for swapchain with handle {}", static_cast<void*>(*swapchainImageViews.back()));
 		}
+		VulkanCore::SetSwapchainImageViews(std::move(swapchainImageViews));
 
 		Log<LogLevel::NewLine>();
-		VulkanCore::GetInstance().GetEndOfFrameCleanUp().resize(vkCore.GetSwapchainImages().size());
+		VulkanCore::GetEndOfFrameCleanUp().resize(vkCore.GetSwapchainImages().size());
 	}
 
 	void VulkanContext::CreateCommandPools() const
 	{
-		VulkanCore::GetInstance().SetGraphicsCommandPool(
+		const auto& vkCore = VulkanCore::GetConstInstance();
+
+		VulkanCore::SetGraphicsCommandPool(
 			VulkanCore::GetConstInstance().GetDevice().createCommandPool(
 				vk::CommandPoolCreateInfo()
 				.setQueueFamilyIndex(m_QueueFamilyIndices.GraphicsFamily)
 			)
 		);
+		Log<LogLevel::Trace>("Created graphics command pool with handle {}", static_cast<void*>(*vkCore.GetGraphicsCommandPool()));
 
-		VulkanCore::GetInstance().SetComputeCommandPool(
+
+		VulkanCore::SetComputeCommandPool(
 			VulkanCore::GetConstInstance().GetDevice().createCommandPool(
 				vk::CommandPoolCreateInfo()
 				.setQueueFamilyIndex(m_QueueFamilyIndices.ComputeFamily)
 			)
 		);
+		Log<LogLevel::Trace>("Created compute command pool with handle {}", static_cast<void*>(*vkCore.GetComputeCommandPool()));
 
-		VulkanCore::GetInstance().SetDynamicGraphicsCommandPool(
+		VulkanCore::SetDynamicGraphicsCommandPool(
 			VulkanCore::GetConstInstance().GetDevice().createCommandPool(
 				vk::CommandPoolCreateInfo()
 				.setQueueFamilyIndex(m_QueueFamilyIndices.GraphicsFamily)
 				.setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer)
 			)
 		);
+		Log<LogLevel::Trace>("Created reusable graphics command pool with handle {}", static_cast<void*>(*vkCore.GetDynamicGraphicsCommandPool()));
 
-		VulkanCore::GetInstance().SetDynamicComputeCommandPool(
+		VulkanCore::SetDynamicComputeCommandPool(
 			VulkanCore::GetConstInstance().GetDevice().createCommandPool(
 				vk::CommandPoolCreateInfo()
 				.setQueueFamilyIndex(m_QueueFamilyIndices.ComputeFamily)
 				.setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer)
 			)
 		);
+		Log<LogLevel::Trace>("Created reusable compute command pool with handle {}", static_cast<void*>(*vkCore.GetDynamicComputeCommandPool()));
 
-		VulkanCore::GetInstance().SetupTransferPools();
-		VulkanCore::GetInstance().SetupSemaphores();
+		VulkanCore::SetupTransferPools();
+		VulkanCore::SetupSemaphores();
 	}
 
 	void VulkanContext::WriteCommandBuffers()
@@ -1211,18 +1222,16 @@ namespace OWC::Graphics
 			.setFlags(allocatorFlags)
 			.setPreferredLargeHeapBlockSize(256ull * 1024 * 1024); // 256mb
 
-		vkCore.SetVulkanMemoryAllocator(vma::raii::Allocator(vkCore.GetVKInstance(), vkCore.GetDevice(), allocatorCreateInfo));
+		VulkanCore::SetVulkanMemoryAllocator(vma::raii::Allocator(vkCore.GetVKInstance(), vkCore.GetDevice(), allocatorCreateInfo));
 	}
 
 	void VulkanContext::RecreateSwapchain()
 	{
-		auto& vkCore = VulkanCore::GetInstance();
 		WaitForIdle();
-		vkCore.DestroySemaphores();
-		vkCore.GetSwapchainImages().clear();
-		vkCore.GetSwapchainImageViews().clear();
+		VulkanCore::DestroySemaphores();
+		VulkanCore::ClearSwapchainImagesAndViews();
 		CreateSwapchain();
-		vkCore.SetupSemaphores();
+		VulkanCore::SetupSemaphores();
 	}
 
 	void VulkanContext::RewriteCommandBuffers()
@@ -1237,10 +1246,8 @@ namespace OWC::Graphics
 
 	void VulkanContext::Minimize()
 	{
-		auto& vkCore = VulkanCore::GetInstance();
 		WaitForIdle();
-		vkCore.GetSwapchainImages().clear();
-		vkCore.GetSwapchainImageViews().clear();
+		VulkanCore::ClearSwapchainImagesAndViews();
 		m_IsMinimized = true;
 	}
 

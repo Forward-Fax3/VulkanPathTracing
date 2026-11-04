@@ -205,21 +205,20 @@ namespace OWC::Graphics
 
 		for (const auto& name : semaphoreNames)
 		{
-			auto it = m_Semaphores[m_CurrentFrameIndex].find(std::string(name));
-
-			if (it != m_Semaphores[m_CurrentFrameIndex].end())
+			if (auto it = s_Instance->m_Semaphores[s_Instance->m_CurrentFrameIndex].find(std::string(name));
+				it != s_Instance->m_Semaphores[s_Instance->m_CurrentFrameIndex].end())
 				semaphores.emplace_back(*it->second);
 
 			else
 			{
-				for (uSize i = 0; i < m_SwapchainImageViews.size(); ++i)
+				for (uSize i = 0; i < s_Instance->m_SwapchainImageViews.size(); ++i)
 				{
 					constexpr auto semaphoreCreateInfo = vk::SemaphoreCreateInfo().setFlags(vk::SemaphoreCreateFlags());
-					auto semaphore = m_Device.createSemaphore(semaphoreCreateInfo);
+					auto semaphore = s_Instance->m_Device.createSemaphore(semaphoreCreateInfo);
 					Log<LogLevel::Debug>("Created semaphore: name: {}, ID: 0x{:x}", name, std::bit_cast<uint64_t>(static_cast<VkSemaphore>(*semaphore)));
-					m_Semaphores[i].insert_or_assign(std::string(name), std::move(semaphore));
+					s_Instance->m_Semaphores[i].insert_or_assign(std::string(name), std::move(semaphore));
 				}
-				semaphores.emplace_back(*m_Semaphores[m_CurrentFrameIndex].at(std::string(name)));
+				semaphores.emplace_back(*s_Instance->m_Semaphores[s_Instance->m_CurrentFrameIndex].at(std::string(name)));
 			}
 		}
 
@@ -236,21 +235,20 @@ namespace OWC::Graphics
 
 		for (const auto& name : semaphoreNames)
 		{
-			auto it = m_Semaphores[m_PreviousFrameIndex].find(std::string(name));
-
-			if (it != m_Semaphores[m_PreviousFrameIndex].end())
+			if (auto it = s_Instance->m_Semaphores[s_Instance->m_PreviousFrameIndex].find(std::string(name));
+				it != s_Instance->m_Semaphores[s_Instance->m_PreviousFrameIndex].end())
 				semaphores.emplace_back(*it->second);
 
 			else
 			{
-				for (uSize i = 0; i < m_SwapchainImageViews.size(); ++i)
+				for (uSize i = 0; i < s_Instance->m_SwapchainImageViews.size(); ++i)
 				{
 					constexpr auto semaphoreCreateInfo = vk::SemaphoreCreateInfo().setFlags(vk::SemaphoreCreateFlags());
-					auto semaphore = m_Device.createSemaphore(semaphoreCreateInfo);
+					auto semaphore = s_Instance->m_Device.createSemaphore(semaphoreCreateInfo);
 					Log<LogLevel::Debug>("Created semaphore: name: {}, ID: 0x{:x}", name, std::bit_cast<uint64_t>(static_cast<VkSemaphore>(*semaphore)));
-					m_Semaphores[i].insert_or_assign(std::string(name), std::move(semaphore));
+					s_Instance->m_Semaphores[i].insert_or_assign(std::string(name), std::move(semaphore));
 				}
-				semaphores.emplace_back(*m_Semaphores[m_PreviousFrameIndex].at(std::string(name)));
+				semaphores.emplace_back(*s_Instance->m_Semaphores[s_Instance->m_PreviousFrameIndex].at(std::string(name)));
 			}
 		}
 
@@ -264,10 +262,10 @@ namespace OWC::Graphics
 		return vk::raii::Semaphore{ m_Device, semaphoreCreateInfo };
 	}
 
-	u32 VulkanCore::FindMemoryType(vk::DeviceSize size, vk::MemoryPropertyFlags properties) const
+	u32 VulkanCore::FindMemoryType(const vk::DeviceSize size, const vk::MemoryPropertyFlags properties) const
 	{
 		(void)size; // Unused parameter
-		vk::PhysicalDeviceMemoryProperties memoryProperties = m_PhysicalDevice.getMemoryProperties();
+		const vk::PhysicalDeviceMemoryProperties memoryProperties = m_PhysicalDevice.getMemoryProperties();
 		for (u32 i = 0; i < memoryProperties.memoryTypeCount; ++i)
 			if ((memoryProperties.memoryTypes[i].propertyFlags & properties) == properties)
 				return i;

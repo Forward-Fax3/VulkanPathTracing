@@ -50,7 +50,7 @@ namespace OWC::Graphics
 			.setUsage(vma::MemoryUsage::eAutoPreferDevice)
 			.setFlags(vma::AllocationCreateFlagBits::eCanAlias);
 
-		VulkanCore::GetInstance().AddVulkanEndOfFrameCleanUpFunction([oldBuffer = std::move(m_VertexBuffer)](){});
+		VulkanCore::AddVulkanEndOfFrameCleanUpFunction([oldBuffer = std::move(m_VertexBuffer)](){});
 
 		m_VertexBuffer = vma::raii::Buffer(allocator, bufferInfo, allocInfo);
 		m_NumOfVertices = size;
@@ -151,7 +151,7 @@ namespace OWC::Graphics
 			.setWaitSemaphoreInfos(graphicsSemaphore)
 		);
 
-		VulkanCore::GetInstance().AddVulkanEndOfFrameCleanUpFunction([stagingBuffer = std::move(stagingBuffer), semaphore = std::move(semaphore), cmdTransBuf = std::move(cmdTransBuf), cmdGraphicsBuffer = std::move(cmdGraphicsBuffer)](){});
+		VulkanCore::AddVulkanEndOfFrameCleanUpFunction([stagingBuffer = std::move(stagingBuffer), semaphore = std::move(semaphore), cmdTransBuf = std::move(cmdTransBuf), cmdGraphicsBuffer = std::move(cmdGraphicsBuffer)](){});
 	}
 
 	VulkanIndexBuffer::VulkanIndexBuffer(const uSize size)
@@ -194,7 +194,7 @@ namespace OWC::Graphics
 			.setUsage(vma::MemoryUsage::eAutoPreferDevice)
 			.setFlags(vma::AllocationCreateFlagBits::eCanAlias);
 
-		VulkanCore::GetInstance().AddVulkanEndOfFrameCleanUpFunction([oldBuffer = std::move(m_IndexBuffer)](){});
+		VulkanCore::AddVulkanEndOfFrameCleanUpFunction([oldBuffer = std::move(m_IndexBuffer)](){});
 		m_IndexBuffer = vma::raii::Buffer(allocator, bufferInfo, allocInfo);
 	}
 
@@ -293,7 +293,7 @@ namespace OWC::Graphics
 			.setWaitSemaphoreInfos(graphicsSemaphore)
 		);
 
-		VulkanCore::GetInstance().AddVulkanEndOfFrameCleanUpFunction([stagingBuffer = std::move(stagingBuffer), semaphore = std::move(semaphore), cmdTransBuf = std::move(cmdTransBuf), cmdGraphicsBuffer = std::move(cmdGraphicsBuffer)](){});
+		VulkanCore::AddVulkanEndOfFrameCleanUpFunction([stagingBuffer = std::move(stagingBuffer), semaphore = std::move(semaphore), cmdTransBuf = std::move(cmdTransBuf), cmdGraphicsBuffer = std::move(cmdGraphicsBuffer)](){});
 	}
 
 	VulkanUniformBuffer::VulkanUniformBuffer(const uSize size)
@@ -1172,7 +1172,7 @@ namespace OWC::Graphics
 		vkCore.GetGraphicsQueue().submit2(submitGraphicsInfo);
 
 		//VulkanCore::GetInstance().AddVulkanEndOfFrameCleanUpFunction([cmdTransBuf = std::move(cmdTransBuf), cmdGraphicsBuf = std::move(cmdGraphicsBuf), semaphore = std::move(semaphore), stagingBuffer = std::move(stagingBuffer)]() -> void {});
-		VulkanCore::GetInstance().AddVulkanEndOfFrameCleanUpFunction([cmdGraphicsBuf = std::move(cmdGraphicsBuf), stagingBuffer = std::move(stagingBuffer)]() -> void {});
+		VulkanCore::AddVulkanEndOfFrameCleanUpFunction([cmdGraphicsBuf = std::move(cmdGraphicsBuf), stagingBuffer = std::move(stagingBuffer)]() -> void {});
 	}
 
 	VulkanGeneralBuffer::VulkanGeneralBuffer(const uSize size, const uSize alignment /*= 0*/)

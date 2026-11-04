@@ -77,22 +77,24 @@ namespace OWC::Graphics
 				const auto& vkCore = GetInstance();
 				const auto& device = vkCore.GetDevice();
 
-				m_Pools.reserve(poolCount * 2);
-				m_FreeIndex.reserve(poolCount);
-				m_FreeIndexReusable.reserve(poolCount);
-				for (size_t i = 0; i < poolCount; i++)
+				m_Pools.reserve(m_PoolCount * 2);
+				m_FreeIndex.reserve(m_PoolCount);
+				m_FreeIndexReusable.reserve(m_PoolCount);
+				for (size_t i = 0; i < m_PoolCount; i++)
 				{
 					m_Pools.emplace_back(device, vk::CommandPoolCreateInfo().setQueueFamilyIndex(vkCore.m_TransferQueueFamilyIndex));
+					Log<LogLevel::Trace>("Created transfer command pool {} with handle {}", i, static_cast<void*>(*m_Pools.back()));
 					m_FreeIndex.emplace_back(static_cast<u32>(i));
 				}
 
-				for (size_t i = 0; i < poolCount; i++)
+				for (size_t i = 0; i < m_PoolCount; i++)
 				{
 					m_Pools.emplace_back(device, vk::CommandPoolCreateInfo()
 						.setQueueFamilyIndex(vkCore.m_TransferQueueFamilyIndex)
 						.setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer));
+					Log<LogLevel::Trace>("Created reusable transfer command pool {} with handle {}", i + m_PoolCount, static_cast<void*>(*m_Pools.back()));
 
-					m_FreeIndexReusable.emplace_back(static_cast<u32>(i) + poolCount);
+					m_FreeIndexReusable.emplace_back(static_cast<u32>(i) + m_PoolCount);
 				}
 			}
 
@@ -128,7 +130,7 @@ namespace OWC::Graphics
 		VulkanCore(VulkanCore&&) = delete;
 		VulkanCore& operator=(VulkanCore&&) = delete;
 
-		static VulkanCore& GetInstance() { return *s_Instance; }
+		static const VulkanCore& GetInstance() { return *s_Instance; }
 		static const VulkanCore& GetConstInstance() { return *s_Instance; }
 
 		static void Init();
@@ -148,9 +150,8 @@ namespace OWC::Graphics
 		[[nodiscard]] vk::raii::CommandBuffer GetSingleTimeReusableComputeCommandBuffer() const;
 		[[nodiscard]] OWC_FORCE_INLINE vk::raii::CommandBuffer GetSingleTimeReusableTransferCommandBuffer(const TransferPoolToken& token) const { return GetSingleTimeTransferCommandBuffer(token); }
 
-
-		[[nodiscard]] std::vector<vk::Semaphore> GetSemaphoresFromNames(std::span<std::string_view> semaphoreNames);
-		[[nodiscard]] std::vector<vk::Semaphore> GetPreviousFrameSemaphoresFromNames(std::span<std::string_view> semaphoreNames);
+		[[nodiscard]] static std::vector<vk::Semaphore> GetSemaphoresFromNames(std::span<std::string_view> semaphoreNames);
+		[[nodiscard]] static  std::vector<vk::Semaphore> GetPreviousFrameSemaphoresFromNames(std::span<std::string_view> semaphoreNames);
 		[[nodiscard]] vk::raii::Semaphore GetSingleSemaphore() const;
 
 		[[nodiscard]] u32 FindMemoryType(vk::DeviceSize size, vk::MemoryPropertyFlags properties) const;
@@ -179,6 +180,7 @@ namespace OWC::Graphics
 		[[nodiscard]] OWC_FORCE_INLINE uSize GetPreviousFrameIndex() const { return m_PreviousFrameIndex; }
 		[[nodiscard]] OWC_FORCE_INLINE uSize GetNumberOfFramesInFlight() const { return m_SwapchainImageViews.size(); }
 
+		[[nodiscard]] OWC_FORCE_INLINE const vk::PhysicalDeviceProperties& GetPhysicalDeviceProperties() const { return m_PhysicalDeviceProperties; }
 		[[nodiscard]] OWC_FORCE_INLINE const vk::PhysicalDeviceRayTracingPipelinePropertiesKHR& GetRayTracingPipelineProperties() const { return m_RayTracingPipelineProperties; }
 		[[nodiscard]] OWC_FORCE_INLINE const vk::PhysicalDeviceAccelerationStructurePropertiesKHR& GetAccelerationStructureProperties() const { return m_AccelerationStructureProperties; }
 
@@ -189,82 +191,89 @@ namespace OWC::Graphics
 		[[nodiscard]] OWC_FORCE_INLINE std::array<u32, 3> GetAllQueues() const { return { m_GraphicsQueueFamilyIndex, m_ComputeQueueFamilyIndex, m_TransferQueueFamilyIndex }; }
 		[[nodiscard]] OWC_FORCE_INLINE const std::vector<u32>& GetAllUniqueQueuesIndices() const { return m_UniqueQueueFamilyIndices;}
 
-		[[nodiscard]] OWC_FORCE_INLINE std::vector<vk::Image>& GetSwapchainImages() { return m_SwapchainImages; }
-		[[nodiscard]] OWC_FORCE_INLINE std::vector<vk::raii::ImageView>& GetSwapchainImageViews() { return m_SwapchainImageViews; }
-
 		// Store end-of-frame cleanup callables as move-only type-erased wrappers (C++23)
-		[[nodiscard]] OWC_FORCE_INLINE std::vector<std::list<std::move_only_function<void()>>>& GetEndOfFrameCleanUp() { return m_EndOfFrameCleanUp; }
+		[[nodiscard]] static OWC_FORCE_INLINE std::vector<std::list<std::move_only_function<void()>>>& GetEndOfFrameCleanUp() { return s_Instance->m_EndOfFrameCleanUp; }
 
 		[[nodiscard]] OWC_FORCE_INLINE bool HasSERSupport() const { return hasSERSupport; }
 
-		OWC_FORCE_INLINE void SetInstance(vk::raii::Instance&& instance) { m_Instance = std::move(instance); }
+		OWC_FORCE_INLINE static void SetInstance(vk::raii::Instance&& instance) { s_Instance->m_Instance = std::move(instance); }
 #ifndef DIST
-		OWC_FORCE_INLINE void SetDebugCallback(vk::raii::DebugUtilsMessengerEXT&& debugCallback) { m_DebugCallback = std::move(debugCallback); }
+		OWC_FORCE_INLINE static void SetDebugCallback(vk::raii::DebugUtilsMessengerEXT&& debugCallback) { s_Instance->m_DebugCallback = std::move(debugCallback); }
 #endif
-		OWC_FORCE_INLINE void SetSurface(vk::raii::SurfaceKHR&& surface) { m_Surface = std::move(surface); }
-		OWC_FORCE_INLINE void SetPhysicalDevice(const vk::raii::PhysicalDevice& physicalDevice) { m_PhysicalDevice = physicalDevice; }
-		OWC_FORCE_INLINE void SetDevice(vk::raii::Device&& device) { m_Device = std::move(device); }
-		OWC_FORCE_INLINE void SetPresentQueue(const vk::Queue& presentQueue) { m_PresentQueue = presentQueue; }
-		OWC_FORCE_INLINE void SetGraphicsQueue(const vk::Queue& graphicsQueue) { m_GraphicsQueue = graphicsQueue; }
-		OWC_FORCE_INLINE void SetComputeQueue(const vk::Queue& computeQueue) { m_ComputeQueue = computeQueue; }
-		OWC_FORCE_INLINE void SetTransferQueue(const vk::Queue& transferQueue) { m_TransferQueue = transferQueue; }
-		OWC_FORCE_INLINE void SetGraphicsCommandPool(vk::raii::CommandPool&& commandPool) { m_GraphicsCommandPool = std::move(commandPool); }
-		OWC_FORCE_INLINE void SetComputeCommandPool(vk::raii::CommandPool&& commandPool) { m_ComputeCommandPool = std::move(commandPool); }
-		OWC_FORCE_INLINE void SetDynamicGraphicsCommandPool(vk::raii::CommandPool&& commandPool) { m_DynamicGraphicsCommandPool = std::move(commandPool); }
-		OWC_FORCE_INLINE void SetDynamicComputeCommandPool(vk::raii::CommandPool&& commandPool) { m_DynamicComputeCommandPool = std::move(commandPool); }
-		OWC_FORCE_INLINE void SetSwapchainImageFormat(const vk::Format& format) { m_SwapchainImageFormat = format; }
-		OWC_FORCE_INLINE void SetImGuiDescriptorPool(vk::raii::DescriptorPool&& pool) { m_ImGuiDescriptorPool = std::move(pool);  }
-		OWC_FORCE_INLINE void SetSwapchain(vk::raii::SwapchainKHR&& swapchain) { m_Swapchain = std::move(swapchain); m_SwapchainImages = m_Swapchain.getImages(); }
-		OWC_FORCE_INLINE void SetSwapchainImageViews(std::vector<vk::raii::ImageView>&& swapchainImageViews) { m_SwapchainImageViews = std::move(swapchainImageViews); }
-		OWC_FORCE_INLINE void SetCurrentFrameIndex(const uSize newIndex) { m_CurrentFrameIndex = newIndex; }
-		OWC_FORCE_INLINE void SetPreviousFrameIndex(const uSize newIndex) { m_PreviousFrameIndex = newIndex; }
-		OWC_FORCE_INLINE void SetVulkanMemoryAllocator(vma::raii::Allocator&& allocator) { m_Allocator = std::move(allocator); }
-		OWC_FORCE_INLINE void AddVulkanEndOfFrameCleanUpFunction(std::move_only_function<void()>&& func) { m_EndOfFrameCleanUp[m_CurrentFrameIndex].emplace_back(std::move(func)); }
+		OWC_FORCE_INLINE static void SetSurface(vk::raii::SurfaceKHR&& surface) { s_Instance->m_Surface = std::move(surface); }
+		OWC_FORCE_INLINE static void SetPhysicalDevice(const vk::raii::PhysicalDevice& physicalDevice) {  s_Instance->m_PhysicalDevice = physicalDevice; }
+		OWC_FORCE_INLINE static void SetDevice(vk::raii::Device&& device) { s_Instance->m_Device = std::move(device); }
+		OWC_FORCE_INLINE static void SetPresentQueue(const vk::Queue& presentQueue) { s_Instance->m_PresentQueue = presentQueue; }
+		OWC_FORCE_INLINE static void SetGraphicsQueue(const vk::Queue& graphicsQueue) { s_Instance->m_GraphicsQueue = graphicsQueue; }
+		OWC_FORCE_INLINE static void SetComputeQueue(const vk::Queue& computeQueue) { s_Instance->m_ComputeQueue = computeQueue; }
+		OWC_FORCE_INLINE static void SetTransferQueue(const vk::Queue& transferQueue) { s_Instance->m_TransferQueue = transferQueue; }
+		OWC_FORCE_INLINE static void SetGraphicsCommandPool(vk::raii::CommandPool&& commandPool) { s_Instance->m_GraphicsCommandPool = std::move(commandPool); }
+		OWC_FORCE_INLINE static void SetComputeCommandPool(vk::raii::CommandPool&& commandPool) { s_Instance->m_ComputeCommandPool = std::move(commandPool); }
+		OWC_FORCE_INLINE static void SetDynamicGraphicsCommandPool(vk::raii::CommandPool&& commandPool) { s_Instance->m_DynamicGraphicsCommandPool = std::move(commandPool); }
+		OWC_FORCE_INLINE static void SetDynamicComputeCommandPool(vk::raii::CommandPool&& commandPool) { s_Instance->m_DynamicComputeCommandPool = std::move(commandPool); }
+		OWC_FORCE_INLINE static void SetSwapchainImageFormat(const vk::Format& format) { s_Instance->m_SwapchainImageFormat = format; }
+		OWC_FORCE_INLINE static void SetImGuiDescriptorPool(vk::raii::DescriptorPool&& pool) { s_Instance->m_ImGuiDescriptorPool = std::move(pool);  }
+		OWC_FORCE_INLINE static void SetSwapchain(vk::raii::SwapchainKHR&& swapchain) { s_Instance->m_Swapchain = std::move(swapchain); s_Instance->m_SwapchainImages = s_Instance->m_Swapchain.getImages(); }
+		OWC_FORCE_INLINE static void SetSwapchainImageViews(std::vector<vk::raii::ImageView>&& swapchainImageViews) { s_Instance->m_SwapchainImageViews = std::move(swapchainImageViews); }
+		OWC_FORCE_INLINE static void SetCurrentFrameIndex(const uSize newIndex) { s_Instance->m_CurrentFrameIndex = newIndex; }
+		OWC_FORCE_INLINE static void SetPreviousFrameIndex(const uSize newIndex) { s_Instance->m_PreviousFrameIndex = newIndex; }
+		OWC_FORCE_INLINE static void SetVulkanMemoryAllocator(vma::raii::Allocator&& allocator) { s_Instance->m_Allocator = std::move(allocator); }
+		OWC_FORCE_INLINE static void AddVulkanEndOfFrameCleanUpFunction(std::move_only_function<void()>&& func) { s_Instance->m_EndOfFrameCleanUp[s_Instance->m_CurrentFrameIndex].emplace_back(std::move(func)); }
+		OWC_FORCE_INLINE static void SetSERSupport(const bool support) { s_Instance->hasSERSupport = support; }
+		OWC_FORCE_INLINE static void SetPhysicalDeviceProps(const vk::PhysicalDeviceProperties& physicalDeviceProperties) { s_Instance->m_PhysicalDeviceProperties = physicalDeviceProperties;	}
+
+		// This clears both swapchain images and image views
+		OWC_FORCE_INLINE static void ClearSwapchainImagesAndViews()
+		{
+			s_Instance->m_SwapchainImages.clear();
+			s_Instance->m_SwapchainImageViews.clear();
+		}
+
+		OWC_FORCE_INLINE static void SetRTPhysicalDeviceProperties(const vk::PhysicalDeviceRayTracingPipelinePropertiesKHR& rayTracingPipelineProperties, const vk::PhysicalDeviceAccelerationStructurePropertiesKHR& accelerationStructureProperties)
+		{
+			s_Instance->m_RayTracingPipelineProperties = rayTracingPipelineProperties;
+			s_Instance->m_AccelerationStructureProperties = accelerationStructureProperties;
+		}
+
+		OWC_FORCE_INLINE static void SetQueueFamilyIndexes(const u32 graphicsIndex, const u32 computeIndex, const u32 transferIndex, const u32 presentIndex)
+		{
+			s_Instance->m_GraphicsQueueFamilyIndex = graphicsIndex;
+			s_Instance->m_ComputeQueueFamilyIndex = computeIndex;
+			s_Instance->m_TransferQueueFamilyIndex = transferIndex;
+			s_Instance->m_PresentQueueFamilyIndex = presentIndex;
+
+			s_Instance->m_UniqueQueueFamilyIndices = { graphicsIndex };
+
+			if (computeIndex != graphicsIndex)
+				s_Instance->m_UniqueQueueFamilyIndices.push_back(computeIndex);
+			if (transferIndex != computeIndex && transferIndex != graphicsIndex)
+				s_Instance->m_UniqueQueueFamilyIndices.push_back(transferIndex);
+		}
+
+		OWC_FORCE_INLINE static void SetupTransferPools()
+		{
+			if (s_Instance->m_TransferPoolRing)
+				Log<LogLevel::Critical>("TransferPoolRing already exists. This should not happen.");
+
+			s_Instance->m_TransferPoolRing = std::make_unique<TransferPoolRing>();
+		}
+
+		OWC_FORCE_INLINE static void SetupSemaphores()
+		{
+			s_Instance->m_Semaphores.reserve(s_Instance->m_SwapchainImageViews.size());
+			for (uSize i = 0; i < s_Instance->m_SwapchainImageViews.size(); i++)
+				s_Instance->m_Semaphores.emplace_back();
+		}
+
+		OWC_FORCE_INLINE static void DestroySemaphores()
+		{
+			s_Instance->m_Semaphores.clear();
+		}
 
 		OWC_FORCE_INLINE void SubmitTransferCommandBuffer(const vk::SubmitInfo2& info, const vk::Fence& fence = {}) const
 		{
 			std::unique_lock lock(m_TransferCommandQueueMutex);
 			m_TransferQueue.submit2(info, fence);
-		}
-
-		OWC_FORCE_INLINE void SetSERSupport(const bool support) { hasSERSupport = support; }
-
-		OWC_FORCE_INLINE void SetRTPhysicalDeviceProperties(const vk::PhysicalDeviceRayTracingPipelinePropertiesKHR& rayTracingPipelineProperties, const vk::PhysicalDeviceAccelerationStructurePropertiesKHR& accelerationStructureProperties)
-		{
-			m_RayTracingPipelineProperties = rayTracingPipelineProperties;
-			m_AccelerationStructureProperties = accelerationStructureProperties;
-		}
-
-		OWC_FORCE_INLINE void SetQueueFamilyIndexes(const u32 graphicsIndex, const u32 computeIndex, const u32 transferIndex, const u32 presentIndex)
-		{
-			m_GraphicsQueueFamilyIndex = graphicsIndex;
-			m_ComputeQueueFamilyIndex = computeIndex;
-			m_TransferQueueFamilyIndex = transferIndex;
-			m_PresentQueueFamilyIndex = presentIndex;
-
-			m_UniqueQueueFamilyIndices = { graphicsIndex };
-
-			if (computeIndex != graphicsIndex)
-				m_UniqueQueueFamilyIndices.push_back(computeIndex);
-			if (transferIndex != computeIndex && transferIndex != graphicsIndex)
-				m_UniqueQueueFamilyIndices.push_back(transferIndex);
-		}
-
-		OWC_FORCE_INLINE void SetupTransferPools()
-		{
-			m_TransferPoolRing = std::make_unique<TransferPoolRing>();
-		}
-
-		OWC_FORCE_INLINE void SetupSemaphores()
-		{
-			m_Semaphores.reserve(m_SwapchainImageViews.size());
-			for (uSize i = 0; i < m_SwapchainImageViews.size(); i++)
-				m_Semaphores.emplace_back();
-		}
-
-		OWC_FORCE_INLINE void DestroySemaphores()
-		{
-			m_Semaphores.clear();
 		}
 
 		OWC_FORCE_INLINE void ReturnTransferPoolToken(const TransferPoolToken& token) const
@@ -295,6 +304,8 @@ namespace OWC::Graphics
 		vk::raii::DescriptorPool m_ImGuiDescriptorPool = nullptr;
 		std::vector<vk::Image> m_SwapchainImages{};
 		std::vector<vk::raii::ImageView> m_SwapchainImageViews{};
+
+		vk::PhysicalDeviceProperties m_PhysicalDeviceProperties{};
 
 		vk::PhysicalDeviceRayTracingPipelinePropertiesKHR m_RayTracingPipelineProperties{};
 		vk::PhysicalDeviceAccelerationStructurePropertiesKHR m_AccelerationStructureProperties{};

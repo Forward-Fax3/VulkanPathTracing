@@ -218,7 +218,7 @@ namespace OWC::Graphics
 			return;
 		}
 
-		VulkanCore& vkCore = VulkanCore::GetInstance();
+		const auto& vkCore = VulkanCore::GetConstInstance();
 
 		if (testBitMask(GetRenderPassType(), RenderPassType::Dynamic))
 		{
@@ -386,15 +386,17 @@ namespace OWC::Graphics
 			return;
 		}
 
+		const auto& vkCore = VulkanCore::GetConstInstance();
+
 		if (testBitMask(GetRenderPassType(), RenderPassType::Static))
-			for (uSize i = 0; i != VulkanCore::GetConstInstance().GetSwapchainImages().size(); i++)
+			for (uSize i = 0; i != vkCore.GetNumberOfFramesInFlight(); i++)
 			{
 				vk::raii::CommandBuffer& cmdBuf = m_CommandBuffers[i];
 				cmdBuf.endRendering();
 			}
 		else
 		{
-			const vk::CommandBuffer& cmdBuf = m_CommandBuffers[VulkanCore::GetInstance().GetCurrentFrameIndex()];
+			const vk::CommandBuffer& cmdBuf = m_CommandBuffers[vkCore.GetCurrentFrameIndex()];
 			cmdBuf.endRendering();
 		}
 	}
@@ -410,11 +412,11 @@ namespace OWC::Graphics
 
 	void VulkanRenderPass::submitRenderPass(const std::span<std::string_view> waitSemaphoreNames, const std::span<std::string_view> startSemaphore, const std::span<std::string_view> waitPreviousFrameSemaphoreNames)
 	{
-		VulkanCore& vkCore = VulkanCore::GetInstance();
+		const auto& vkCore = VulkanCore::GetConstInstance();
 
-		const std::vector<vk::Semaphore> waitSemaphores = vkCore.GetSemaphoresFromNames(waitSemaphoreNames);
-		const std::vector<vk::Semaphore> signalSemaphores = vkCore.GetSemaphoresFromNames(startSemaphore);
-		const std::vector<vk::Semaphore> waitPreviousFrameSemaphores = vkCore.GetPreviousFrameSemaphoresFromNames(waitPreviousFrameSemaphoreNames);
+		const std::vector<vk::Semaphore> waitSemaphores = VulkanCore::GetSemaphoresFromNames(waitSemaphoreNames);
+		const std::vector<vk::Semaphore> signalSemaphores = VulkanCore::GetSemaphoresFromNames(startSemaphore);
+		const std::vector<vk::Semaphore> waitPreviousFrameSemaphores = VulkanCore::GetPreviousFrameSemaphoresFromNames(waitPreviousFrameSemaphoreNames);
 
 		constexpr vk::PipelineStageFlags2 waitDestinationStageMask(vk::PipelineStageFlagBits2::eAllCommands);
 
@@ -584,7 +586,7 @@ namespace OWC::Graphics
     	    	cmd.drawIndexed(
     	            drawCmd.ElemCount, 1,
     	            drawCmd.IdxOffset + globalIdxOffset,
-    	            drawCmd.VtxOffset + globalVtxOffset,
+    	            static_cast<i32>(drawCmd.VtxOffset) + globalVtxOffset,
     	            0);
     	    }
 
@@ -595,7 +597,7 @@ namespace OWC::Graphics
 
 	void VulkanRenderPass::AddToEndOfFrameCleanUp(std::move_only_function<void()>&& func)
 	{
-		VulkanCore::GetInstance().AddVulkanEndOfFrameCleanUpFunction(std::move(func));
+		VulkanCore::AddVulkanEndOfFrameCleanUpFunction(std::move(func));
 	}
 
 	uSize VulkanRenderPass::GetNumberOfFramesInFlight() const
