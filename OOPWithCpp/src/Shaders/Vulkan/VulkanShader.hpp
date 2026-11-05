@@ -68,16 +68,16 @@ namespace OWC::Graphics
 	class VulkanShader : public VulkanBaseShader
 	{
 	public:
-		explicit VulkanShader(const std::span<const ShaderData>& shaderDatas, const std::span<VertexBindings>& vertexBindings, const std::span<VertexAttributes>& vertexAttributes);
+		explicit VulkanShader(const std::span<const ShaderData>& shaderDatas, const std::span<const VertexBindings>& vertexBindings, const std::span<const VertexAttributes>& vertexAttributes);
 		VulkanShader(VulkanShader&) = delete;
 		VulkanShader& operator=(VulkanShader&) = delete;
 		VulkanShader(VulkanShader&&) noexcept = delete;
 		VulkanShader& operator=(VulkanShader&&) noexcept = delete;
 
-		void BindTLAS(u32 binding, const std::shared_ptr<BaseTLAS>& tlasBuffer) override { Log<LogLevel::Error>("VulkanShader::BindTLAS: TLAS can only be bound to ray tracing shaders! For this shader type please use VulkanRayTracingShader."); }
+		void BindTLAS(u32, const std::shared_ptr<BaseTLAS>&) override { Log<LogLevel::Error>("VulkanShader::BindTLAS: TLAS can only be bound to ray tracing shaders! For this shader type please use VulkanRayTracingShader."); }
 
 	private:
-		void CreateVulkanPipeline(const std::span<VulkanShaderData>& vulkanShaderDatas, const std::map<const std::span<const u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap, const std::span<VertexBindings>& vertexBindings, const std::span<VertexAttributes>& vertexAttributes);
+		void CreateVulkanPipeline(const std::span<VulkanShaderData>& vulkanShaderDatas, const std::map<const std::span<const u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap, const std::span<const VertexBindings>& vertexBindings, const std::span<const VertexAttributes>& vertexAttributes);
 	};
 
 	class VulkanRayTracingShader : public VulkanBaseShader

@@ -43,14 +43,14 @@ namespace OWC
 
 		using namespace Graphics;
 
-		std::vector<BindingDescription> fragmentBindingDescriptions = {
-			{
+		static constexpr std::array fragmentBindingDescriptions = {
+			BindingDescription {
 				.descriptorCount = 1,
 				.binding = 0,
 				.descriptorType = DescriptorType::CombinedImageSampler,
 				.stageFlags = ShaderType::Fragment
 			},
-			{
+			BindingDescription {
 				.descriptorCount = 1,
 				.binding = 1,
 				.descriptorType = DescriptorType::UniformBuffer,
@@ -58,17 +58,30 @@ namespace OWC
 			}
 		};
 
-		auto shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/ImGuiShader/ImGui.spv");
+#if defined(__has_embed) && __has_embed("../../../ShaderSrc/ImGuiShader/ImGui.spv") == __STDC_EMBED_FOUND__ && DIST
+#if defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wc23-extensions"
+#endif
+		constexpr unsigned char spvBytes[] = {
+#embed "../../../ShaderSrc/ImGuiShader/ImGui.spv"
+		};
+#if defined(__clang__)
+#  pragma clang diagnostic pop
+#endif
 
-		std::vector<ShaderData> shaderDatas = {
-			{
+		static constexpr auto shaderSrc = spvBytesToDWords(spvBytes);
+		static_assert(shaderSrc[0] == 0x07230203, "bad SPIR-V magic");
+
+		static constexpr std::array shaderDatas = {
+			ShaderData {
 				.bytecode = shaderSrc,
 				.type = ShaderType::Vertex,
 				.language = ShaderData::ShaderLanguage::SPIRV,
 				.descriptorType = {},
 				.entryPoint = "vertexMain"
 			},
-			{
+			ShaderData {
 				.bytecode = shaderSrc,
 				.type = ShaderType::Fragment,
 				.language = ShaderData::ShaderLanguage::SPIRV,
@@ -77,28 +90,49 @@ namespace OWC
 			}
 		};
 
-		std::vector<VertexBindings> vertexBindings = {
-			{
+#else
+		auto shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/ImGuiShader/ImGui.spv");
+
+		std::array shaderDatas = {
+			ShaderData {
+				.bytecode = shaderSrc,
+				.type = ShaderType::Vertex,
+				.language = ShaderData::ShaderLanguage::SPIRV,
+				.descriptorType = {},
+				.entryPoint = "vertexMain"
+			},
+			ShaderData {
+				.bytecode = shaderSrc,
+				.type = ShaderType::Fragment,
+				.language = ShaderData::ShaderLanguage::SPIRV,
+				.descriptorType = fragmentBindingDescriptions,
+				.entryPoint = "fragmentMain"
+			}
+		};
+#endif
+
+		static constexpr std::array vertexBindings = {
+			VertexBindings{
 				.stride = sizeof(ImDrawVert),
 				.binding = 0, // binding
 				.inputRate = VertexInputRate::Vertex
 			}
 		};
 
-		std::vector<VertexAttributes> vertexAttributes = {
-			{
+		static constexpr std::array vertexAttributes = {
+			VertexAttributes {
 				.format = Format::R32G32_SFloat,
 				.location = 0,
 				.binding = 0,
 				.offset = offsetof(ImDrawVert, pos)
 			},
-			{
+			VertexAttributes {
 				.format = Format::R32G32_SFloat,
 				.location = 1,
 				.binding = 0,
 				.offset = offsetof(ImDrawVert, uv)
 			},
-			{
+			VertexAttributes {
 				.format = Format::R8G8B8A8_UNorm,
 				.location = 2,
 				.binding = 0,

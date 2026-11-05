@@ -110,10 +110,10 @@ namespace OWC::Graphics
 		std::vector<vk::DescriptorImageInfo> descriptorImageInfos{}; // keep alive until updateDescriptorSets is called
 		descriptorImageInfos.reserve(vkCore.GetNumberOfFramesInFlight());
 
-		for (i32 i = 0; i < vkCore.GetNumberOfFramesInFlight(); i++)
+		for (uSize i = 0; i < vkCore.GetNumberOfFramesInFlight(); i++)
 		{
 			const i32 numFrames = static_cast<i32>(vkCore.GetNumberOfFramesInFlight());
-			const i32 viewIndex = ((i + frameOffset) % numFrames + numFrames) % numFrames;
+			const i32 viewIndex = ((static_cast<i32>(i) + frameOffset) % numFrames + numFrames) % numFrames;
 
 			descriptorImageInfos.emplace_back(
 				vulkanDynamicTextureBuffer->GetSampler(),
@@ -307,7 +307,8 @@ namespace OWC::Graphics
 	}
 
 
-	VulkanShader::VulkanShader(const std::span<const ShaderData>& shaderDatas, const std::span<VertexBindings>& vertexBindings, const std::span<VertexAttributes>& vertexAttributes)
+
+	VulkanShader::VulkanShader(const std::span<const ShaderData>& shaderDatas, const std::span<const VertexBindings>& vertexBindings, const std::span<const VertexAttributes>& vertexAttributes)
 	{
 		Log<LogLevel::Trace>("VulkanShader::VulkanShader: Creating Vulkan shader with {} shader stages.", shaderDatas.size());
 
@@ -335,7 +336,7 @@ namespace OWC::Graphics
 		CreateVulkanPipeline(vulkanShaderDatas, srcToShaderModuleMap, vertexBindings, vertexAttributes);
 	}
 
-	void VulkanShader::CreateVulkanPipeline(const std::span<VulkanShaderData>& vulkanShaderDatas, const std::map<const std::span<const u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap, const std::span<VertexBindings>& vertexBindings, const std::span<VertexAttributes>& vertexAttributes)
+	void VulkanShader::CreateVulkanPipeline(const std::span<VulkanShaderData>& vulkanShaderDatas, const std::map<const std::span<const u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap, const std::span<const VertexBindings>& vertexBindings, const std::span<const VertexAttributes>& vertexAttributes)
 	{
 		const auto& app = Application::GetConstInstance();
 
@@ -743,8 +744,6 @@ namespace OWC::Graphics
 		const uSize shaderHandleSize = handleSize * numberOfGroups;
 		m_ShaderHandles = GetPipeline().getRayTracingShaderGroupHandlesKHR<u8>(0, numberOfGroups, shaderHandleSize);
 
-		// nVidia vk_raytracing_tutorial helper func
-		auto alignUp = [](auto value, size_t alignment) noexcept { return ((value + alignment - 1) & ~(alignment - 1)); };
 		const u32 handleSizeAligned = alignUp(handleSize, handleAlignment);
 		const u32 recordStride = alignUp(handleSizeAligned, baseAlignment);
 		const u32 raygenSize   = recordStride;

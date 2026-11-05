@@ -146,7 +146,7 @@ namespace OWC::Graphics
 
 		virtual void BindTLAS(u32 binding, const std::shared_ptr<BaseTLAS>& tlasBuffer) = 0;
 
-		static std::unique_ptr<BaseShader> CreateShader(const std::span<const ShaderData>& shaderDatas, const std::span<VertexBindings>& vertexBindings = {}, const std::span<VertexAttributes>& vertexAttributes = {});
+		static std::unique_ptr<BaseShader> CreateShader(const std::span<const ShaderData>& shaderDatas, const std::span<const VertexBindings>& vertexBindings = {}, const std::span<const VertexAttributes>& vertexAttributes = {});
 		static std::unique_ptr<BaseShader> CreateRTShader(const std::span<const ShaderData>& shaderDatas);
 
 	private:
