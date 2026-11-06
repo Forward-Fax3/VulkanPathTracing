@@ -67,7 +67,11 @@ foreach (TargetArch SSE4_2 AVX2 AVX512)
             ${Polly_LINK_FLAGS}
             ${TargetLinks}
     )
-    target_link_options(GraphicsProgrammingWithCpp${TargetArch} PRIVATE -static)
+    if(MINGW)
+        target_link_options(GraphicsProgrammingWithCpp${TargetArch} PRIVATE -static)
+    elseif(UNIX AND NOT APPLE)
+        target_link_options(GraphicsProgrammingWithCpp${TargetArch} PRIVATE -static-libstdc++ -static-libgcc)
+    endif()
     if (MINGW AND LTO_ENABLED)
         set_target_properties(GraphicsProgrammingWithCpp${TargetArch} PROPERTIES
                 INTERPROCEDURAL_OPTIMIZATION false
