@@ -605,20 +605,22 @@ namespace OWC::Graphics
 			Log<LogLevel::Critical>("Failed to find a suitable GPU");
 		else
 		{
-			auto deviceProperties = pDevice.getProperties();
-
-			Log<LogLevel::Debug>("Selected GPU: {} (ID: {}, GPU Type: {})",
-				deviceProperties.deviceName.data(),
-				deviceProperties.deviceID,
-				vk::to_string(deviceProperties.deviceType));
-			Log<LogLevel::NewLine>();
-
 			auto chain = pDevice.getProperties2<
 				vk::PhysicalDeviceProperties2,
 				vk::PhysicalDeviceRayTracingPipelinePropertiesKHR,
 				vk::PhysicalDeviceAccelerationStructurePropertiesKHR>();
 
-			VulkanCore::SetPhysicalDeviceProps(chain.get<vk::PhysicalDeviceProperties2>().properties);
+			const auto& deviceProperties = chain.get<vk::PhysicalDeviceProperties2>().properties;
+
+			Log<LogLevel::Trace>("Vulkan Physical Device Selection:\n\tHighest Score: {}\n\tHas SER Support: {}\nSelected GPU: {} (ID: {}, GPU Type: {})",
+				highestScore,
+				VulkanCore::GetConstInstance().HasSERSupport() ? "Yes" : "No",
+				std::string_view(deviceProperties.deviceName.data(), ::OWC::strnlen_s(deviceProperties.deviceName.data(), deviceProperties.deviceName.size())),
+				deviceProperties.deviceID,
+				vk::to_string(deviceProperties.deviceType));
+			Log<LogLevel::NewLine>();
+
+			VulkanCore::SetPhysicalDeviceProps(deviceProperties);
 
 			VulkanCore::SetRTPhysicalDeviceProperties(
 				chain.get<vk::PhysicalDeviceRayTracingPipelinePropertiesKHR>(),
@@ -630,18 +632,18 @@ namespace OWC::Graphics
 	std::tuple<bool, u32, std::vector<vk::ExtensionProperties>> VulkanContext::IsPhysicalDeviceSuitable(const vk::PhysicalDevice& device)
 	{
 		u32 score = 0;
-		auto deviceProperties = device.getProperties2();
+		const auto deviceProperties = device.getProperties2().properties;
 		auto supportedExtensions = device.enumerateDeviceExtensionProperties();
 
-		if (deviceProperties.properties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
+		if (deviceProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
 			score += 1000;
 
-		score += deviceProperties.properties.limits.maxImageDimension2D;
+		score += deviceProperties.limits.maxImageDimension2D;
 
 		if (const auto [extensionsAvailable, missingExtension] = IsExtensionAvailable(supportedExtensions, g_DeviceExtensions); !extensionsAvailable)
 		{
 			Log<LogLevel::Warn>("Physical device {} is missing required extension: {}",
-				deviceProperties.properties.deviceName.data(),
+				std::string_view(deviceProperties.deviceName.data(), ::OWC::strnlen_s(deviceProperties.deviceName.data(), deviceProperties.deviceName.size())),
 				missingExtension);
 			return { false, 0, {} };
 		}

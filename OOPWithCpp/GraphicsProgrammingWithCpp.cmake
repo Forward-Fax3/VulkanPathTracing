@@ -67,6 +67,7 @@ foreach (TargetArch SSE4_2 AVX2 AVX512)
             ${Polly_LINK_FLAGS}
             ${TargetLinks}
     )
+    target_link_options(GraphicsProgrammingWithCpp${TargetArch} PRIVATE -static)
     if (MINGW AND LTO_ENABLED)
         set_target_properties(GraphicsProgrammingWithCpp${TargetArch} PROPERTIES
                 INTERPROCEDURAL_OPTIMIZATION false

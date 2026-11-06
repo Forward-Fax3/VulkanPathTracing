@@ -175,6 +175,11 @@ namespace OWC
     #endif
 	}
 
+	[[nodiscard]] OWC_FORCE_INLINE uSize strnlen_s(const char* str, const uSize maxCount) noexcept
+    {
+    	return str ? ::strnlen(str, maxCount) : 0;
+    }
+
     [[nodiscard]] constexpr const char* ToCharPtr(const std::u8string& str)
     {
 		return std::bit_cast<char const*>(str.c_str());

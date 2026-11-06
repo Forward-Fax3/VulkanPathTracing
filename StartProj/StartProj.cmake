@@ -41,6 +41,8 @@ if (NOT MSVC)
     target_compile_options(StartProj PRIVATE -march=x86-64 -Wextra -Wpedantic)
 endif()
 
+target_link_options(StartProj PRIVATE -static)
+
 if (MINGW AND LTO_ENABLED)
     set_target_properties(StartProj PROPERTIES
             INTERPROCEDURAL_OPTIMIZATION false
