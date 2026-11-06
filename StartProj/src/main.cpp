@@ -30,13 +30,11 @@ constexpr std::u8string_view DLL = u8".dll";
 constexpr std::u8string_view DLL = u8".so";
 #endif
 
-#if defined(unix) || defined(__MINGW32__) || defined(__MINGW64__) || defined(__unix__)
-constexpr std::u8string_view OOP_WITH_CPP = u8"GraphicsProgrammingWithCpp/libGraphicsProgrammingWithCpp";
-#elif (defined(_WIN32) || defined(_WIN64)) && !(defined(__MINGW32__) || defined(__MINGW64__))
-constexpr std::u8string_view OOP_WITH_CPP = u8"GraphicsProgrammingWithCpp\\GraphicsProgrammingWithCpp";
-#else
+#if !((defined(unix) || defined(__MINGW32__) || defined(__MINGW64__) || defined(__unix__)) || defined(_WIN32) || defined(_WIN64))
 #error "Unknown platform"
 #endif
+
+constexpr std::u8string_view OOP_WITH_CPP = u8"GraphicsProgrammingWithCpp/libGraphicsProgrammingWithCpp";
 
 using Start = void (*)(int, char**);
 
@@ -95,14 +93,35 @@ namespace
 	};
 }
 
+static const char* ToCharPtr(const std::u8string_view str) noexcept
+{
+	return reinterpret_cast<const char*>(str.data());
+}
+
 using DLLHandle = std::unique_ptr<std::remove_pointer_t<DLLCloser::Handle>, DLLCloser>;
 
-static DLLHandle OpenDLL(const char* path) noexcept
+static DLLHandle OpenDLL(std::u8string_view path) noexcept
 {
 #if defined(_WIN32)
-	return DLLHandle{ LoadLibraryA(path) };
+	DLLHandle dllHandle{ LoadLibraryA(ToCharPtr(path)) };
+	if (!dllHandle)
+	{
+		std::u8string fixedPath{ path };
+		std::ranges::replace(fixedPath, u8'/', u8'\\');
+		std::println("Fail to Load DLL. Tring path: {}\n", ToCharPtr(fixedPath));
+		dllHandle = DLLHandle{ LoadLibraryA(ToCharPtr(fixedPath)) };
+	}
+	return dllHandle;
 #else
-	return DLLHandle{ dlopen(path, RTLD_LAZY) };
+	DLLHandle dllHandle{ dlopen(ToCharPtr(path), RTLD_LAZY) };
+	if (!dllHandle)
+	{
+		std::u8string fixedPath{ path };
+		std::ranges::replace(fixedPath, u8'/', u8'\\');
+		std::println("Fail to Load DLL. Tring path: {}\n", ToCharPtr(fixedPath));
+		dllHandle = DLLHandle{ dlopen(ToCharPtr(fixedPath), RTLD_LAZY) };
+	}
+	return dllHandle;
 #endif
 }
 
@@ -113,11 +132,6 @@ static Start FindEntry(const DLLHandle& lib) noexcept
 #else
 	return std::bit_cast<Start>(dlsym(lib.get(), "EntryPoint"));
 #endif
-}
-
-static const char* ToCharPtr(const std::u8string& str)
-{
-	return reinterpret_cast<const char*>(str.c_str());
 }
 
 static uint64_t XGetBV() noexcept
@@ -324,7 +338,7 @@ int main(const int argc, char** argv)
 
 	path += DLL;
 	std::println("Loading DLL from path: {}\n", ToCharPtr(path));
-	const auto dll = OpenDLL(ToCharPtr(path));
+	const auto dll = OpenDLL(path);
 
 	if (dll == nullptr)
 	{
