@@ -39,7 +39,7 @@ namespace OWC::Graphics
 		return it != extensions.end();
 	}
 
-	[[nodiscard]] OWC_FORCE_INLINE std::pair<bool, std::string_view> IsExtensionAvailable(const std::vector<vk::ExtensionProperties>& extensions, const std::span<const char*> requestLayer)
+	[[nodiscard]] OWC_FORCE_INLINE std::pair<bool, std::string_view> IsExtensionAvailable(const std::vector<vk::ExtensionProperties>& extensions, const std::span<const char* const> requestLayer)
 	{
 		bool allAvailable = true;
 		std::string_view missingExt;

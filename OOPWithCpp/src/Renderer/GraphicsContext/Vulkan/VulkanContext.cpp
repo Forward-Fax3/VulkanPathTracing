@@ -18,28 +18,10 @@
 #include "Log.hpp"
 
 
+VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
+
 #ifndef DIST
-PFN_vkCreateDebugUtilsMessengerEXT pfnVkCreateDebugUtilsMessengerEXT;
-PFN_vkDestroyDebugUtilsMessengerEXT pfnVkDestroyDebugUtilsMessengerEXT;
-
-VKAPI_ATTR VkResult VKAPI_CALL vkCreateDebugUtilsMessengerEXT(
-	VkInstance instance,
-	const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo,
-	const VkAllocationCallbacks* pAllocator,
-	VkDebugUtilsMessengerEXT* pMessenger)
-{
-	return pfnVkCreateDebugUtilsMessengerEXT(instance, pCreateInfo, pAllocator, pMessenger);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkDestroyDebugUtilsMessengerEXT(
-	VkInstance instance,
-	VkDebugUtilsMessengerEXT messenger,
-	VkAllocationCallbacks const* pAllocator)
-{
-	return pfnVkDestroyDebugUtilsMessengerEXT(instance, messenger, pAllocator);
-}
-
-static void PrintVulkanDebugMessages(vk::DebugUtilsMessageSeverityFlagBitsEXT messageSeverity, const std::vector<std::string>& s_MessagesLogged)
+static void PrintVulkanDebugMessages(const vk::DebugUtilsMessageSeverityFlagBitsEXT messageSeverity, const std::vector<std::string>& s_MessagesLogged)
 {
 	using enum vk::DebugUtilsMessageSeverityFlagBitsEXT;
 	using enum OWC::LogLevel;
@@ -65,12 +47,12 @@ static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugMessageFunc( // TODO: add objects i
 	static std::mutex s_Mutex;
 	static std::vector<std::string> s_MessagesLogged;
 	static OWC::i32 lastMessageID = std::numeric_limits<OWC::i32>::max();
-	static vk::DebugUtilsMessageSeverityFlagBitsEXT lastMessageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT();
+	static vk::DebugUtilsMessageSeverityFlagBitsEXT lastMessageSeverity{ 0 };
 	static bool firstMessage = true;
 
 	if (pCallbackData == nullptr)
 	{
-		std::lock_guard lock(s_Mutex);
+		const std::scoped_lock lock(s_Mutex);
 
 		if (s_MessagesLogged.empty())
 			return vk::False;
@@ -78,7 +60,7 @@ static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugMessageFunc( // TODO: add objects i
 		PrintVulkanDebugMessages(lastMessageSeverity, s_MessagesLogged);
 		s_MessagesLogged.clear();
 		lastMessageID = std::numeric_limits<OWC::i32>::max();
-		lastMessageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT();
+		lastMessageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT{ 0 };
 		firstMessage = true;
 		return vk::False;
 	}
@@ -153,7 +135,7 @@ static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugMessageFunc( // TODO: add objects i
 			PrintVulkanDebugMessages(messageSeverity, s_MessagesLogged);
 			s_MessagesLogged.clear();
 			lastMessageID = std::numeric_limits<OWC::i32>::max();
-			lastMessageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT();
+			lastMessageSeverity = vk::DebugUtilsMessageSeverityFlagBitsEXT{ 0 };
 			firstMessage = true;
 		}
 		else
@@ -167,114 +149,9 @@ static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugMessageFunc( // TODO: add objects i
 }
 #endif
 
-PFN_vkCreateRayTracingPipelinesKHR pfnVkCreateRayTracingPipelinesKHR;
-PFN_vkGetAccelerationStructureBuildSizesKHR pfnVkGetAccelerationStructureBuildSizesKHR;
-PFN_vkCreateAccelerationStructureKHR pfnVkCreateAccelerationStructureKHR;
-PFN_vkCmdBuildAccelerationStructuresKHR pfnVkCmdBuildAccelerationStructureKHR;
-PFN_vkDestroyAccelerationStructureKHR pfnVkDestroyAccelerationStructureKHR;
-PFN_vkGetAccelerationStructureDeviceAddressKHR pfnVkGetAccelerationStructureDeviceAddressKHR;
-PFN_vkGetRayTracingShaderGroupHandlesKHR pfnVkGetRayTracingShaderGroupHandlesKHR;
-PFN_vkCmdTraceRaysKHR pfnVkCmdTraceRaysKHR;
-
-VKAPI_ATTR VkResult VKAPI_CALL vkCreateRayTracingPipelinesKHR(
-	VkDevice device,
-	VkDeferredOperationKHR deferredOperation,
-	VkPipelineCache pipelineCache,
-	uint32_t createInfoCount,
-	const VkRayTracingPipelineCreateInfoKHR* pCreateInfos,
-	const VkAllocationCallbacks* pAllocator,
-	VkPipeline* pPipelines)
-{
-	return pfnVkCreateRayTracingPipelinesKHR(device, deferredOperation, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkGetAccelerationStructureBuildSizesKHR(
-	VkDevice device,
-	VkAccelerationStructureBuildTypeKHR buildType,
-	const VkAccelerationStructureBuildGeometryInfoKHR* pBuildInfo,
-	const uint32_t* pMaxPrimitiveCounts,
-	VkAccelerationStructureBuildSizesInfoKHR* pSizeInfo)
-{
-	pfnVkGetAccelerationStructureBuildSizesKHR(device, buildType, pBuildInfo, pMaxPrimitiveCounts, pSizeInfo);
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL vkCreateAccelerationStructureKHR(
-	VkDevice device,
-	const VkAccelerationStructureCreateInfoKHR* pCreateInfo,
-	const VkAllocationCallbacks* pAllocator,
-	VkAccelerationStructureKHR* pAccelerationStructure)
-{
-	return pfnVkCreateAccelerationStructureKHR(device, pCreateInfo, pAllocator, pAccelerationStructure);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdBuildAccelerationStructuresKHR(
-	VkCommandBuffer commandBuffer,
-	uint32_t infoCount,
-	const VkAccelerationStructureBuildGeometryInfoKHR* pInfos,
-	const VkAccelerationStructureBuildRangeInfoKHR* const* ppBuildRangeInfos)
-{
-	pfnVkCmdBuildAccelerationStructureKHR(commandBuffer, infoCount, pInfos, ppBuildRangeInfos);
-}
-
-VKAPI_CALL void VKAPI_CALL vkDestroyAccelerationStructureKHR(
-	VkDevice device,
-	VkAccelerationStructureKHR accelerationStructure,
-	const VkAllocationCallbacks* pAllocator)
-{
-	pfnVkDestroyAccelerationStructureKHR(device, accelerationStructure, pAllocator);
-}
-
-VKAPI_ATTR VkDeviceAddress VKAPI_CALL vkGetAccelerationStructureDeviceAddressKHR(
-	VkDevice device,
-	const VkAccelerationStructureDeviceAddressInfoKHR* pInfo)
-{
-	return pfnVkGetAccelerationStructureDeviceAddressKHR(device, pInfo);
-}
-
-VKAPI_ATTR VkResult VKAPI_CALL vkGetRayTracingShaderGroupHandlesKHR(
-	VkDevice device,
-	VkPipeline pipeline,
-	uint32_t firstGroup,
-	uint32_t groupCount,
-	size_t dataSize,
-	void* pData)
-{
-	return pfnVkGetRayTracingShaderGroupHandlesKHR(device, pipeline, firstGroup, groupCount, dataSize, pData);
-}
-
-VKAPI_ATTR void VKAPI_CALL vkCmdTraceRaysKHR(
-	VkCommandBuffer commandBuffer,
-	const VkStridedDeviceAddressRegionKHR* pRaygenShaderBindingTable,
-	const VkStridedDeviceAddressRegionKHR* pMissShaderBindingTable,
-	const VkStridedDeviceAddressRegionKHR* pHitShaderBindingTable,
-	const VkStridedDeviceAddressRegionKHR* pCallableShaderBindingTable,
-	uint32_t width,
-	uint32_t height,
-	uint32_t depth)
-{
-	pfnVkCmdTraceRaysKHR(commandBuffer, pRaygenShaderBindingTable, pMissShaderBindingTable, pHitShaderBindingTable, pCallableShaderBindingTable, width, height, depth);
-}
-
 namespace OWC::Graphics
 {
-	static std::array g_DeviceExtensions = {
-#if defined(_WIN32) || defined(_WIN64)
-		vk::EXTPageableDeviceLocalMemoryExtensionName,
-		vk::EXTMemoryPriorityExtensionName,
-#endif
-		vk::KHRSwapchainExtensionName,
-		vk::KHRAccelerationStructureExtensionName,
-		vk::KHRRayTracingPipelineExtensionName,
-		vk::KHRBufferDeviceAddressExtensionName,
-		vk::KHRDeferredHostOperationsExtensionName,
-		vk::KHRShaderNonSemanticInfoExtensionName,
-		vk::KHRRayQueryExtensionName,
-		vk::KHRRayTracingMaintenance1ExtensionName,
-		vk::KHRRayTracingPositionFetchExtensionName
-	};
-
-
-	static std::array g_DeviceExtensionsWithSER = {
+	static constexpr std::array g_DeviceExtensions = {
 #if defined(_WIN32) || defined(_WIN64)
 		vk::EXTPageableDeviceLocalMemoryExtensionName,
 		vk::EXTMemoryPriorityExtensionName,
@@ -288,12 +165,30 @@ namespace OWC::Graphics
 		vk::KHRRayQueryExtensionName,
 		vk::KHRRayTracingMaintenance1ExtensionName,
 		vk::KHRRayTracingPositionFetchExtensionName,
-		vk::EXTRayTracingInvocationReorderExtensionName
+	};
+
+
+	static constexpr std::array g_DeviceExtensionsWithSER = {
+#if defined(_WIN32) || defined(_WIN64)
+		vk::EXTPageableDeviceLocalMemoryExtensionName,
+		vk::EXTMemoryPriorityExtensionName,
+#endif
+		vk::KHRSwapchainExtensionName,
+		vk::KHRAccelerationStructureExtensionName,
+		vk::KHRRayTracingPipelineExtensionName,
+		vk::KHRBufferDeviceAddressExtensionName,
+		vk::KHRDeferredHostOperationsExtensionName,
+		vk::KHRShaderNonSemanticInfoExtensionName,
+		vk::KHRRayQueryExtensionName,
+		vk::KHRRayTracingMaintenance1ExtensionName,
+		vk::KHRRayTracingPositionFetchExtensionName,
+		vk::EXTRayTracingInvocationReorderExtensionName,
 	};
 
 	VulkanContext::VulkanContext(SDL_Window& windowHandle, const WindowProperties& properties)
 		 : m_WindowProperties(properties)
 	{
+		VULKAN_HPP_DEFAULT_DISPATCHER.init();
 		VulkanCore::Init();
 		
 		try
@@ -475,7 +370,7 @@ namespace OWC::Graphics
 		std::vector<const char*> extensions;
 		{
 			u32 numberOfSDLExtensions = 0;
-			const auto extensionsTemp = SDL_Vulkan_GetInstanceExtensions(&numberOfSDLExtensions);
+			const auto *const extensionsTemp = SDL_Vulkan_GetInstanceExtensions(&numberOfSDLExtensions);
 
 			if constexpr (!IsDistributionMode()) // +3 for debug utils and get physical device properties 2 and surface extensions
 				extensions.reserve(static_cast<uSize>(numberOfSDLExtensions) + 4);
@@ -530,26 +425,13 @@ namespace OWC::Graphics
 
 		VulkanCore::SetInstance(vk::raii::Instance(vkCore.GetVKContext(), createInfo));
 		const auto& vkInstance = vkCore.GetVKInstance();
-
-		pfnVkCreateRayTracingPipelinesKHR = std::bit_cast<PFN_vkCreateRayTracingPipelinesKHR>(vkInstance.getProcAddr("vkCreateRayTracingPipelinesKHR"));
-		pfnVkGetAccelerationStructureBuildSizesKHR = std::bit_cast<PFN_vkGetAccelerationStructureBuildSizesKHR>(vkInstance.getProcAddr("vkGetAccelerationStructureBuildSizesKHR"));
-		pfnVkCreateAccelerationStructureKHR = std::bit_cast<PFN_vkCreateAccelerationStructureKHR>(vkInstance.getProcAddr("vkCreateAccelerationStructureKHR"));
-		pfnVkCmdBuildAccelerationStructureKHR = std::bit_cast<PFN_vkCmdBuildAccelerationStructuresKHR>(vkInstance.getProcAddr("vkCmdBuildAccelerationStructuresKHR"));
-		pfnVkDestroyAccelerationStructureKHR = std::bit_cast<PFN_vkDestroyAccelerationStructureKHR>(vkInstance.getProcAddr("vkDestroyAccelerationStructureKHR"));
-		pfnVkGetAccelerationStructureDeviceAddressKHR = std::bit_cast<PFN_vkGetAccelerationStructureDeviceAddressKHR>(vkInstance.getProcAddr("vkGetAccelerationStructureDeviceAddressKHR"));
-		pfnVkGetRayTracingShaderGroupHandlesKHR = std::bit_cast<PFN_vkGetRayTracingShaderGroupHandlesKHR>(vkInstance.getProcAddr("vkGetRayTracingShaderGroupHandlesKHR"));
-		pfnVkCmdTraceRaysKHR = std::bit_cast<PFN_vkCmdTraceRaysKHR>(vkInstance.getProcAddr("vkCmdTraceRaysKHR"));
+		VULKAN_HPP_DEFAULT_DISPATCHER.init(*vkInstance);
 	}
 
 #ifndef DIST
 	void VulkanContext::EnableVulkanDebugging()
 	{
 		const auto& vkInstance = VulkanCore::GetConstInstance().GetVKInstance();
-
-		pfnVkCreateDebugUtilsMessengerEXT = std::bit_cast<PFN_vkCreateDebugUtilsMessengerEXT>(vkInstance.getProcAddr("vkCreateDebugUtilsMessengerEXT"));
-		pfnVkDestroyDebugUtilsMessengerEXT = std::bit_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(vkInstance.getProcAddr("vkDestroyDebugUtilsMessengerEXT"));
-		if (!pfnVkCreateDebugUtilsMessengerEXT || !pfnVkDestroyDebugUtilsMessengerEXT)
-			Log<LogLevel::Critical>("Failed to load Vulkan debug utils functions");
 
 		constexpr auto debugUtilsCreateInfo = vk::DebugUtilsMessengerCreateInfoEXT()
 			.setMessageSeverity(
@@ -589,9 +471,9 @@ namespace OWC::Graphics
 			Log<LogLevel::Critical>("Failed to find GPUs with Vulkan support");
 
 		u32 highestScore = 0;
-		for (auto& device : physicalDevices)
+		for (const auto& device : physicalDevices)
 		{
-			if (auto [isSuitable, score, supportedExtensions] = IsPhysicalDeviceSuitable(device);
+			if (const auto [isSuitable, score, supportedExtensions] = IsPhysicalDeviceSuitable(device);
 				isSuitable && score > highestScore)
 			{
 				highestScore = score;
@@ -919,6 +801,9 @@ namespace OWC::Graphics
 		m_QueueFamilyIndices.UniqueIndices.reserve(uniqueQueueFamiliesMap.size());
 		for (const auto& familyIndex : std::views::keys(uniqueQueueFamiliesMap))
 			m_QueueFamilyIndices.UniqueIndices.emplace_back(familyIndex);
+
+		const auto& vkCore = VulkanCore::GetConstInstance();
+		VULKAN_HPP_DEFAULT_DISPATCHER.init(*vkCore.GetDevice());
 	}
 
 	void VulkanContext::CreateSwapchain()
@@ -926,7 +811,7 @@ namespace OWC::Graphics
 		if (m_IsMinimized)
 			return;
 
-		auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& vkCore = VulkanCore::GetConstInstance();
 
 		const std::vector<vk::SurfaceFormatKHR> surfaceFormats = vkCore.GetPhysicalDev().getSurfaceFormatsKHR(vkCore.GetSurface());
 		if (surfaceFormats.empty())
@@ -956,8 +841,8 @@ namespace OWC::Graphics
 		Log<LogLevel::Debug>(" Format: {}", vk::to_string(vkCore.GetSwapchainImageFormat()));
 		Log<LogLevel::Debug>(" Color Space: {}", vk::to_string(colourSpace));
 
-		vk::PhysicalDeviceSurfaceInfo2KHR surfaceInfo(*vkCore.GetSurface());
-		vk::SurfaceCapabilities2KHR surfaceCapabilities = vkCore.GetPhysicalDev().getSurfaceCapabilities2KHR(surfaceInfo);
+		const vk::PhysicalDeviceSurfaceInfo2KHR surfaceInfo(*vkCore.GetSurface());
+		const vk::SurfaceCapabilities2KHR surfaceCapabilities = vkCore.GetPhysicalDev().getSurfaceCapabilities2KHR(surfaceInfo);
 
 		if (surfaceCapabilities.surfaceCapabilities.currentExtent.width == 0 || surfaceCapabilities.surfaceCapabilities.currentExtent.height == 0)
 			Log<LogLevel::Critical>("Failed to get valid surface extents for the swapchain");

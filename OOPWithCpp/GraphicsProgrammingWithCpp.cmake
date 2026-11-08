@@ -40,6 +40,7 @@ endif()
 foreach (TargetArch SSE4_2 AVX2 AVX512)
     add_library(GraphicsProgrammingWithCpp${TargetArch} SHARED ${GraphicsProgrammingWithCppFiles})
     target_compile_options(GraphicsProgrammingWithCpp${TargetArch} PRIVATE
+            -DVULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1
             -DGLM_FORCE_SIZE_T_LENGTH
             -DGLM_ENABLE_EXPERIMENTAL
             -DGLM_FORCE_DEFAULT_ALIGNED_GENTYPES
