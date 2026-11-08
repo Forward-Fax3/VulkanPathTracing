@@ -48,14 +48,14 @@ namespace OWC
 				.descriptorCount = 1,
 				.binding = 0,
 				.descriptorType = DescriptorType::CombinedImageSampler,
-				.stageFlags = ShaderType::Fragment
+				.stageFlags = ShaderType::Fragment,
 			},
 			BindingDescription {
 				.descriptorCount = 1,
 				.binding = 1,
 				.descriptorType = DescriptorType::UniformBuffer,
-				.stageFlags = ShaderType::Fragment
-			}
+				.stageFlags = ShaderType::Fragment,
+			},
 		};
 
 #if defined(__has_embed) && __has_embed("../../../ShaderSrc/ImGuiShader/ImGui.spv") == __STDC_EMBED_FOUND__ && DIST
@@ -79,35 +79,42 @@ namespace OWC
 				.type = ShaderType::Vertex,
 				.language = ShaderData::ShaderLanguage::SPIRV,
 				.descriptorType = {},
-				.entryPoint = "vertexMain"
+				.entryPoint = "vertexMain",
 			},
 			ShaderData {
 				.bytecode = shaderSrc,
 				.type = ShaderType::Fragment,
 				.language = ShaderData::ShaderLanguage::SPIRV,
 				.descriptorType = fragmentBindingDescriptions,
-				.entryPoint = "fragmentMain"
+				.entryPoint = "fragmentMain",
 			}
 		};
 
 #else
-		auto shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/ImGuiShader/ImGui.spv");
+		const auto shaderSrc = LoadFileToBytecode<u32>("ShaderSrc/ImGuiShader/ImGui.spv");
+
+		if (!shaderSrc.has_value() || shaderSrc.value().empty())
+		{
+			Log<LogLevel::Error>("Failed to load ImGui shader SPIR-V bytecode, will now close back down");
+			Application::GetInstance().Stop();
+			return;
+		}
 
 		std::array shaderDatas = {
 			ShaderData {
-				.bytecode = shaderSrc,
+				.bytecode = shaderSrc.value(),
 				.type = ShaderType::Vertex,
 				.language = ShaderData::ShaderLanguage::SPIRV,
 				.descriptorType = {},
-				.entryPoint = "vertexMain"
+				.entryPoint = "vertexMain",
 			},
 			ShaderData {
-				.bytecode = shaderSrc,
+				.bytecode = shaderSrc.value(),
 				.type = ShaderType::Fragment,
 				.language = ShaderData::ShaderLanguage::SPIRV,
 				.descriptorType = fragmentBindingDescriptions,
-				.entryPoint = "fragmentMain"
-			}
+				.entryPoint = "fragmentMain",
+			},
 		};
 #endif
 
@@ -115,8 +122,8 @@ namespace OWC
 			VertexBindings{
 				.stride = sizeof(ImDrawVert),
 				.binding = 0, // binding
-				.inputRate = VertexInputRate::Vertex
-			}
+				.inputRate = VertexInputRate::Vertex,
+			},
 		};
 
 		static constexpr std::array vertexAttributes = {
@@ -124,27 +131,28 @@ namespace OWC
 				.format = Format::R32G32_SFloat,
 				.location = 0,
 				.binding = 0,
-				.offset = offsetof(ImDrawVert, pos)
+				.offset = offsetof(ImDrawVert, pos),
 			},
 			VertexAttributes {
 				.format = Format::R32G32_SFloat,
 				.location = 1,
 				.binding = 0,
-				.offset = offsetof(ImDrawVert, uv)
+				.offset = offsetof(ImDrawVert, uv),
 			},
 			VertexAttributes {
 				.format = Format::R8G8B8A8_UNorm,
 				.location = 2,
 				.binding = 0,
-				.offset = offsetof(ImDrawVert, col)
-			}
+				.offset = offsetof(ImDrawVert, col),
+			},
 		};
 
-		u8* pixels;
-		int width, height;
+		u8* pixels = nullptr;
+		int width = NULL;
+		int height = NULL;
 		io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
 		m_ImGuiTexture = TextureImage::CreateStorageImage(width, height, Format::R8G8B8A8_UNorm);
-		m_ImGuiTexture->UpdateBufferData(std::as_bytes(std::span(pixels, width * height * 4)));
+		m_ImGuiTexture->UpdateBufferData(std::as_bytes(std::span(pixels, static_cast<size_t>(width) * static_cast<size_t>(height) * 4)));
 		m_ImGuiVertexBuffer.reserve(Renderer::GetNumberOfFramesInFlight());
 		m_ImGuiIndexBuffer.reserve(Renderer::GetNumberOfFramesInFlight());
 		for (uSize i = 0; i < Renderer::GetNumberOfFramesInFlight(); i++)
@@ -178,8 +186,7 @@ namespace OWC
 	{
 		EventDispatcher dispatcher(event);
 
-		dispatcher.Dispatch<WindowRestore>([this](const WindowRestore&)
-			{
+		dispatcher.Dispatch<WindowRestore>([this](const WindowRestore&) -> bool {
 				m_IsMinimized = false;
 				return false;
 			});
@@ -187,14 +194,12 @@ namespace OWC
 		if (m_IsMinimized)
 			return;
 
-		dispatcher.Dispatch<WindowMinimize>([this](const WindowMinimize&)
-			{
+		dispatcher.Dispatch<WindowMinimize>([this](const WindowMinimize&) -> bool {
 				m_IsMinimized = true;
 				return false;
 			});
 
-		dispatcher.Dispatch<WindowResize>([](const WindowResize&)
-			{
+		dispatcher.Dispatch<WindowResize>([](const WindowResize&) -> bool {
 				ImGuiIO& io = ImGui::GetIO();
 				const Vec2f32 f32WindowPixelSized(Application::GetInstance().GetPixelSize());
 				io.DisplaySize = ImVec2(f32WindowPixelSized.x, f32WindowPixelSized.y);
@@ -236,7 +241,7 @@ namespace OWC
 			Renderer::SubmitRenderPass(m_RenderPassData);
 		}
 
-		if (testBitMask(static_cast<uint32_t>(ImGui::GetIO().ConfigFlags), static_cast<uint32_t>(ImGuiConfigFlags_ViewportsEnable)))
+		if (testBitMask(std::bit_cast<uint32_t>(ImGui::GetIO().ConfigFlags), static_cast<uint32_t>(ImGuiConfigFlags_ViewportsEnable)))
 		{
 			ImGui::UpdatePlatformWindows();
 			ImGui::RenderPlatformWindowsDefault();

@@ -401,79 +401,79 @@ namespace OWC
 					.descriptorCount = 1,
 					.binding = 0,
 					.descriptorType = DescriptorType::StorageImage,
-					.stageFlags = ShaderType::RayGen
+					.stageFlags = ShaderType::RayGen,
 				},
 				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 1,
 					.descriptorType = DescriptorType::TLAS,
-					.stageFlags = (ShaderType::RayGen | ShaderType::RayClosestHit | ShaderType::RayAnyHit)
+					.stageFlags = (ShaderType::RayGen | ShaderType::RayClosestHit | ShaderType::RayAnyHit),
 				},
 				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 2,
 					.descriptorType = DescriptorType::UniformBuffer,
-					.stageFlags = ShaderType::RayGen | ShaderType::RayAnyHit
+					.stageFlags = ShaderType::RayGen | ShaderType::RayAnyHit,
 				},
 				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 3,
 					.descriptorType = DescriptorType::Sampler,
-					.stageFlags = ShaderType::RayClosestHit | ShaderType::RayAnyHit
+					.stageFlags = ShaderType::RayClosestHit | ShaderType::RayAnyHit,
 				},
 				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 4,
 					.descriptorType = DescriptorType::SampledImage,
-					.stageFlags = ShaderType::RayClosestHit | ShaderType::RayAnyHit
+					.stageFlags = ShaderType::RayClosestHit | ShaderType::RayAnyHit,
 				},
 				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 5,
 					.descriptorType = DescriptorType::SampledImage,
-					.stageFlags = ShaderType::RayClosestHit
+					.stageFlags = ShaderType::RayClosestHit,
 				},
 				 BindingDescription{
 					.descriptorCount = 1,
 					.binding = 6,
 					.descriptorType = DescriptorType::SampledImage,
-					.stageFlags = ShaderType::RayClosestHit
+					.stageFlags = ShaderType::RayClosestHit,
 				},
 				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 7,
 					.descriptorType = DescriptorType::SampledImage,
-					.stageFlags = ShaderType::RayClosestHit
+					.stageFlags = ShaderType::RayClosestHit,
 				},
 			};
 
-#if defined(__has_embed) && __has_embed("../../../ShaderSrc/GPURayTracerShaders/RayTracing.spv") == __STDC_EMBED_FOUND__ && __has_embed("../../../ShaderSrc/GPURayTracerShaders/RayTracing_SER.spv") == __STDC_EMBED_FOUND__ && DIST
-			static constexpr auto makeDatas = [](const std::span<const u32> code) {
+			static constexpr auto makeDatas = [][[nodiscard]](const std::span<const u32> code) constexpr noexcept -> auto {
 				return std::array {
 					ShaderData {
 						.bytecode = code,
 						.type = ShaderType::RayGen,
 						.language = ShaderData::ShaderLanguage::SPIRV,
 						.descriptorType = bindingDescriptions,
-						.entryPoint = "RayGenShader"
+						.entryPoint = "RayGenShader",
 					},
 					ShaderData {
 						.bytecode = code,
 						.type = ShaderType::RayMiss,
 						.language = ShaderData::ShaderLanguage::SPIRV,
 						.descriptorType = {},
-						.entryPoint = "MissShader"
+						.entryPoint = "MissShader",
 					},
 					ShaderData {
 						.bytecode = code,
 						.type = ShaderType::RayClosestHit,
 						.language = ShaderData::ShaderLanguage::SPIRV,
 						.descriptorType = {},
-						.entryPoint = "ClosestHitShader"
+						.entryPoint = "ClosestHitShader",
 					},
 				};
 			};
 
+#if defined(__has_embed) && __has_embed("../../../ShaderSrc/GPURayTracerShaders/RayTracing.spv") == __STDC_EMBED_FOUND__ && __has_embed("../../../ShaderSrc/GPURayTracerShaders/RayTracing_SER.spv") == __STDC_EMBED_FOUND__ && DIST
 #if defined(__clang__)
 #  pragma clang diagnostic push
 #  pragma clang diagnostic ignored "-Wc23-extensions"
@@ -497,37 +497,13 @@ namespace OWC
 
 			m_RayTracingShader = BaseShader::CreateRTShader(Renderer::HasShaderExecutionReorderingSupport() ? shaderDatasSER : shaderDatas);
 #else
-			std::vector<u32> shaderSrc;
+			static constexpr std::string_view shaderPathSER = "../../../ShaderSrc/GPURayTracerShaders/RayTracing_SER.spv";
+			static constexpr std::string_view shaderPath = "../../../ShaderSrc/GPURayTracerShaders/RayTracing.spv";
 
-			if (Renderer::HasShaderExecutionReorderingSupport())
-				shaderSrc = LoadFileToBytecode<u32>("../../../ShaderSrc/GPURayTracerShaders/RayTracing_SER.spv");
-			else
-				shaderSrc = LoadFileToBytecode<u32>("../../../ShaderSrc/GPURayTracerShaders/RayTracing.spv");
-
-			const std::array shaderDatas = {
-				ShaderData {
-					.bytecode = shaderSrc,
-					.type = ShaderType::RayGen,
-					.language = ShaderData::ShaderLanguage::SPIRV,
-					.descriptorType = bindingDescriptions,
-					.entryPoint = "RayGenShader"
-				},
-				ShaderData {
-					.bytecode = shaderSrc,
-					.type = ShaderType::RayMiss,
-					.language = ShaderData::ShaderLanguage::SPIRV,
-					.descriptorType = {},
-					.entryPoint = "MissShader"
-				},
-				ShaderData {
-					.bytecode = shaderSrc,
-					.type = ShaderType::RayClosestHit,
-					.language = ShaderData::ShaderLanguage::SPIRV,
-					.descriptorType = {},
-					.entryPoint = "ClosestHitShader"
-				},
-			};
-
+			const auto shaderSrc = LoadFileToBytecode<u32>(std::string{ Renderer::HasShaderExecutionReorderingSupport() ? shaderPathSER : shaderPath });
+			if (!shaderSrc.has_value())
+				Log<LogLevel::Critical>("Failed to load ray tracing shader SPIR-V bytecode"); // TODO: make this fail gracefully an boot the user back to the launch screen
+			const auto shaderDatas = makeDatas(shaderSrc.value());
 			m_RayTracingShader = BaseShader::CreateRTShader(shaderDatas);
 #endif
 
@@ -547,20 +523,20 @@ namespace OWC
 					.descriptorCount = 1,
 					.binding = 0,
 					.descriptorType = DescriptorType::UniformBuffer,
-					.stageFlags = ShaderType::Fragment
+					.stageFlags = ShaderType::Fragment,
 				},
 				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 1,
 					.descriptorType = DescriptorType::UniformBuffer,
-					.stageFlags = ShaderType::Fragment
+					.stageFlags = ShaderType::Fragment,
 				},
 				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 2,
 					.descriptorType = DescriptorType::CombinedImageSampler,
-					.stageFlags = ShaderType::Fragment
-				}
+					.stageFlags = ShaderType::Fragment,
+				},
 			};
 
 #if defined(__has_embed) && __has_embed("../../../ShaderSrc/GPURayTracerShaders/DisplayImage.spv") == __STDC_EMBED_FOUND__ && DIST
@@ -584,29 +560,32 @@ namespace OWC
 					.type = ShaderType::Vertex,
 					.language = ShaderData::ShaderLanguage::SPIRV,
 					.descriptorType = {},
-					.entryPoint = "vertexMain"
+					.entryPoint = "vertexMain",
 				},
 				ShaderData {
 					.bytecode = shaderSrc,
 					.type = ShaderType::Fragment,
 					.language = ShaderData::ShaderLanguage::SPIRV,
 					.descriptorType = fragmentBindingDescriptions,
-					.entryPoint = "fragmentMain"
-				}
+					.entryPoint = "fragmentMain",
+				},
 			};
 #else
 			auto shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/GPURayTracerShaders/DisplayImage.spv");
 
+			if (!shaderSrc.has_value())
+				Log<LogLevel::Critical>("Failed to load ray tracing display shader SPIR-V bytecode"); // TODO: make this fail gracefully and boot the user back to the launch screen
+
 			const std::array shaderDatas = {
 				ShaderData {
-					.bytecode = shaderSrc,
+					.bytecode = shaderSrc.value(),
 					.type = ShaderType::Vertex,
 					.language = ShaderData::ShaderLanguage::SPIRV,
 					.descriptorType = {},
 					.entryPoint = "vertexMain"
 				},
 				ShaderData {
-					.bytecode = shaderSrc,
+					.bytecode = shaderSrc.value(),
 					.type = ShaderType::Fragment,
 					.language = ShaderData::ShaderLanguage::SPIRV,
 					.descriptorType = fragmentBindingDescriptions,

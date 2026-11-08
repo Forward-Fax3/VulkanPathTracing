@@ -15,7 +15,7 @@
 
 namespace OWC
 {
-	static bool operator>(const Vec2u& lhs, u32 rhs)
+	static bool operator>(const Vec2u& lhs, const u32 rhs)
 	{
 		return (lhs.x > rhs) && (lhs.y > rhs);
 	}
@@ -47,7 +47,7 @@ namespace OWC
 		{
 			if (m_ILD->ImageUpdates[1] && m_ILD->imageScreenSize > 0u) // image resize
 			{
-				Renderer::AddToEndOfFrameCleanUp([image = std::move(m_Image)](){});
+				Renderer::AddToEndOfFrameCleanUp([image = std::move(m_Image)] -> void {});
 				m_Image = DynamicTextureBuffer::CreateDynamicTextureBuffer(m_ILD->imageScreenSize.x, m_ILD->imageScreenSize.y, Format::R32G32B32A32_SFloat, AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
 				m_Image->UpdateBufferData(m_ILD->imageData);
 				SetupPipeline();
@@ -55,7 +55,7 @@ namespace OWC
 			}
 			else if (m_ILD->imageScreenSize.x == 0 || m_ILD->imageScreenSize.y == 0) // clear image
 			{
-				Renderer::AddToEndOfFrameCleanUp([image = std::move(m_Image)](){});
+				Renderer::AddToEndOfFrameCleanUp([image = std::move(m_Image)] -> void {});
 				m_Image = DynamicTextureBuffer::CreateDynamicTextureBuffer(1, 1, Format::R32G32B32A32_SFloat, AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
 				const std::vector emptyImageData = { Vec4(0.0f) };
 				m_Image->UpdateBufferData(emptyImageData);
@@ -85,7 +85,7 @@ namespace OWC
 	{
 		EventDispatcher dispatcher(e);
 
-		dispatcher.Dispatch<WindowRestore>([this](const WindowRestore& /*event*/) {
+		dispatcher.Dispatch<WindowRestore>([this](const WindowRestore& /*event*/) -> bool {
 			this->SetupRenderPass();
 			this->SetActiveState(true);
 			return false;
@@ -94,12 +94,12 @@ namespace OWC
 		if (!IsActive())			
 			return;
 
-		dispatcher.Dispatch<WindowMinimize>([this](const WindowMinimize& /*event*/) {
+		dispatcher.Dispatch<WindowMinimize>([this](const WindowMinimize& /*event*/) -> bool {
 			this->SetActiveState(false);
 			return false;
 			});
 
-		dispatcher.Dispatch<WindowResize>([this](const WindowResize& /*event*/) {
+		dispatcher.Dispatch<WindowResize>([this](const WindowResize& /*event*/) -> bool {
 			this->SetupPipeline();
 			this->SetupRenderPass();
 			return false;
@@ -111,7 +111,7 @@ namespace OWC
 		using namespace OWC::Graphics;
 		constexpr u32 numberOfVertices = 6;
 
-		Renderer::AddToEndOfFrameCleanUp([renderPass = std::move(m_renderPass)](){});
+		Renderer::AddToEndOfFrameCleanUp([renderPass = std::move(m_renderPass)] -> void {});
 		m_renderPass = Renderer::GetStaticRenderPass();
 		Renderer::BeginRasterPass(m_renderPass);
 		Renderer::PipelineBind(m_renderPass, *m_Shader);
@@ -129,19 +129,19 @@ namespace OWC
 				.descriptorCount = 1,
 				.binding = 0,
 				.descriptorType = DescriptorType::UniformBuffer,
-				.stageFlags = ShaderType::Fragment
+				.stageFlags = ShaderType::Fragment,
 			},
 			BindingDescription {
 				.descriptorCount = 1,
 				.binding = 1,
 				.descriptorType = DescriptorType::UniformBuffer,
-				.stageFlags = ShaderType::Fragment
+				.stageFlags = ShaderType::Fragment,
 			},
 			BindingDescription {
 				.descriptorCount = 1,
 				.binding = 2,
 				.descriptorType = DescriptorType::CombinedImageSampler,
-				.stageFlags = ShaderType::Fragment
+				.stageFlags = ShaderType::Fragment,
 			}
 		};
 
@@ -166,41 +166,44 @@ namespace OWC
 				.type = ShaderType::Vertex,
 				.language = ShaderData::ShaderLanguage::SPIRV,
 				.descriptorType = {},
-				.entryPoint = "vertexMain"
+				.entryPoint = "vertexMain",
 			},
 			ShaderData {
 				.bytecode = shaderSrc,
 				.type = ShaderType::Fragment,
 				.language = ShaderData::ShaderLanguage::SPIRV,
 				.descriptorType = fragmentBindingDescriptions,
-				.entryPoint = "fragmentMain"
-			}
+				.entryPoint = "fragmentMain",
+			},
 		};
 #else
-		auto shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/CPURayTracerShaders/CPUShader.spv");
+		const auto shaderSrc = LoadFileToBytecode<u32>("ShaderSrc/CPURayTracerShaders/CPUShader.spv");
+
+		if (!shaderSrc.has_value() || shaderSrc.value().empty())
+			Log<LogLevel::Critical>("Failed to load CPU shader SPIR-V bytecode"); // TODO: make this fail gracefully and boot the user back to the launch screen
 
 		std::array shaderDatas = {
 			ShaderData {
-				.bytecode = shaderSrc,
+				.bytecode = shaderSrc.value(),
 				.type = ShaderType::Vertex,
 				.language = ShaderData::ShaderLanguage::SPIRV,
 				.descriptorType = {},
-				.entryPoint = "vertexMain"
+				.entryPoint = "vertexMain",
 			},
 			ShaderData {
-				.bytecode = shaderSrc,
+				.bytecode = shaderSrc.value(),
 				.type = ShaderType::Fragment,
 				.language = ShaderData::ShaderLanguage::SPIRV,
 				.descriptorType = fragmentBindingDescriptions,
-				.entryPoint = "fragmentMain"
-			}
+				.entryPoint = "fragmentMain",
+			},
 		};
 #endif
 
-		Renderer::AddToEndOfFrameCleanUp([shader = std::move(m_Shader)](){});
+		Renderer::AddToEndOfFrameCleanUp([shader = std::move(m_Shader)] -> void {});
 		m_Shader = BaseShader::CreateShader(shaderDatas);
 		m_Shader->BindUniform(0, m_UniformBuffer);
 		m_Shader->BindUniform(1, Renderer::GetDynamicRageUniformBuffer());
 		m_Shader->BindDynamicTexture(2, m_Image, DescriptorType::CombinedImageSampler);
 	}
-}
+} // namespace OWC
