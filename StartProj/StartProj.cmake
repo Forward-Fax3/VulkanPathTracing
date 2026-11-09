@@ -43,8 +43,6 @@ endif()
 
 if(MINGW)
     target_link_options(StartProj PRIVATE -static)
-elseif(UNIX AND NOT APPLE)
-    target_link_options(StartProj PRIVATE -static-libstdc++ -static-libgcc)
 endif()
 
 if (MINGW AND LTO_ENABLED)

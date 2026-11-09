@@ -70,8 +70,7 @@ foreach (TargetArch SSE4_2 AVX2 AVX512)
     )
     if(MINGW)
         target_link_options(GraphicsProgrammingWithCpp${TargetArch} PRIVATE -static)
-    elseif(UNIX AND NOT APPLE)
-        target_link_options(GraphicsProgrammingWithCpp${TargetArch} PRIVATE -static-libstdc++ -static-libgcc)
+    # else linux to dynamically link to libstdc++ and libgcc
     endif()
     if (MINGW AND LTO_ENABLED)
         set_target_properties(GraphicsProgrammingWithCpp${TargetArch} PROPERTIES
