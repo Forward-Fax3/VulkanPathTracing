@@ -34,5 +34,6 @@ namespace OWC
 		std::vector<std::shared_ptr<Graphics::VertexBuffer>> m_ImGuiVertexBuffer;
 		std::vector<std::shared_ptr<Graphics::IndexBuffer>> m_ImGuiIndexBuffer;
 		bool m_IsMinimized = false;
+		mutable bool m_IsNewImage = false;
 	};
 }

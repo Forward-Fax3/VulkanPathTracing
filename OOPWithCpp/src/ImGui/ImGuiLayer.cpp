@@ -118,8 +118,11 @@ namespace OWC
 
 			Renderer::RestartRenderPass(m_RenderPassData);
 			Renderer::BeginDynamicPass(m_RenderPassData);
-			if (Application::GetConstInstance().IsFirstFrame())
+			if (m_IsNewImage)
+			{
 				Renderer::TransitionImage(m_RenderPassData, m_ImGuiTexture, AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
+				m_IsNewImage = false;
+			}
 			Renderer::BeginRasterPass(m_RenderPassData);
 			Renderer::PipelineBind(m_RenderPassData, *m_ImGuiShader);
 			Renderer::PushConstant(m_RenderPassData, *m_ImGuiShader, sizeof(pc), &pc);
@@ -148,6 +151,7 @@ namespace OWC
 		io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
 		m_ImGuiTexture = TextureImage::CreateStorageImage(width, height, Format::R8G8B8A8_UNorm);
 		m_ImGuiTexture->UpdateBufferData(std::as_bytes(std::span(pixels, static_cast<size_t>(width) * static_cast<size_t>(height) * 4)));
+		m_IsNewImage = true;
 
 		if (m_ImGuiVertexBuffer.size() != Renderer::GetNumberOfFramesInFlight())
 		{
