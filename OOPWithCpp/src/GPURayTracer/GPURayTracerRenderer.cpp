@@ -3,27 +3,27 @@
 //
 
 #include "Core.hpp"
-#include "OWCRand.hpp"
+#include "Application.hpp"
 #include "GPURayTracerRenderer.hpp"
 #include "LoadFile.hpp"
+#include "OWCRand.hpp"
 #include "Renderer.hpp"
-#include "Application.hpp"
 
 #include "BaseEvent.hpp"
-#include "WindowMinimizeEvent.hpp"
-#include "WindowRestoreEvent.hpp"
-#include "WindowResize.hpp"
-#include "WindowHDRStateChanged.hpp"
 #include "KeyEvent.hpp"
 #include "SDL3/SDL_keycode.h"
+#include "WindowHDRStateChanged.hpp"
+#include "WindowMinimizeEvent.hpp"
+#include "WindowResize.hpp"
+#include "WindowRestoreEvent.hpp"
 
-#include "SponzaPalace.hpp"
-#include "EXTMeshGPUInstancingExample.hpp"
-#include "MeshReuseInstancingExample.hpp"
 #include "BistroExterior.hpp"
 #include "BistroInterior.hpp"
-
-#include <array>
+#include "EXTMeshGPUInstancingExample.hpp"
+#include "MeshReuseInstancingExample.hpp"
+#include "SponzaPalace.hpp"
+//
+// #include <array>
 
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/trigonometric.hpp>
@@ -279,6 +279,7 @@ namespace OWC
 
 		dispatcher.Dispatch<WindowHDRStateChanged>([this](const WindowHDRStateChanged& /*event*/) {
 			m_FirstFrame = true;
+			this->SetupPipeline();
 			this->SetupRenderPass();
 			return false;
 			});

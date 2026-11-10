@@ -8,6 +8,7 @@
 #include "WindowResize.hpp"
 #include "WindowMinimizeEvent.hpp"
 #include "WindowRestoreEvent.hpp"
+#include "WindowHDRStateChanged.hpp"
 
 #include <imgui.h>
 #include <chrono>
@@ -41,6 +42,129 @@ namespace OWC
 		Application::GetInstance().GetWindow().ImGuiInit();
 		m_RenderPassData = Graphics::Renderer::GetDynamicPass();
 
+		SetupImGuiRenderData();
+		SetupRenderPass();
+	}
+
+	ImGuiLayer::~ImGuiLayer()
+	{
+		Application::GetInstance().GetWindow().ImGuiShutdown();
+		ImGui::DestroyContext();
+	}
+
+	void ImGuiLayer::ImGuiRender()
+	{
+		const auto& app = Application::GetConstInstance();
+
+		ImGui::Begin("Frame rate");
+		ImGui::Text("Delta Time: %.3f ms", app.GetDeltaTime());
+		ImGui::Text("FPS: %2.1f", 1000.0f / app.GetDeltaTime());
+		ImGui::End();
+	}
+	
+	void ImGuiLayer::OnEvent(BaseEvent& event)
+	{
+		EventDispatcher dispatcher(event);
+
+		dispatcher.Dispatch<WindowRestore>([this](const WindowRestore&) -> bool {
+				m_IsMinimized = false;
+				return false;
+			});
+
+		if (m_IsMinimized)
+			return;
+
+		dispatcher.Dispatch<WindowMinimize>([this](const WindowMinimize&) -> bool {
+				m_IsMinimized = true;
+				return false;
+			});
+
+		dispatcher.Dispatch<WindowResize>([this](const WindowResize&) -> bool {
+			ImGuiIO& io = ImGui::GetIO();
+			const Vec2f32 f32WindowPixelSized(Application::GetInstance().GetPixelSize());
+			io.DisplaySize = ImVec2(f32WindowPixelSized.x, f32WindowPixelSized.y);
+			SetupImGuiRenderData();
+			SetupRenderPass();
+			return false;
+		});
+
+		dispatcher.Dispatch<WindowHDRStateChanged>([this](const WindowHDRStateChanged&) -> bool {
+			SetupImGuiRenderData();
+			SetupRenderPass();
+			return false;
+		});
+	}
+	
+	void ImGuiLayer::Begin()
+	{
+		Application::GetInstance().GetWindow().ImGuiNewFrame();
+		ImGui::NewFrame();
+		ImGui::DockSpaceOverViewport(0, nullptr, ImGuiDockNodeFlags_PassthruCentralNode);
+	}
+	
+	void ImGuiLayer::End() const
+	{
+		using namespace Graphics;
+		ImGui::Render();
+		ImDrawData* drawData = ImGui::GetDrawData();
+
+		if (!m_IsMinimized)
+		{
+			struct { float scale[2]; float translate[2]; } pc{};
+			pc.scale[0] = 2.0f / drawData->DisplaySize.x;
+			pc.scale[1] = 2.0f / drawData->DisplaySize.y;
+			pc.translate[0] = -1.0f - drawData->DisplayPos.x * pc.scale[0];
+			pc.translate[1] = -1.0f - drawData->DisplayPos.y * pc.scale[1];
+
+			Renderer::RestartRenderPass(m_RenderPassData);
+			Renderer::BeginDynamicPass(m_RenderPassData);
+			if (Application::GetConstInstance().IsFirstFrame())
+				Renderer::TransitionImage(m_RenderPassData, m_ImGuiTexture, AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
+			Renderer::BeginRasterPass(m_RenderPassData);
+			Renderer::PipelineBind(m_RenderPassData, *m_ImGuiShader);
+			Renderer::PushConstant(m_RenderPassData, *m_ImGuiShader, sizeof(pc), &pc);
+			Renderer::DrawImGui(m_RenderPassData, m_ImGuiVertexBuffer, m_ImGuiIndexBuffer, drawData);
+			Renderer::EndRasterPass(m_RenderPassData);
+			Renderer::EndPass(m_RenderPassData);
+			Renderer::SubmitRenderPass(m_RenderPassData);
+		}
+
+		if (testBitMask(std::bit_cast<uint32_t>(ImGui::GetIO().ConfigFlags), static_cast<uint32_t>(ImGuiConfigFlags_ViewportsEnable)))
+		{
+			ImGui::UpdatePlatformWindows();
+			ImGui::RenderPlatformWindowsDefault();
+		}
+	}
+
+	void ImGuiLayer::SetupImGuiRenderData()
+	{
+		using namespace Graphics;
+
+		const ImGuiIO& io = ImGui::GetIO();
+
+		u8* pixels = nullptr;
+		int width = NULL;
+		int height = NULL;
+		io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+		m_ImGuiTexture = TextureImage::CreateStorageImage(width, height, Format::R8G8B8A8_UNorm);
+		m_ImGuiTexture->UpdateBufferData(std::as_bytes(std::span(pixels, static_cast<size_t>(width) * static_cast<size_t>(height) * 4)));
+
+		if (m_ImGuiVertexBuffer.size() != Renderer::GetNumberOfFramesInFlight())
+		{
+			m_ImGuiVertexBuffer.clear();
+			m_ImGuiIndexBuffer.clear();
+			m_ImGuiVertexBuffer.reserve(Renderer::GetNumberOfFramesInFlight());
+			m_ImGuiIndexBuffer.reserve(Renderer::GetNumberOfFramesInFlight());
+			for (uSize i = 0; i < Renderer::GetNumberOfFramesInFlight(); i++)
+			{
+				m_ImGuiVertexBuffer.emplace_back(VertexBuffer::CreateVertexBuffer(sizeof(ImDrawVert)));
+				m_ImGuiIndexBuffer.emplace_back(IndexBuffer::CreateIndexBuffer());
+			}
+		}
+	}
+
+	void ImGuiLayer::SetupRenderPass()
+	{
 		using namespace Graphics;
 
 		static constexpr std::array fragmentBindingDescriptions = {
@@ -100,7 +224,7 @@ namespace OWC
 			return;
 		}
 
-		std::array shaderDatas = {
+		const std::array shaderDatas = {
 			ShaderData {
 				.bytecode = shaderSrc.value(),
 				.type = ShaderType::Vertex,
@@ -147,104 +271,8 @@ namespace OWC
 			},
 		};
 
-		u8* pixels = nullptr;
-		int width = NULL;
-		int height = NULL;
-		io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
-		m_ImGuiTexture = TextureImage::CreateStorageImage(width, height, Format::R8G8B8A8_UNorm);
-		m_ImGuiTexture->UpdateBufferData(std::as_bytes(std::span(pixels, static_cast<size_t>(width) * static_cast<size_t>(height) * 4)));
-		m_ImGuiVertexBuffer.reserve(Renderer::GetNumberOfFramesInFlight());
-		m_ImGuiIndexBuffer.reserve(Renderer::GetNumberOfFramesInFlight());
-		for (uSize i = 0; i < Renderer::GetNumberOfFramesInFlight(); i++)
-		{
-			m_ImGuiVertexBuffer.emplace_back(VertexBuffer::CreateVertexBuffer(sizeof(ImDrawVert)));
-			m_ImGuiIndexBuffer.emplace_back(IndexBuffer::CreateIndexBuffer());
-		}
-
 		m_ImGuiShader = BaseShader::CreateShader(shaderDatas, vertexBindings, vertexAttributes);
 		m_ImGuiShader->BindTexture(0, m_ImGuiTexture, DescriptorType::CombinedImageSampler);
 		m_ImGuiShader->BindUniform(1, Renderer::GetDynamicRageUniformBuffer());
-	}
-
-	ImGuiLayer::~ImGuiLayer()
-	{
-		Application::GetInstance().GetWindow().ImGuiShutdown();
-		ImGui::DestroyContext();
-	}
-
-	void ImGuiLayer::ImGuiRender()
-	{
-		const auto& app = Application::GetConstInstance();
-
-		ImGui::Begin("Frame rate");
-		ImGui::Text("Delta Time: %.3f ms", app.GetDeltaTime());
-		ImGui::Text("FPS: %2.1f", 1000.0f / app.GetDeltaTime());
-		ImGui::End();
-	}
-	
-	void ImGuiLayer::OnEvent(BaseEvent& event)
-	{
-		EventDispatcher dispatcher(event);
-
-		dispatcher.Dispatch<WindowRestore>([this](const WindowRestore&) -> bool {
-				m_IsMinimized = false;
-				return false;
-			});
-
-		if (m_IsMinimized)
-			return;
-
-		dispatcher.Dispatch<WindowMinimize>([this](const WindowMinimize&) -> bool {
-				m_IsMinimized = true;
-				return false;
-			});
-
-		dispatcher.Dispatch<WindowResize>([](const WindowResize&) -> bool {
-				ImGuiIO& io = ImGui::GetIO();
-				const Vec2f32 f32WindowPixelSized(Application::GetInstance().GetPixelSize());
-				io.DisplaySize = ImVec2(f32WindowPixelSized.x, f32WindowPixelSized.y);
-				return false;
-			});
-	}
-	
-	void ImGuiLayer::Begin()
-	{
-		Application::GetInstance().GetWindow().ImGuiNewFrame();
-		ImGui::NewFrame();
-		ImGui::DockSpaceOverViewport(0, nullptr, ImGuiDockNodeFlags_PassthruCentralNode);
-	}
-	
-	void ImGuiLayer::End() const
-	{
-		using namespace Graphics;
-		ImGui::Render();
-		ImDrawData* drawData = ImGui::GetDrawData();
-
-		if (!m_IsMinimized)
-		{
-			struct { float scale[2]; float translate[2]; } pc{};
-			pc.scale[0] = 2.0f / drawData->DisplaySize.x;
-			pc.scale[1] = 2.0f / drawData->DisplaySize.y;
-			pc.translate[0] = -1.0f - drawData->DisplayPos.x * pc.scale[0];
-			pc.translate[1] = -1.0f - drawData->DisplayPos.y * pc.scale[1];
-
-			Renderer::RestartRenderPass(m_RenderPassData);
-			Renderer::BeginDynamicPass(m_RenderPassData);
-			if (Application::GetConstInstance().IsFirstFrame())
-				Renderer::TransitionImage(m_RenderPassData, m_ImGuiTexture, AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
-			Renderer::BeginRasterPass(m_RenderPassData);
-			Renderer::PipelineBind(m_RenderPassData, *m_ImGuiShader);
-			Renderer::PushConstant(m_RenderPassData, *m_ImGuiShader, sizeof(pc), &pc);
-			Renderer::DrawImGui(m_RenderPassData, m_ImGuiVertexBuffer, m_ImGuiIndexBuffer, drawData);
-			Renderer::EndRasterPass(m_RenderPassData);
-			Renderer::EndPass(m_RenderPassData);
-			Renderer::SubmitRenderPass(m_RenderPassData);
-		}
-
-		if (testBitMask(std::bit_cast<uint32_t>(ImGui::GetIO().ConfigFlags), static_cast<uint32_t>(ImGuiConfigFlags_ViewportsEnable)))
-		{
-			ImGui::UpdatePlatformWindows();
-			ImGui::RenderPlatformWindowsDefault();
-		}
 	}
 }

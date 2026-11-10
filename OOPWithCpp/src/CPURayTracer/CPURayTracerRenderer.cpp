@@ -107,6 +107,7 @@ namespace OWC
 			});
 
 		dispatcher.Dispatch<WindowHDRStateChanged>([this](const WindowHDRStateChanged& /*event*/) -> bool {
+			this->SetupPipeline();
 			this->SetupRenderPass();
 			return false;
 			});
