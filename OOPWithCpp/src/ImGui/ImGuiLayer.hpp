@@ -24,7 +24,7 @@ namespace OWC
 		void End() const;
 
 	private:
-		void SetupImGuiRenderData();
+		[[nodiscard]] bool SetupImGuiRenderData();
 		void SetupRenderPass();
 
 	private:
@@ -34,6 +34,6 @@ namespace OWC
 		std::vector<std::shared_ptr<Graphics::VertexBuffer>> m_ImGuiVertexBuffer;
 		std::vector<std::shared_ptr<Graphics::IndexBuffer>> m_ImGuiIndexBuffer;
 		bool m_IsMinimized = false;
-		mutable bool m_IsNewImage = false;
+		mutable bool m_IsFontTexture = false;
 	};
 }

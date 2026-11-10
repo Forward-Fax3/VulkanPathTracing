@@ -42,7 +42,8 @@ namespace OWC
 		Application::GetInstance().GetWindow().ImGuiInit();
 		m_RenderPassData = Graphics::Renderer::GetDynamicPass();
 
-		SetupImGuiRenderData();
+		if (!SetupImGuiRenderData())
+			return;
 		SetupRenderPass();
 	}
 
@@ -83,13 +84,15 @@ namespace OWC
 			ImGuiIO& io = ImGui::GetIO();
 			const Vec2f32 f32WindowPixelSized(Application::GetInstance().GetPixelSize());
 			io.DisplaySize = ImVec2(f32WindowPixelSized.x, f32WindowPixelSized.y);
-			SetupImGuiRenderData();
+			if (!SetupImGuiRenderData())
+				return true; // program will shut down so there is no need for other layers to handle this now
 			SetupRenderPass();
 			return false;
 		});
 
 		dispatcher.Dispatch<WindowHDRStateChanged>([this](const WindowHDRStateChanged&) -> bool {
-			SetupImGuiRenderData();
+			if (!SetupImGuiRenderData())
+				return true; // program will shut down so there is no need for other layers to handle this now
 			SetupRenderPass();
 			return false;
 		});
@@ -118,10 +121,10 @@ namespace OWC
 
 			Renderer::RestartRenderPass(m_RenderPassData);
 			Renderer::BeginDynamicPass(m_RenderPassData);
-			if (m_IsNewImage)
+			if (m_IsFontTexture)
 			{
 				Renderer::TransitionImage(m_RenderPassData, m_ImGuiTexture, AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
-				m_IsNewImage = false;
+				m_IsFontTexture = false;
 			}
 			Renderer::BeginRasterPass(m_RenderPassData);
 			Renderer::PipelineBind(m_RenderPassData, *m_ImGuiShader);
@@ -139,19 +142,25 @@ namespace OWC
 		}
 	}
 
-	void ImGuiLayer::SetupImGuiRenderData()
+	bool ImGuiLayer::SetupImGuiRenderData()
 	{
 		using namespace Graphics;
 
 		const ImGuiIO& io = ImGui::GetIO();
 
 		u8* pixels = nullptr;
-		int width = NULL;
-		int height = NULL;
+		int width = 0;
+		int height = 0;
 		io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+		if (width <= 0 || height <= 0 || pixels == nullptr)
+		{
+			Log<LogLevel::Error>("Failed to get ImGui font texture data, will now shut down");
+			Application::GetInstance().Stop();
+			return false;
+		}
 		m_ImGuiTexture = TextureImage::CreateStorageImage(width, height, Format::R8G8B8A8_UNorm);
 		m_ImGuiTexture->UpdateBufferData(std::as_bytes(std::span(pixels, static_cast<size_t>(width) * static_cast<size_t>(height) * 4)));
-		m_IsNewImage = true;
+		m_IsFontTexture = true;
 
 		if (m_ImGuiVertexBuffer.size() != Renderer::GetNumberOfFramesInFlight())
 		{
@@ -165,6 +174,7 @@ namespace OWC
 				m_ImGuiIndexBuffer.emplace_back(IndexBuffer::CreateIndexBuffer());
 			}
 		}
+		return true;
 	}
 
 	void ImGuiLayer::SetupRenderPass()
