@@ -24,6 +24,10 @@ namespace OWC
 		void End() const;
 
 	private:
+		void SetupImGuiRenderData();
+		void SetupRenderPass();
+
+	private:
 		std::shared_ptr<Graphics::RenderPassData> m_RenderPassData = nullptr;
 		std::shared_ptr<Graphics::BaseShader> m_ImGuiShader = nullptr;
 		std::shared_ptr<Graphics::TextureImage> m_ImGuiTexture = nullptr;
