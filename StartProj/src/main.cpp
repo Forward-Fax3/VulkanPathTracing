@@ -100,7 +100,7 @@ static const char* ToCharPtr(const std::u8string_view str) noexcept
 
 using DLLHandle = std::unique_ptr<std::remove_pointer_t<DLLCloser::Handle>, DLLCloser>;
 
-static DLLHandle OpenDLL(std::u8string_view path) noexcept
+static DLLHandle OpenDLL(const std::u8string_view path) noexcept
 {
 #if defined(_WIN32)
 	DLLHandle dllHandle{ LoadLibraryA(ToCharPtr(path)) };

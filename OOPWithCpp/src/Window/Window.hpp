@@ -30,6 +30,17 @@ namespace OWC
 
 	class Window
 	{
+		class SDLWindowCloser
+		{
+		public:
+			void operator()(SDL_Window* windowPtr) const noexcept
+			{
+				SDL_DestroyWindow(windowPtr);
+			}
+		};
+
+		using SDLWindow = std::unique_ptr<SDL_Window, SDLWindowCloser>;
+
 	public:
 		Window() = delete;
 		explicit Window(const WindowProperties& properties);
@@ -57,9 +68,12 @@ namespace OWC
 
 		[[nodiscard]] OWC_FORCE_INLINE bool IsWindowMinimized() const { return m_IsMinimized; }
 
+		[[nodiscard]] OWC_FORCE_INLINE SDL_Window& GetSDLWindow() const { return *m_Window; }
+
 		void Resize(u32 width, u32 height);
 		void Minimize();
 		void Restore();
+		void RecreateSwapchain() const;
 		void ToggleFullScreen() const;
 
 		void ImGuiInit() const;
@@ -74,7 +88,7 @@ namespace OWC
 	private:
 		std::unique_ptr<WindowEvent> m_WindowEvent;
 		WindowProperties m_Properties;
-		std::unique_ptr<SDL_Window, decltype([](SDL_Window* windowPtr){ SDL_DestroyWindow(windowPtr); })> m_Window = nullptr;
+		SDLWindow m_Window = nullptr;
 		std::shared_ptr<Graphics::GraphicsContext> m_GraphicsContext = nullptr;
 		bool m_IsMinimized = false;
 	};

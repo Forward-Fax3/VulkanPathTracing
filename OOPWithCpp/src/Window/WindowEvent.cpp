@@ -3,6 +3,7 @@
 #include "WindowResize.hpp"
 #include "WindowMinimizeEvent.hpp"
 #include "WindowRestoreEvent.hpp"
+#include "WindowHDRStateChanged.hpp"
 #include "KeyEvent.hpp"
 
 #include <backends/imgui_impl_sdl3.h>
@@ -44,16 +45,22 @@ namespace OWC
 		}
 		case SDL_EVENT_KEY_DOWN:
 		{
-			u32 keycode = event.key.key;
+			const u32 keycode = event.key.key;
 			KeyPressedEvent keyPressedEvent(keycode);
 			m_Callback(keyPressedEvent);
 			break;
 		}
 		case SDL_EVENT_KEY_UP:
 		{
-			u32 keycode = event.key.key;
+			const u32 keycode = event.key.key;
 			KeyReleased keyReleasedEvent(keycode);
 			m_Callback(keyReleasedEvent);
+			break;
+		}
+		case SDL_EVENT_WINDOW_HDR_STATE_CHANGED:
+		{
+			WindowHDRStateChanged hdrStateChangedEvent{};
+			m_Callback(hdrStateChangedEvent);
 			break;
 		}
 		case SDL_EVENT_USER:

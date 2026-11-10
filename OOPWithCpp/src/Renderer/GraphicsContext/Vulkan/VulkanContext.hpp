@@ -46,7 +46,8 @@ namespace OWC::Graphics
 
 		void Minimize() override;
 		void Restore() override;
-		void Resize() override { RecreateSwapchain(); RewriteCommandBuffers(); }
+		void Resize() override { RecreateVulkanSwapchain(); RewriteCommandBuffers(); }
+		void RecreateSwapchain() override { RecreateVulkanSwapchain(); RewriteCommandBuffers(); }
 
 		void ImGuiInit() override;
 		void ImGuiShutdown() override;
@@ -64,12 +65,12 @@ namespace OWC::Graphics
 		void CheckQueueFamilyValidity(const std::vector<vk::QueueFamilyProperties>& queueFamilies);
 		void GetAndStoreGlobalQueueFamilies() const;
 		void CreateLogicalDevice();
-		void CreateSwapchain();
+		void CreateSwapchain(SDL_Window* windowHandlePtr = nullptr);
 		void CreateCommandPools() const;
 		void WriteCommandBuffers();
 		static void CreateVulkanMemoryAllocator();
 
-		void RecreateSwapchain();
+		void RecreateVulkanSwapchain();
 		void RewriteCommandBuffers();
 
 	private:

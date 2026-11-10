@@ -83,6 +83,11 @@ namespace OWC
 		m_GraphicsContext->Restore();
 	}
 
+	void Window::RecreateSwapchain() const
+	{
+		m_GraphicsContext->RecreateSwapchain();
+	}
+
 	void Window::ToggleFullScreen() const
 	{
 		if (m_Window)

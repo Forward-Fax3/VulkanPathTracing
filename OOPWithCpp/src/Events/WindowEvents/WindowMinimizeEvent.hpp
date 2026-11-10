@@ -4,17 +4,16 @@
 
 namespace OWC
 {
-	class WindowMinimize
-		: public BaseEvent
+	class WindowMinimize : public BaseEvent
 	{
 	public:
-		WindowMinimize() : BaseEvent(EventType::windowMinimize) {}
+		WindowMinimize() : BaseEvent(EventType::WindowMinimize) {}
 		~WindowMinimize() override = default;
 		WindowMinimize(const WindowMinimize&) = default;
 		WindowMinimize& operator=(const WindowMinimize&) = default;
 		WindowMinimize(WindowMinimize&&) = default;
 		WindowMinimize& operator=(WindowMinimize&&) = default;
 
-		static EventType GetStaticType() { return EventType::windowMinimize; }
+		static consteval EventType GetStaticType() { return EventType::WindowMinimize; }
 	};
 }

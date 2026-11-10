@@ -11,7 +11,7 @@ namespace OWC
 	{
 		// TODO: possibly add restart event
 		None = 0,
-		WindowClose, WindowResize, WindowFocus, WindowLostFocus, WindowMoved, windowMinimize, WindowRestore,
+		WindowClose, WindowResize, WindowFocus, WindowLostFocus, WindowMoved, WindowMinimize, WindowRestore, WindowHDRStateChange,
 		KeyPressed, KeyReleased, KeyTyped,
 		MouseButtonPressed, MouseButtonReleased, MouseMoved, MouseScrolled
 	};
@@ -28,8 +28,8 @@ namespace OWC
 		BaseEvent(BaseEvent&&) = default;
 		BaseEvent& operator=(BaseEvent&&) = default;
 
-		inline EventType GetEventType() const { return m_EventType; }
-		inline bool HasBeenHandled() const { return m_HasBeenHandled; }
+		[[nodiscard]] inline EventType GetEventType() const { return m_EventType; }
+		[[nodiscard]] inline bool HasBeenHandled() const { return m_HasBeenHandled; }
 
 	protected:
 		explicit BaseEvent(EventType type)

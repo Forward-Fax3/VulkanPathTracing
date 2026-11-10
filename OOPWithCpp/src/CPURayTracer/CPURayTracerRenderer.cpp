@@ -7,6 +7,7 @@
 #include "WindowMinimizeEvent.hpp"
 #include "WindowRestoreEvent.hpp"
 #include "WindowResize.hpp"
+#include "WindowHDRStateChanged.hpp"
 
 #include <array>
 
@@ -101,6 +102,11 @@ namespace OWC
 
 		dispatcher.Dispatch<WindowResize>([this](const WindowResize& /*event*/) -> bool {
 			this->SetupPipeline();
+			this->SetupRenderPass();
+			return false;
+			});
+
+		dispatcher.Dispatch<WindowHDRStateChanged>([this](const WindowHDRStateChanged& /*event*/) -> bool {
 			this->SetupRenderPass();
 			return false;
 			});

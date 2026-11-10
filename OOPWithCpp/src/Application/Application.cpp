@@ -6,6 +6,7 @@
 #include "WindowResize.hpp"
 #include "WindowMinimizeEvent.hpp"
 #include "WindowRestoreEvent.hpp"
+#include "WindowHDRStateChanged.hpp"
 #include "KeyEvent.hpp"
 
 #include <SDL3/SDL_keycode.h>
@@ -95,6 +96,11 @@ namespace OWC
 		dispatcher.Dispatch<WindowRestore>([](const WindowRestore&) {
 			s_Instance->m_Window->Restore();
 			return false;
+			});
+
+		dispatcher.Dispatch<WindowHDRStateChanged>([](const WindowHDRStateChanged&) {
+			s_Instance->m_Window->RecreateSwapchain();
+			return false; // TODO: make so this can be true. This has to be false at the moment so that both CPU and GPU ray travers can recreate their render passes that render to the swap chain.
 			});
 
 		dispatcher.Dispatch<KeyPressedEvent>([](const KeyPressedEvent& e) {

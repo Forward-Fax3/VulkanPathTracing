@@ -13,6 +13,7 @@
 #include "WindowMinimizeEvent.hpp"
 #include "WindowRestoreEvent.hpp"
 #include "WindowResize.hpp"
+#include "WindowHDRStateChanged.hpp"
 #include "KeyEvent.hpp"
 #include "SDL3/SDL_keycode.h"
 
@@ -273,6 +274,12 @@ namespace OWC
 			this->SetupPipeline();
 			this->SetupRenderPass();
 			m_ScreenNeedsRefreshing = true;
+			return false;
+			});
+
+		dispatcher.Dispatch<WindowHDRStateChanged>([this](const WindowHDRStateChanged& /*event*/) {
+			m_FirstFrame = true;
+			this->SetupRenderPass();
 			return false;
 			});
 

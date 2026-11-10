@@ -15,6 +15,6 @@ namespace OWC
 		WindowRestore(WindowRestore&&) = default;
 		WindowRestore& operator=(WindowRestore&&) = default;
 
-		static EventType GetStaticType() { return EventType::WindowRestore; }
+		static consteval EventType GetStaticType() { return EventType::WindowRestore; }
 	};
 }

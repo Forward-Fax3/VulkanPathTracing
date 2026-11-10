@@ -29,7 +29,7 @@ namespace OWC
 	{
 		m_EmptyRenderPass = Graphics::Renderer::GetStaticRenderPass();
 		Graphics::Renderer::EndPass(m_EmptyRenderPass);
-		framesNeedingUpdatesForRangeInfo = Graphics::Renderer::GetNumberOfFramesInFlight();
+		framesNeedingUpdatesForRangeInfo = Graphics::Renderer::GetNumberOfFramesInFlight() + 1;
 	}
 
 	void MainLayer::OnUpdate()

@@ -202,7 +202,7 @@ namespace OWC::Graphics
 			FindQueueFamilies();
 			CreateLogicalDevice();
 			GetAndStoreGlobalQueueFamilies();
-			CreateSwapchain();
+			CreateSwapchain(&windowHandle);
 			CreateCommandPools();
 			WriteCommandBuffers();
 			CreateVulkanMemoryAllocator();
@@ -304,7 +304,7 @@ namespace OWC::Graphics
 
 		if (result.result == vk::Result::eErrorOutOfDateKHR)
 		{
-			RecreateSwapchain();
+			RecreateVulkanSwapchain();
 			result = vkCore.GetDevice().acquireNextImage2KHR(vk::AcquireNextImageInfoKHR()
 				.setSwapchain(vkCore.GetSwapchain())
 				.setSemaphore(*currentFrameImageAcquired)
@@ -806,7 +806,7 @@ namespace OWC::Graphics
 		VULKAN_HPP_DEFAULT_DISPATCHER.init(*vkCore.GetDevice());
 	}
 
-	void VulkanContext::CreateSwapchain()
+	void VulkanContext::CreateSwapchain(SDL_Window* windowHandlePtr /*= nullptr*/)
 	{
 		if (m_IsMinimized)
 			return;
@@ -823,15 +823,24 @@ namespace OWC::Graphics
 		for (const auto& surfaceFormat : surfaceFormats)
 			Log<LogLevel::Debug>("Vulkan Swapchain Surface Format supported: {}, colour space: {}", vk::to_string(surfaceFormat.format), vk::to_string(surfaceFormat.colorSpace));
 
+		if (windowHandlePtr == nullptr)
+			windowHandlePtr = &Application::GetConstInstance().GetWindow().GetSDLWindow();
+		const SDL_PropertiesID wProps = SDL_GetWindowProperties(windowHandlePtr);
+		const bool hdr = SDL_GetBooleanProperty(wProps, SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN, false);
+		const float headroom = SDL_GetFloatProperty(wProps, SDL_PROP_WINDOW_HDR_HEADROOM_FLOAT, 1.0f);
+
 		Renderer::SetHDR(false);
-		for (const auto& surfaceFormat : surfaceFormats)
+		if (hdr && headroom > 1.0f)
 		{
-			if (surfaceFormat.format == vk::Format::eA2B10G10R10UnormPack32 && surfaceFormat.colorSpace == vk::ColorSpaceKHR::eHdr10St2084EXT)
+			for (const auto& surfaceFormat : surfaceFormats)
 			{
-				imageFormat = surfaceFormat.format;
-				colourSpace = surfaceFormat.colorSpace;
-				Renderer::SetHDR(true);
-				break;
+				if (surfaceFormat.format == vk::Format::eA2B10G10R10UnormPack32 && surfaceFormat.colorSpace == vk::ColorSpaceKHR::eHdr10St2084EXT)
+				{
+					imageFormat = surfaceFormat.format;
+					colourSpace = surfaceFormat.colorSpace;
+					Renderer::SetHDR(true);
+					break;
+				}
 			}
 		}
 
@@ -1112,7 +1121,7 @@ namespace OWC::Graphics
 		VulkanCore::SetVulkanMemoryAllocator(vma::raii::Allocator(vkCore.GetVKInstance(), vkCore.GetDevice(), allocatorCreateInfo));
 	}
 
-	void VulkanContext::RecreateSwapchain()
+	void VulkanContext::RecreateVulkanSwapchain()
 	{
 		WaitForIdle();
 		VulkanCore::DestroySemaphores();

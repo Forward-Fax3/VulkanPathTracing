@@ -48,6 +48,7 @@ namespace OWC::Graphics
 		virtual void Minimize() = 0;
 		virtual void Restore() = 0;
 		virtual void Resize() = 0;
+		virtual void RecreateSwapchain() = 0;
 
 		static std::unique_ptr<GraphicsContext> CreateGraphicsContext(SDL_Window& windowHandle, const WindowProperties& properties);
 

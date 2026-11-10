@@ -7,12 +7,12 @@ namespace OWC
 	{
 	public:
 		KeyPressedEvent() = delete;
-		explicit KeyPressedEvent(u32 keycode)
+		explicit KeyPressedEvent(const u32 keycode)
 			: BaseEvent(EventType::KeyPressed), m_Keycode(keycode) {}
 
-		u32 GetKeycode() const { return m_Keycode; }
+		[[nodiscard]] u32 GetKeycode() const { return m_Keycode; }
 
-		static EventType GetStaticType() { return EventType::KeyPressed; }
+		static consteval EventType GetStaticType() { return EventType::KeyPressed; }
 		
 	private:
 		u32 m_Keycode;
@@ -22,12 +22,12 @@ namespace OWC
 	{
 		public:
 		KeyReleased() = delete;
-		explicit KeyReleased(u32 keycode)
+		explicit KeyReleased(const u32 keycode)
 			: BaseEvent(EventType::KeyReleased), m_Keycode(keycode) {}
 
-		u32 GetKeycode() const { return m_Keycode; }
+		[[nodiscard]] u32 GetKeycode() const { return m_Keycode; }
 
-		static EventType GetStaticType() { return EventType::KeyReleased; }
+		static consteval EventType GetStaticType() { return EventType::KeyReleased; }
 
 	private:
 		u32 m_Keycode;
