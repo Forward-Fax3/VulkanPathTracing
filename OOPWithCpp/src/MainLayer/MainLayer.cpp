@@ -54,7 +54,7 @@ namespace OWC
 
 	void MainLayer::ImGuiRender()
 	{
-		const Application & app = Application::GetInstance();
+		Application& app = Application::GetInstance();
 
 		bool CPURayTracerActive = m_ActiveLayer == 1;
 		bool GPURayTracer = m_ActiveLayer == 2;
