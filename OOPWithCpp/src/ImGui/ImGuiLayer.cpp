@@ -105,7 +105,7 @@ namespace OWC
 		ImGui::DockSpaceOverViewport(0, nullptr, ImGuiDockNodeFlags_PassthruCentralNode);
 	}
 	
-	void ImGuiLayer::End() const
+	void ImGuiLayer::End()
 	{
 		using namespace Graphics;
 		ImGui::Render();

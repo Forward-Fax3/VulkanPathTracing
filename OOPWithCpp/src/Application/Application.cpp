@@ -39,7 +39,7 @@ namespace OWC
 		m_Window->SetEventCallback([](BaseEvent& e) { s_Instance->OnEvent(e); });
 		Graphics::Renderer::Init();
 		m_LayerStack = std::make_unique<LayerStack>();
-		PushLayer(std::make_shared<MainLayer>());
+		PushLayer(std::make_shared<MainLayer>(m_ImGuiEnabled));
 		const auto imGui = std::make_shared<ImGuiLayer>();
 		m_ImGuiLayer = imGui;
 		PushOverlay(imGui);
@@ -48,13 +48,13 @@ namespace OWC
 	Application::~Application()
 	{
 		m_LayerStack->ClearLayers();
+		m_ImGuiLayer.reset();
 		Graphics::Renderer::Shutdown();
 		s_Instance = nullptr;
 	}
 
 	void Application::Run()
 	{
-		const auto imGui = m_ImGuiLayer.lock();
 		while (m_RunFlags.test(0)) // While application is running
 		{
 			const auto now = std::chrono::high_resolution_clock::now();
@@ -63,9 +63,12 @@ namespace OWC
 
 			m_LayerStack->OnUpdate();
 
-			ImGuiLayer::Begin();
-			m_LayerStack->ImGuiRender();
-			imGui->End();
+			if (m_ImGuiEnabled)
+			{
+				ImGuiLayer::Begin();
+				m_LayerStack->ImGuiRender();
+				m_ImGuiLayer->End();
+			}
 
 			Graphics::Renderer::FinishRender();
 			m_IsFirstFrame = false;
@@ -119,6 +122,11 @@ namespace OWC
 			if (e.GetKeycode() == SDLK_F5)
 			{
 				s_Instance->Restart();
+				return true;
+			}
+			if (e.GetKeycode() == SDLK_F8)
+			{
+				s_Instance->m_ImGuiEnabled = !s_Instance->m_ImGuiEnabled;
 				return true;
 			}
 			if (e.GetKeycode() == SDLK_F11)

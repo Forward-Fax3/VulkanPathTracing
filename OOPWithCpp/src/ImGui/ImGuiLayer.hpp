@@ -21,7 +21,7 @@ namespace OWC
 		void OnEvent(class BaseEvent& event) override;
 
 		static void Begin();
-		void End() const;
+		void End();
 
 	private:
 		[[nodiscard]] bool SetupImGuiRenderData();
@@ -34,6 +34,6 @@ namespace OWC
 		std::vector<std::shared_ptr<Graphics::VertexBuffer>> m_ImGuiVertexBuffer;
 		std::vector<std::shared_ptr<Graphics::IndexBuffer>> m_ImGuiIndexBuffer;
 		bool m_IsMinimized = false;
-		mutable bool m_IsFontTexture = false;
+		bool m_IsFontTexture = false;
 	};
 }

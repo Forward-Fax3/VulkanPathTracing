@@ -1,4 +1,5 @@
-﻿#include "WindowEvent.hpp"
+﻿#include "Application.hpp"
+#include "WindowEvent.hpp"
 #include "WindowCloseEvent.hpp"
 #include "WindowResize.hpp"
 #include "WindowMinimizeEvent.hpp"
@@ -13,7 +14,7 @@ namespace OWC
 {
 	void WindowEvent::EventCall(const SDL_Event& event) const 
 	{
-		if (ImGui_ImplSDL3_ProcessEvent(&event) && m_WindowID != event.window.windowID)
+		if (Application::GetConstInstance().IsImGuiEnabled() && ImGui_ImplSDL3_ProcessEvent(&event) && m_WindowID != event.window.windowID)
 			return;
 
 		switch (event.type)

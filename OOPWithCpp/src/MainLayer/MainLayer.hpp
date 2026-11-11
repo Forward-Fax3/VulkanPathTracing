@@ -12,7 +12,8 @@ namespace OWC
 	class MainLayer : public Layer
 	{
 	public:
-		MainLayer();
+		MainLayer() = delete;
+		explicit MainLayer(bool& ImGuiEnabled);
 		~MainLayer() override = default;
 		MainLayer(const MainLayer&) = delete;
 		MainLayer& operator=(const MainLayer&) = delete;
@@ -30,6 +31,8 @@ namespace OWC
 
 		std::shared_ptr<Graphics::RenderPassData> m_EmptyRenderPass; // used to use the semaphore that needs waiting on
 		Graphics::DynamicRangeInfo m_DynamicRangeInfo;
+
+		bool& m_ImGuiEnabled;
 
 		u8 m_ActiveLayer = 0; // 1 for CPU Ray Tracer, 2 for GPU Ray Tracer
 		bool m_IsMinimized = false;

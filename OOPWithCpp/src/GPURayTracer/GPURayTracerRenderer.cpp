@@ -505,8 +505,8 @@ namespace OWC
 
 			m_RayTracingShader = BaseShader::CreateRTShader(Renderer::HasShaderExecutionReorderingSupport() ? shaderDatasSER : shaderDatas);
 #else
-			static constexpr std::string_view shaderPathSER = "../../../ShaderSrc/GPURayTracerShaders/RayTracing_SER.spv";
-			static constexpr std::string_view shaderPath = "../../../ShaderSrc/GPURayTracerShaders/RayTracing.spv";
+			static constexpr std::string_view shaderPathSER = "ShaderSrc/GPURayTracerShaders/RayTracing_SER.spv";
+			static constexpr std::string_view shaderPath = "ShaderSrc/GPURayTracerShaders/RayTracing.spv";
 
 			const auto shaderSrc = LoadFileToBytecode<u32>(std::string{ Renderer::HasShaderExecutionReorderingSupport() ? shaderPathSER : shaderPath });
 			if (!shaderSrc.has_value())

@@ -15,7 +15,7 @@ namespace OWC
 {
 	static u32 framesNeedingUpdatesForRangeInfo = 0;
 
-	MainLayer::MainLayer()
+	MainLayer::MainLayer(bool& ImGuiEnabled)
 		: m_DynamicRangeInfo({
 			.exposure = 1.0f,
 			.saturation = 1.0f,
@@ -25,7 +25,7 @@ namespace OWC
 			.maxNits = 1000.0f,
 			.maxUINits = 203.0f,
 			.invGamma = 1.0f / 2.2f
-		})
+		}), m_ImGuiEnabled(ImGuiEnabled)
 	{
 		m_EmptyRenderPass = Graphics::Renderer::GetStaticRenderPass();
 		Graphics::Renderer::EndPass(m_EmptyRenderPass);
@@ -39,11 +39,22 @@ namespace OWC
 			std::array<std::string_view, 1> waitSemaphores = { "ImageReady" };
 			Graphics::Renderer::SubmitRenderPass(m_EmptyRenderPass, waitSemaphores);
 		}
+
+		if (m_DynamicRangeInfo.HDROn != Graphics::Renderer::GetHDR())
+		{
+			m_DynamicRangeInfo.HDROn = Graphics::Renderer::GetHDR();
+			framesNeedingUpdatesForRangeInfo = Graphics::Renderer::GetNumberOfFramesInFlight();
+		}
+		if (framesNeedingUpdatesForRangeInfo > 0)
+		{
+			framesNeedingUpdatesForRangeInfo--;
+			Graphics::Renderer::GetDynamicRageUniformBuffer()->UpdateBufferData(std::as_bytes(std::span(&m_DynamicRangeInfo, 1)));
+		}
 	}
 
 	void MainLayer::ImGuiRender()
 	{
-		Application& app = Application::GetInstance();
+		const Application & app = Application::GetInstance();
 
 		bool CPURayTracerActive = m_ActiveLayer == 1;
 		bool GPURayTracer = m_ActiveLayer == 2;
@@ -104,19 +115,12 @@ namespace OWC
 			rangeInfoChanged |= ImGui::DragFloat("Gamma", &gamma, 0.01f, 0.1f, 5.0f);
 			m_DynamicRangeInfo.invGamma = 1.0f / gamma;
 		}
+		ImGui::Checkbox("Enable ImGui", &m_ImGuiEnabled);
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("Press F8 to re-enable toggle ImGui rendering");
 		ImGui::End();
-		if (m_DynamicRangeInfo.HDROn != Graphics::Renderer::GetHDR())
-		{
-			m_DynamicRangeInfo.HDROn = Graphics::Renderer::GetHDR();
-			rangeInfoChanged = true;
-		}
 		if (rangeInfoChanged)
 			framesNeedingUpdatesForRangeInfo = Graphics::Renderer::GetNumberOfFramesInFlight();
-		if (framesNeedingUpdatesForRangeInfo > 0)
-		{
-			framesNeedingUpdatesForRangeInfo--;
-			Graphics::Renderer::GetDynamicRageUniformBuffer()->UpdateBufferData(std::as_bytes(std::span(&m_DynamicRangeInfo, 1)));
-		}
 	}
 
 	void MainLayer::OnEvent(BaseEvent& event)

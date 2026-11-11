@@ -31,8 +31,8 @@ namespace OWC
 		OWC_FORCE_INLINE void PopLayer(const std::shared_ptr<Layer>& layer) { m_LayerStack->PopLayer(layer); }
 		OWC_FORCE_INLINE void PopOverlay(const std::shared_ptr<Layer>& overlay) { m_LayerStack->PopLayer(overlay); }
 
-		OWC_FORCE_INLINE void Stop() { m_RunFlags.set(0, false); } // set run flag to shutdown
-		OWC_FORCE_INLINE void Restart() { Stop(); m_RunFlags.set(1, true); } // Set shutdown and restart flags
+		OWC_FORCE_INLINE void Stop() const { m_RunFlags.set(0, false); } // set run flag to shutdown
+		OWC_FORCE_INLINE void Restart() const { Stop(); m_RunFlags.set(1, true); } // Set shutdown and restart flags
 
 		[[nodiscard]] OWC_FORCE_INLINE static Application& GetInstance() { return *s_Instance; }
 		[[nodiscard]] OWC_FORCE_INLINE static const Application& GetConstInstance() { return *s_Instance; }
@@ -48,22 +48,26 @@ namespace OWC
 		[[nodiscard]] OWC_FORCE_INLINE Vec2u GetPixelSize() const { return m_Window->GetPixelSize(); }
 
 		[[nodiscard]] OWC_FORCE_INLINE u32 IsFirstFrame() const { return m_IsFirstFrame; }
+		[[nodiscard]] OWC_FORCE_INLINE bool IsImGuiEnabled() const { return m_ImGuiEnabled; }
 		[[nodiscard]] OWC_FORCE_INLINE f32 GetDeltaTime() const { return m_DeltaTime; }
 
 	private:
 		void OnEvent(BaseEvent& event) const;
 
 	private:
-		std::unique_ptr<Window> m_Window = nullptr;
-		std::unique_ptr<LayerStack> m_LayerStack = nullptr;
-		std::bitset<2>& m_RunFlags; // Bit 0: Application running, Bit 1: restart application
-		std::weak_ptr<ImGuiLayer> m_ImGuiLayer;
-
 		std::unordered_map<u32, bool> m_KeyStates;
-		bool m_IsFirstFrame = true;
+
+		std::shared_ptr<ImGuiLayer> m_ImGuiLayer;
+		std::unique_ptr<LayerStack> m_LayerStack = nullptr;
+		std::unique_ptr<Window> m_Window = nullptr;
+		std::bitset<2>& m_RunFlags; // Bit 0: Application running, Bit 1: restart application
 
 		std::chrono::high_resolution_clock::time_point m_LastTime;
+
 		f32 m_DeltaTime = 0.0f;
+
+		bool m_IsFirstFrame = true;
+		bool m_ImGuiEnabled = true;
 
 		static Application* s_Instance;
 	};
