@@ -148,10 +148,14 @@ if(MSVC)
 else()
     set(GeneralFlags
             -Wall
-            #-Wextra
-            #-Wpedantic
+            -Wextra
+            -Wpedantic
             -ffast-math
             ${CMAKE_CONFIG_FLAGS}
+    )
+    set(intelNovaLake_Flags
+            ${GeneralFlags}
+            -march=novalake
     )
     set(AVX512_FLAGS
             ${GeneralFlags}

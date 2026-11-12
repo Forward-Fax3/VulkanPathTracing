@@ -60,7 +60,7 @@ namespace OWC
 					if (fileStream.is_open())
 						break;
 				}
-				else if (statEc)
+				else if (statEc && statEc != std::errc::no_such_file_or_directory && statEc != std::errc::not_a_directory) // block trace if unfound
 					Log<LogLevel::Trace>("LoadFileToBytecode: Error while checking if candidate file exists: {}. Error: {}", candidate.string(), statEc.message());
 
 				fs::path parent = dir.parent_path();

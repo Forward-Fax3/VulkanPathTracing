@@ -151,6 +151,7 @@ namespace OWC
         std::vector<GPULightData> lightData;
         if (scene.mNumLights > 0)
         {
+            const Vec3 BT709Weights = { 0.2126f, 0.7152f, 0.0722 };
             for (u32 i = 0; i < scene.mNumLights; i++)
             {
                 const aiLight& light = *scene.mLights[i];
@@ -166,7 +167,8 @@ namespace OWC
                         Vec3p(light.mColorAmbient.r, light.mColorAmbient.g, light.mColorAmbient.b), // colour
                         static_cast<f32>(light.mAngleOuterCone), // range
                         static_cast<f32>(light.mAngleInnerCone), // inner cone angle
-                        static_cast<f32>(light.mAngleOuterCone)  // outer cone angle
+                        static_cast<f32>(light.mAngleOuterCone),  // outer cone angle
+                        glm::dot(BT709Weights, Vec3(light.mColorAmbient.r, light.mColorAmbient.g, light.mColorAmbient.b)) * light.mAttenuationQuadratic != 0.0 ? static_cast<f32>(light.mAttenuationQuadratic) : 10.0f
                     );
                 }
                 else if (light.mType == aiLightSource_POINT)
@@ -178,7 +180,8 @@ namespace OWC
                         light.mAttenuationQuadratic != 0.0 ? static_cast<f32>(light.mAttenuationQuadratic) : 10000.0f, // intensity
                         Vec3p(light.mColorAmbient.r, light.mColorAmbient.g, light.mColorAmbient.b), // colour
                         light.mAttenuationQuadratic != 0.0 ? static_cast<f32>(light.mAttenuationQuadratic) : 10000.0f, // range
-                        0.1// radius
+                        0.1, // radius
+                        glm::dot(BT709Weights, Vec3(light.mColorAmbient.r, light.mColorAmbient.g, light.mColorAmbient.b)) * light.mAttenuationQuadratic != 0.0 ? static_cast<f32>(light.mAttenuationQuadratic) : 10000.0f
                     );
                 }
                 else if (light.mType == aiLightSource_DIRECTIONAL)
@@ -189,7 +192,8 @@ namespace OWC
                         glm::normalize(Vec3p(light.mDirection.x, light.mDirection.y, light.mDirection.z)), // direction
                         light.mAttenuationQuadratic != 0.0 ? static_cast<f32>(light.mAttenuationQuadratic) : 10.0f, // intensity
                         Vec3p(light.mColorAmbient.r, light.mColorAmbient.g, light.mColorAmbient.b), // colour
-                        light.mAttenuationQuadratic != 0.0 ? static_cast<f32>(light.mAttenuationQuadratic) : 10.0f // range
+                        light.mAttenuationQuadratic != 0.0 ? static_cast<f32>(light.mAttenuationQuadratic) : 10.0f, // range
+                        glm::dot(BT709Weights, Vec3(light.mColorAmbient.r, light.mColorAmbient.g, light.mColorAmbient.b)) * light.mAttenuationQuadratic != 0.0 ? static_cast<f32>(light.mAttenuationQuadratic) : 10.0f
                     );
                 }
             }

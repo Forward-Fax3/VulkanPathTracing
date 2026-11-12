@@ -134,10 +134,46 @@ VertexData InterpolateVerticesData(uint64_t vertexOffset, uint3 attributeIndex, 
     return result;
 }
 
+uint3 GetTriangleIndices(GeometryDescriptor geometry, uint primitiveIndex)
+{
+    if (geometry.is32BitIndices == 1)
+        return reinterpret<uint3*>(PC.mainBufferData + geometry.indicesOffset)[primitiveIndex];
+
+    uint16_t* indices16 = reinterpret<uint16_t*>(PC.mainBufferData + geometry.indicesOffset);
+    return uint3(indices16[primitiveIndex * 3 + 0], indices16[primitiveIndex * 3 + 1], indices16[primitiveIndex * 3 + 2]);
+}
+
+// Alpha-only evaluation for any-hit / shadow-ray alpha testing.
+// Only fetches what alpha needs: colour.w and a single UV set, not the full VertexData/MaterialData.
+float EvalAlpha(GeometryDescriptor geometry, uint primitiveIndex, float2 barycentrics)
+{
+    if (geometry.materialIndex == 0xFFFFFFFFUL)
+        return 1.0f; // default material is opaque
+
+    MaterialData* m = PC.materialData + geometry.materialIndex;
+    uint3 idx = GetTriangleIndices(geometry, primitiveIndex);
+
+    VertexData* v = reinterpret<VertexData*>(PC.mainBufferData + geometry.vertexOffset);
+    float3 b = float3(1.0f - barycentrics.x - barycentrics.y, barycentrics.x, barycentrics.y);
+
+    float alpha = m->baseColourFactor.w * (b.x * v[idx.x].colour.w + b.y * v[idx.y].colour.w + b.z * v[idx.z].colour.w);
+
+    uint texIndex = m->baseColourTextureIndex;
+    if (texIndex != 0xFFFFFFFFUL && alpha > 0.0f)
+    {
+        uint set = m->baseColourTextureCoords;
+        float2 uv = b.x * v[idx.x].UV[set] + b.y * v[idx.y].UV[set] + b.z * v[idx.z].UV[set];
+        alpha *= colourTextures.SampleLevel(textureSampler, float3(uv, texIndex), 0.0f).w;
+    }
+
+    return alpha;
+}
+
 float LightWeight(LightData light, float3 position, float3 normal)
 {
-    const float3 BT709Weights = { 0.2126f, 0.7152f, 0.0722 };
-    float luminosity = dot(light.colour, BT709Weights) * light.intensity;
+    //const float3 BT709Weights = { 0.2126f, 0.7152f, 0.0722 };
+    //float luminosity = dot(light.colour, BT709Weights) * light.intensity;
+    float luminosity = light.luminosity;
 
     if (light.type == directionalLight)
     {
@@ -147,12 +183,13 @@ float LightWeight(LightData light, float3 position, float3 normal)
 
     float3 positionDelta = light.position - position;
     float distance2 = dot(positionDelta, positionDelta);
-    float normalDotDelta = dot(normal, normalize(positionDelta));
+    float invDist = rsqrt(distance2);
+    float normalDotDelta = dot(normal, positionDelta) * invDist;
 
     if (normalDotDelta <= 0.0f)
         return 0.0f;
 
-    float distance = sqrt(distance2);
+    float distance = distance2 * invDist; // sqrt(distance2)
     if (light.range > 0.0f && distance > light.range)
         return 0.0f;
 
@@ -164,38 +201,41 @@ float LightWeight(LightData light, float3 position, float3 normal)
         attenuation = k * k;
     }
 
-    return luminosity * normalDotDelta * attenuation / max(distance2, 1e-4);
+    float spot = 1.0f;
+    if (light.type == spotLight)
+        spot = GetSpotAttenuation(light, positionDelta * invDist);
+    if (spot <= 0.0f)
+        return 0.0f;
+
+    return luminosity * normalDotDelta * attenuation * spot / max(distance2, 1e-4);
 }
 
-GetLightIndexReturn GetLightIndex(float3 position, float3 normal, float randVal)
+GetLightIndexReturn GetLightIndex(float3 position, float3 normal, inout uint rngState)
 {
-    float weights[64]; // max number of light is 64, hardcoded for now possibly, in future implement something like ReSTIR
+    GetLightIndexReturn result;
     float total = 0.0f;
-
+    float chosenWeight = 0.0f;
+    result.lightIndex = -1;
+    float uniformRandNum = Rand(rngState);
     for (uint i = 0; i < PC.numOfLights; i++)
     {
-        float iWeight = LightWeight(PC.lightsBuffer[i], position, normal);
-        weights[i] = iWeight;
-        total += iWeight;
+        float currentWeight = LightWeight(PC.lightsBuffer[i], position, normal);
+        if (currentWeight <= 0.0f)
+            continue;
+        total += currentWeight;
+        float probability = currentWeight / total;
+        if (uniformRandNum < probability)
+        {
+            result.lightIndex = i;
+            chosenWeight = currentWeight;
+            uniformRandNum = uniformRandNum / probability;
+        }
+        else
+            uniformRandNum = (uniformRandNum - probability) / (1.0f - probability);
     }
 
-    if (total <= 0.0f)
-        return { -1, 0.0f };
-
-    float t = randVal * total;
-    float accumulation = 0.0f;
-
-    for (int i = 0; i < PC.numOfLights - 1; i++)
-    {
-        accumulation += weights[i];
-        if (weights[i] > 0.0f && t <= accumulation)
-            return { i, weights[i] / total };
-    }
-
-    for (int i = int(PC.numOfLights) - 1; i >= 0; i--)   // float rounding fallback
-        if (weights[i] > 0.0f)
-            return { i, weights[i] / total };
-    return { -1, 0.0f };
+    result.pdf = (result.lightIndex < 0) ? 0.0f : chosenWeight / total;
+    return result;
 }
 
 float GetRangeAttenuation(float range, float distance)
@@ -217,38 +257,59 @@ float GetSpotAttenuation(LightData light, float3 toLight)
 
 LightSample SampleLight(LightData light, float3 position)
 {
+    LightSample sample;
+    sample.direction = float3(0.0f);
+    sample.distance = 0.0f;
+    sample.radiance = float3(0.0f);
+    sample.cosineLight = 0.0f;
+    sample.pdf = 1.0f;
+
     if (light.type == directionalLight)
-        return { -light.direction, 1e6, light.colour * light.intensity, 1.0f };
+    {
+        sample.direction = -light.direction;
+        sample.distance = 1e6;
+        sample.radiance = light.colour * light.intensity;
+        return sample;
+    }
 
     float3 positionDelta = light.position - position;
     float distance = length(positionDelta);
     float3 direction = positionDelta / distance;
     float3 radiance = light.colour * light.intensity * GetRangeAttenuation(light.range, distance);
     if (light.type == pointLight)
-        return { direction, distance, radiance, 1.0f };
+    {
+        sample.direction = direction;
+        sample.distance = distance;
+        sample.radiance = radiance;
+        return sample;
+    }
 
     if (light.type == spotLight)
-        return { direction, distance, radiance * GetSpotAttenuation(light, direction), 1.0f };
+    {
+        float spotAttenuation = GetSpotAttenuation(light, direction);
+        sample.direction = direction;
+        sample.distance = distance;
+        sample.radiance = radiance * spotAttenuation;
+    }
 
-    return { { 0.0f, 0.0f, 0.0f }, 0.0f, { 0.0f, 0.0f, 0.0f }, 0.0f };
+    return sample;
 }
 
 LightSample SampleSphereLight(LightData light, float3 position, inout uint rngState)
 {
+    LightSample sample;
+    sample.direction = float3(0.0f);
+    sample.distance = 0.0f;
+    sample.radiance = float3(0.0f);
+    sample.pdf = 0.0f;
+    sample.cosineLight = 0.0f;
+
     float3 toCentre = light.position - position;
     float d2 = dot(toCentre, toCentre);
     float d = sqrt(d2);
     float r = light.radius;
     if (d <= r)
-    {
-        LightSample invalid;
-        invalid.direction = float3(0.0f);
-        invalid.distance = 0.0f;
-        invalid.radiance = float3(0.0f);
-        invalid.pdf = 0.0f;
-        invalid.cosineLight = 0.0f;
-        return invalid;
-    }
+        return sample;
 
     float cosThetaMax = sqrt(max(0.0f, 1.0f - (r * r) / d2));
     float3 w = toCentre / d;
@@ -270,13 +331,12 @@ LightSample SampleSphereLight(LightData light, float3 position, inout uint rngSt
         atten = k * k;
     }
 
-    LightSample result;
-    result.direction = dir;
-    result.distance = t;
-    result.radiance = light.colour * light.intensity / (pi * r * r) * atten;
-    result.pdf = 1.0f / (2.0f * pi * (1.0f - cosThetaMax));
-    result.cosineLight = 1.0f;
-    return result;
+    sample.direction = dir;
+    sample.distance = t;
+    sample.radiance = light.colour * light.intensity / (pi * r * r) * atten;
+    sample.pdf = 1.0f / (2.0f * pi * (1.0f - cosThetaMax));
+    sample.cosineLight = 1.0f;
+    return sample;
 }
 
 bool IsVisible(float3 position, float3 lightDirection, float lightDistance, inout uint rngState)
@@ -301,48 +361,10 @@ bool IsVisible(float3 position, float3 lightDirection, float lightDistance, inou
         {
         case CANDIDATE_NON_OPAQUE_TRIANGLE:
         {
-            float3 barycentricCoords = float3(1 - rayQuery.CandidateTriangleBarycentrics().x - rayQuery.CandidateTriangleBarycentrics().y, rayQuery.CandidateTriangleBarycentrics().x, rayQuery.CandidateTriangleBarycentrics().y);
+            GeometryDescriptor geometry = PC.geometryData[rayQuery.CandidateInstanceID() + rayQuery.CandidateRayGeometryIndex()];
+            float alpha = EvalAlpha(geometry, rayQuery.CandidatePrimitiveIndex(), rayQuery.CandidateTriangleBarycentrics());
 
-            uint instanceID = rayQuery.CandidateInstanceID();
-            uint geometryIndex = rayQuery.CandidateRayGeometryIndex();
-            uint primitiveIndex = rayQuery.CandidatePrimitiveIndex();
-
-            GeometryDescriptor geometry = PC.geometryData[instanceID + geometryIndex];
-
-            uint3 attributeIndex;
-            if (geometry.is32BitIndices == 1)
-                attributeIndex = reinterpret<uint3*>(PC.mainBufferData + geometry.indicesOffset)[primitiveIndex];
-            else
-            {
-                uint16_t* attributeIndex16bit = reinterpret<uint16_t*>(PC.mainBufferData + geometry.indicesOffset);
-                attributeIndex = uint3(attributeIndex16bit[primitiveIndex * 3 + 0], attributeIndex16bit[primitiveIndex * 3 + 1], attributeIndex16bit[primitiveIndex * 3 + 2]);
-            }
-
-            VertexData hitData = InterpolateVerticesData(geometry.vertexOffset, attributeIndex, barycentricCoords);
-
-            MaterialData mat;
-            if (geometry.materialIndex != 0xFFFFFFFFUL)
-            {
-                mat = PC.materialData[geometry.materialIndex];
-            }
-            else
-            {
-                mat.baseColourTextureIndex = 0xFFFFFFFFUL;
-                mat.baseColourFactor = float4(1.0f);
-                mat.normalTextureIndex = 0xFFFFFFFFUL;
-                mat.metallicRoughnessTextureIndex = 0xFFFFFFFFUL;
-                mat.metallicFactor = 0.0f;
-                mat.roughnessFactor = 0.5f;
-                mat.emissiveTextureIndex = 0xFFFFFFFFUL;
-                mat.emissiveFactor = float3(0.0f);
-            }
-
-            float4 colour4 = hitData.colour * mat.baseColourFactor;
-
-            if (mat.baseColourTextureIndex != 0xFFFFFFFFUL)
-                colour4 *= colourTextures.SampleLevel(textureSampler, float3(hitData.UV[mat.baseColourTextureCoords], mat.baseColourTextureIndex), 0.0f);
-
-            if (Rand(rngState) < colour4.w)
+            if (alpha >= 1.0f || Rand(rngState) < alpha)
                 rayQuery.CommitNonOpaqueTriangleHit();
 
             break;
@@ -391,8 +413,9 @@ void RayGenShader()
     const uint rotX = pixelHash % PC.stratifiedGridSize;
     const uint rotY = PCGHash(pixelHash) % PC.stratifiedGridSize;
 
-    uint imageNeedsResetting = PerFrameData.imageReset;
     uint stratifiedGridPosition = PerFrameData.stratifiedGridPosition;
+
+    float3 sum = 0.0f;
 
     for (uint i = 0; i < PC.numberOfSamples; i++)
     {
@@ -426,7 +449,14 @@ void RayGenShader()
 #ifdef SER
             HitObject hit = HitObject::TraceRay(sceneBVH, rayFlags, 0xFF, 0, 0, 0, ray, payload);
 
-            ReorderThread(hit);
+            if (payload.depth != PC.numberOfBounces)
+            {
+                uint coherenceHint = 0xFFFFu;
+                if (hit.IsHit())
+                    coherenceHint = min(PC.geometryData[hit.GetInstanceID() + hit.GetGeometryIndex()].materialIndex, 0xFFFEu); // default material -> 0xFFFE
+                ReorderThread(hit, coherenceHint, 16);
+            }
+
             HitObject::Invoke(sceneBVH, hit, payload);
 #else
             TraceRay(sceneBVH, rayFlags, 0xFF, 0, 0, 0, ray, payload);
@@ -439,17 +469,15 @@ void RayGenShader()
         if (any(isnan(payload.radiance)) || any(isinf(payload.radiance)))
             payload.radiance = 0.0f;
 
-        if (imageNeedsResetting == 1)
-        {
-            resultTexture[intThreadIdx.xy] = float4(payload.radiance, 1.0f);
-            imageNeedsResetting = 0;
-        }
-        else
-            resultTexture[intThreadIdx.xy] += float4(payload.radiance, 1.0f);
-
+        sum += payload.radiance;
         randVal = payload.randSeed;
         stratifiedGridPosition++;
     }
+
+    if (PerFrameData.imageReset == 1)
+        resultTexture[intThreadIdx.xy] = float4(sum, (float)PC.numberOfSamples);
+    else
+        resultTexture[intThreadIdx.xy] += float4(sum, (float)PC.numberOfSamples);
 }
 
 [shader("miss")]
@@ -463,14 +491,22 @@ void MissShader(inout RayPayload payload)
     payload.depth = 0;
 }
 
+[shader("anyhit")]
+void AnyHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr)
+{
+    GeometryDescriptor geometry = PC.geometryData[InstanceID() + GeometryIndex()];
+    float alpha = EvalAlpha(geometry, PrimitiveIndex(), attr.barycentrics);
+    if (alpha >= 1.0f)
+        return;
+
+    uint seed = PCGHash(PerFrameData.randSeed ^ PCGHash(DispatchRaysIndex().x + DispatchRaysIndex().y * DispatchRaysDimensions().x) ^ asuint(RayTCurrent()));
+    if (Rand(seed) > alpha)
+        IgnoreHit();
+}
+
 [shader("closesthit")]
 void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
-    /*float n = sqrt(-float(PC.numberOfBounces) - 1.0f);   // runtime NaN, the compiler can't fold it
-    payload.radiance = float3(isnan(n) ? 1.0f : 0.0f, BadF(n) ? 1.0f : 0.0f, 0.0f);
-    payload.depth = 0;
-    return;*/
-
     float3 barycentricCoords = float3(1 - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
 
     uint instanceID = InstanceID();
@@ -479,14 +515,7 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
 
     GeometryDescriptor geometry = PC.geometryData[instanceID + geometryIndex];
 
-    uint3 attributeIndex;
-    if (geometry.is32BitIndices == 1)
-        attributeIndex = reinterpret<uint3*>(PC.mainBufferData + geometry.indicesOffset)[primitiveIndex];
-    else
-    {
-        uint16_t* attributeIndex16bit = reinterpret<uint16_t*>(PC.mainBufferData + geometry.indicesOffset);
-        attributeIndex = uint3(attributeIndex16bit[primitiveIndex * 3 + 0], attributeIndex16bit[primitiveIndex * 3 + 1], attributeIndex16bit[primitiveIndex * 3 + 2]);
-    }
+    uint3 attributeIndex = GetTriangleIndices(geometry, primitiveIndex);
 
     VertexData hitData = InterpolateVerticesData(geometry.vertexOffset, attributeIndex, barycentricCoords);
 
@@ -520,11 +549,11 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
 
     float3 hitLocation = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
 
-    if (colour4.w < 1.0f && Rand(payload.randSeed) > colour4.w)
+    /*if (colour4.w < 1.0f && Rand(payload.randSeed) > colour4.w)
     {
         payload.newOrigin = hitLocation + 0.0001f * WorldRayDirection();
         return;
-    }
+    }*/
 
     float3x3 normalMatrix = transpose((float3x3)WorldToObject3x4());
     float3 hitNormal = normalize(mul(normalMatrix, hitData.normal));
@@ -613,13 +642,62 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
     return;*/
 
     float3 emissive = mat.emissiveFactor;
-    if (mat.emissiveTextureIndex != 0xFFFFFFFFUL)
+    if (mat.emissiveTextureIndex != 0xFFFFFFFFUL && (emissive.x > 0.0f || emissive.y > 0.0f || emissive.z > 0.0f))
         emissive *= emissiveTextures.SampleLevel(textureSampler, float3(hitData.UV[mat.emissiveTextureCoords], mat.emissiveTextureIndex), 0.0f).xyz;
 
     payload.radiance += payload.throughput * emissive;
 
+    payload.newOrigin = hitLocation + geometricNormal * 1e-4;
+
     float3 albedo = colour4.xyz;
     float3 F0 = lerp(float3(0.04f), colour4.xyz, metallicness);
+
+    float NdotV = max(dot(hitNormal, -WorldRayDirection()), 0.0f);
+    float3 Fview = FresnelSchlick(NdotV, F0);
+    float3 kD = (1.0f - Fview) * (1.0f - metallicness);
+
+    if (PC.numOfLights > 0)
+    {
+        //GetLightIndexReturn lightIndex = GetLightIndex(payload.newOrigin, hitNormal, Rand(payload.randSeed));
+        GetLightIndexReturn lightIndex = GetLightIndex(payload.newOrigin, hitNormal, payload.randSeed);
+        if (lightIndex.lightIndex != -1 && lightIndex.pdf > 0.0f)
+        {
+            LightData lightData = PC.lightsBuffer[lightIndex.lightIndex];
+
+            LightSample light;
+            if (lightData.type == pointLight && lightData.radius > 0.0)
+                light = SampleSphereLight(lightData, payload.newOrigin, payload.randSeed); // pdf = 0 if invalid
+            else
+                light = SampleLight(lightData, payload.newOrigin);
+
+            if (light.pdf > 1e-6f && any(light.radiance > 0.0f) && dot(geometricNormal, light.direction) > 0.0f)
+            {
+                float NdotL_light = max(dot(hitNormal, light.direction), 0.0f);
+                if (NdotL_light > 0.0f)
+                {
+                    const GGXResult specLight = EvalGGXSpecular(hitNormal, V, light.direction, roughness, F0);
+                    const float3 brdfValueLight = kD * albedo * oneOverPi + specLight.value;
+
+                    // everything except visibility
+                    const float3 contribution = payload.throughput * brdfValueLight * NdotL_light * light.radiance / (light.pdf * lightIndex.pdf);
+
+                    // Russian roulette on the shadow ray
+                    const float lum = dot(contribution, float3(0.2126f, 0.7152f, 0.0722f));
+                    const float shadowRayThreshold = 5e-3;
+                    const float p = saturate(lum / shadowRayThreshold);   // lum == 0 -> never traced
+
+                    if (p > 0.0f && (p >= 1.0f || Rand(payload.randSeed) < p) && IsVisible(payload.newOrigin, light.direction, light.distance, payload.randSeed))
+                        payload.radiance += contribution / p;
+                }
+            }
+        }
+    }
+
+    if (payload.depth <= 1)
+    {
+        payload.depth = 0;
+        return;
+    }
 
     float diffuseLum = dot(albedo * (1.0f - metallicness), float3(0.2126f, 0.7152f, 0.0722f));
     float specularLum = dot(F0, float3(0.2126f, 0.7152f, 0.0722f));
@@ -639,10 +717,6 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
         evalResult = gs.ggx;
     }
 
-    float NdotV = max(dot(hitNormal, -WorldRayDirection()), 0.0f);
-    float3 Fview = FresnelSchlick(NdotV, F0);
-    float3 kD = (1.0f - Fview) * (1.0f - metallicness);
-
     float3 diffuseValue = kD * albedo * oneOverPi;
 
     const float3 brdfValue = diffuseValue + evalResult.value;
@@ -650,36 +724,8 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
     float cosinePdf = NDotL * oneOverPi;
     const float brdfpdf = diffuseWeight * cosinePdf + (1.0f - diffuseWeight) * evalResult.pdf;
 
-    payload.newOrigin = hitLocation + geometricNormal * 1e-4;
     payload.newDirection = newRayDirection;
 
-    if (PC.numOfLights > 0)
-    {
-        GetLightIndexReturn lightIndex = GetLightIndex(payload.newOrigin, hitNormal, Rand(payload.randSeed));
-        if (lightIndex.lightIndex != -1 && lightIndex.pdf > 0.0f)
-        {
-            LightData lightData = PC.lightsBuffer[lightIndex.lightIndex];
-
-            LightSample light;
-            if (lightData.type == pointLight && lightData.radius > 0.0)
-                light = SampleSphereLight(lightData, payload.newOrigin, payload.randSeed); // pdf = 0 if invalid
-            else
-                light = SampleLight(lightData, payload.newOrigin);
-
-            if (light.radiance.x > 0.0f || light.radiance.y > 0.0f || light.radiance.z > 0.0f)
-            {
-                float NdotL_light = max(dot(hitNormal, light.direction), 0.0f);
-
-                if (light.pdf > 1e-6 && NdotL_light > 0.0f && dot(geometricNormal, light.direction) > 0.0f && IsVisible(payload.newOrigin, light.direction, light.distance, payload.randSeed))
-                {
-                    GGXResult specLight = EvalGGXSpecular(hitNormal, -WorldRayDirection(), light.direction, roughness, F0);
-                    float3 brdfValueLight = kD * albedo * oneOverPi + specLight.value;
-
-                    payload.radiance += payload.throughput * brdfValueLight * NdotL_light * light.radiance / (light.pdf * lightIndex.pdf);
-                }
-            }
-        }
-    }
     payload.throughput *= (brdfpdf > 0.0f) ? (brdfValue * NDotL / brdfpdf) : float3(0.0f);
 
     if (brdfpdf <= 0.0f || NDotL <= 0.0f || dot(geometricNormal, newRayDirection) <= 0.0f)

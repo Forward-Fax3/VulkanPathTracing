@@ -478,6 +478,13 @@ namespace OWC
 						.descriptorType = {},
 						.entryPoint = "ClosestHitShader",
 					},
+					ShaderData {
+						.bytecode = code,
+						.type = ShaderType::RayAnyHit,
+						.language = ShaderData::ShaderLanguage::SPIRV,
+						.descriptorType = {},
+						.entryPoint = "AnyHitShader",
+					},
 				};
 			};
 

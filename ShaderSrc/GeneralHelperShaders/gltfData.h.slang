@@ -46,5 +46,5 @@ struct LightData
     float cosInnerConeAngle;
     float cosOuterConeAngle;
     float radius;
-    uint pad[1];
+    float luminosity;
 }

@@ -40,9 +40,7 @@ namespace OWC
 		void OnEvent(BaseEvent& event) override;
 
 	private:
-		RenderPassReturnData RenderFrame();
-
-		void UpdateGammaValue(GammaCorrection gammaCorrection) const;
+		RenderPassReturnData RenderFrame() const;
 
 	private:
 		std::chrono::time_point<std::chrono::high_resolution_clock> m_LastTimePoint{};

@@ -379,11 +379,12 @@ namespace OWC
         if (node.light != -1)
         {
             const tg3_light& light = model.lights[node.light];
-            const std::string_view lightType = light.type.data;
-            const Vec3p colour = glm::make_vec3(light.color);
+            const std::string_view lightType{ light.type.data, light.type.len };
+            const Vec3 colour = glm::make_vec3(light.color);
 
             Log<LogLevel::Trace>("Found light of type {} with a range of {} and with intensity {} and colour ({}, {}, {})", lightType, light.range, light.intensity, colour.x, colour.y, colour.z);
 
+            const Vec3 BT709Weights = { 0.2126f, 0.7152f, 0.0722 };
             if (tg3_str_equals_cstr(light.type, "spot"))
             {
                 lightData.emplace_back(
@@ -391,10 +392,11 @@ namespace OWC
                     0, // type (0 for spot)
                     glm::normalize(Vec3p(-parentTransform[2])), // direction
                     light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 10.0f, // intensity
-                    colour, // colour
+                    Vec3p(colour), // colour
                     static_cast<f32>(light.range), // range
                     glm::max(1e-6f, static_cast<f32>(glm::cos(light.spot.inner_cone_angle))), // cos inner cone angle
-                    static_cast<f32>(glm::cos(light.spot.outer_cone_angle))  // cos outer cone angle
+                    static_cast<f32>(glm::cos(light.spot.outer_cone_angle)),  // cos outer cone angle
+                    glm::dot(BT709Weights, colour) * light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 10.0f
                 );
             }
             else if (tg3_str_equals_cstr(light.type, "point"))
@@ -407,9 +409,10 @@ namespace OWC
                     1, // type (1 for point)
                     glm::normalize(Vec3p(-parentTransform[2])), // direction
                     light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 10.0f, // intensity
-                    colour, // colour
+                    Vec3p(colour), // colour
                     static_cast<f32>(light.range), // range
-                    radius < 1e-4 ? 0.0f : radius // radius
+                    radius < 1e-4 ? 0.0f : radius, // radius
+                    glm::dot(BT709Weights, colour) * light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 10.0f
                 );
             }
             else if (tg3_str_equals_cstr(light.type, "directional"))
@@ -419,8 +422,9 @@ namespace OWC
                     2, // type (2 for directional)
                     glm::normalize(Vec3p(-parentTransform[2])), // direction
                     light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 100.0f, // intensity
-                    colour, // colour
-                    static_cast<f32>(light.range) // range
+                    Vec3p(colour), // colour
+                    static_cast<f32>(light.range), // range
+                    glm::dot(BT709Weights, colour) * light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 100.0f
                 );
             }
             else

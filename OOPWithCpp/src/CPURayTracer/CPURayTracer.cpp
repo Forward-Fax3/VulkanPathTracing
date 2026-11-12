@@ -155,8 +155,8 @@ namespace OWC
 
 		CameraRenderSettings& cameraSettings = m_Camera->GetSettings();
 
-		i32 minBouncesBeforeClamp = 0;
-		i32 maxBouncesBeforeClamp = 8192;
+		constexpr i32 minBouncesBeforeClamp = 0;
+		constexpr i32 maxBouncesBeforeClamp = 8192;
 
 		ImGui::Begin("Camera Settings");
 		m_CameraSettingsUpdated |= ImGui::DragFloat3("Position", glm::value_ptr(cameraSettings.Position), 0.1f);
@@ -195,37 +195,11 @@ namespace OWC
 		});
 	}
 
-	OWC::RenderPassReturnData CPURayTracer::RenderFrame()
+	OWC::RenderPassReturnData CPURayTracer::RenderFrame() const
 	{
 		if (m_IsMultiThreaded)
 			return m_Camera->MultiThreadedRenderPass(m_Scene->GetHitable());
 		else
 			return m_Camera->SingleThreadedRenderPass(m_Scene->GetHitable());
-	}
-
-	void CPURayTracer::UpdateGammaValue(GammaCorrection gammaCorrection) const
-	{
-		//switch (gammaCorrection)
-		//{
-		//case GammaCorrection::None:
-		//	m_InterLayerData->invGammaValue = 1.0f;
-		//	break;
-		//case GammaCorrection::Gamma19:
-		//	m_InterLayerData->invGammaValue = 1.0f / 1.9f;
-		//	break;
-		//case GammaCorrection::Gamma20:
-		//	m_InterLayerData->invGammaValue = 1.0f / 2.0f;
-		//	break;
-		//case GammaCorrection::Gamma22:
-		//	m_InterLayerData->invGammaValue = 1.0f / 2.2f;
-		//	break;
-		//case GammaCorrection::Gamma24:
-		//case GammaCorrection::GammaBT1886:
-		//	m_InterLayerData->invGammaValue = 1.0f / 2.4f;
-		//	break;
-		//case GammaCorrection::custom:
-		//default:
-		//	std::unreachable();
-		//}
 	}
 }

@@ -503,11 +503,14 @@ namespace OWC::Graphics
 
     	if (drawData->TotalVtxCount > 0)
 		{
-    		if (vulkanVertexBuffer->GetNumOfVertices() < drawData->TotalVtxCount)
+    		[[assume(drawData->TotalVtxCount > 0)]];
+			[[assume(drawData->TotalIdxCount > 0)]];
+
+    		if (vulkanVertexBuffer->GetNumOfVertices() < static_cast<uSize>(drawData->TotalVtxCount))
 			{
     			vulkanVertexBuffer->Resize(drawData->TotalVtxCount);
 			}
-    		if (vulkanIndexBuffer->GetNumberOfIndices() < drawData->TotalIdxCount)
+    		if (vulkanIndexBuffer->GetNumberOfIndices() < static_cast<uSize>(drawData->TotalIdxCount))
 			{
     			vulkanIndexBuffer->Resize(drawData->TotalIdxCount);
 			}

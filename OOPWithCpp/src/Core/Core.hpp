@@ -201,28 +201,30 @@ namespace OWC
 	};
 
 	template <typename T>
-	[[nodiscard]] constexpr bool testBitMask(T value, T bitMask) noexcept requires std::is_integral_v<T> || (std::is_enum_v<T> && HasAndOperator<T> && HasEqualOperator<T>)
+	requires std::is_integral_v<T> || (std::is_enum_v<T> && HasAndOperator<T> && HasEqualOperator<T>)
+	[[nodiscard]] constexpr bool testBitMask(T value, T bitMask) noexcept
 	{
 		return (value & bitMask) == bitMask;
 	}
 
-	template <typename T>
-	[[nodiscard]] constexpr T alignUp(T value, size_t alignment) noexcept
+	template <std::integral T, typename U = std::make_unsigned_t<T>>
+	[[nodiscard]] constexpr T alignUp(T value, std::type_identity_t<U> alignment) noexcept
 	{
-		if constexpr (std::is_signed_v<T>)
-		{
-			return static_cast<T>((static_cast<iSize>(value) + alignment - 1) & ~(alignment - 1));
-		}
-		else
-		{
-			return static_cast<T>((static_cast<uSize>(value) + alignment - 1) & ~(alignment - 1));
-		}
+		assert(std::has_single_bit(alignment));
+
+		const auto v = static_cast<U>(value);
+		const auto a = alignment - 1;
+		return static_cast<T>(v + a & ~a);
 	}
 
 	template <std::size_t N>
-	static consteval auto spvBytesToDWords(const unsigned char (&b)[N]) {
+	[[nodiscard]] consteval auto spvBytesToDWords(const unsigned char (&b)[N]) noexcept
+	{
 		static_assert(N % 4 == 0, "SPIR-V size must be a multiple of 4");
-		static_assert(std::endian::native == std::endian::little);
-		return std::bit_cast<std::array<u32, N / 4>>(b);
+		auto words = std::bit_cast<std::array<u32, N / 4>>(b);
+		if constexpr (std::endian::native == std::endian::big) // SPIR-V words are defined in little-endian byte order; assemble them explicitly on big-endian hosts.
+			for (auto& w : words)
+				w = std::byteswap(w);
+		return words;
 	}
 }

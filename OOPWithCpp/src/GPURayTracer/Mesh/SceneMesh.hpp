@@ -51,12 +51,12 @@ namespace OWC
     struct GPULightData
     {
         OWC_FORCE_INLINE GPULightData() = default;
-        OWC_FORCE_INLINE GPULightData(const Vec3p& pos, const u32 t, const Vec3p& dir, const f32 inten, const Vec3p& col, const f32 r, const f32 innerConeAngle, const f32 outerConeAngle)
-            : position(pos), type(t), direction(dir), intensity(inten), colour(col), range(r), innerConeAngle(innerConeAngle), outerConeAngle(outerConeAngle) {}
-        OWC_FORCE_INLINE GPULightData(const Vec3p& pos, const u32 t, const Vec3p& dir, const f32 inten, const Vec3p& col, const f32 r, const float rad)
-            : position(pos), type(t), direction(dir), intensity(inten), colour(col), range(r), radius(rad) {}
-        OWC_FORCE_INLINE GPULightData(const Vec3p& pos, const u32 t, const Vec3p& dir, const f32 inten, const Vec3p& col, const f32 r)
-            : position(pos), type(t), direction(dir), intensity(inten), colour(col), range(r) {}
+        OWC_FORCE_INLINE GPULightData(const Vec3p& pos, const u32 t, const Vec3p& dir, const f32 inten, const Vec3p& col, const f32 r, const f32 innerConeAngle, const f32 outerConeAngle, const f32 luminosity)
+            : position(pos), type(t), direction(dir), intensity(inten), colour(col), range(r), innerConeAngle(innerConeAngle), outerConeAngle(outerConeAngle), luminosity(luminosity) {}
+        OWC_FORCE_INLINE GPULightData(const Vec3p& pos, const u32 t, const Vec3p& dir, const f32 inten, const Vec3p& col, const f32 r, const float rad, const f32 luminosity)
+            : position(pos), type(t), direction(dir), intensity(inten), colour(col), range(r), radius(rad), luminosity(luminosity) {}
+        OWC_FORCE_INLINE GPULightData(const Vec3p& pos, const u32 t, const Vec3p& dir, const f32 inten, const Vec3p& col, const f32 r, const float luminosity)
+            : position(pos), type(t), direction(dir), intensity(inten), colour(col), range(r), luminosity(luminosity) {}
 
         Vec3p position = Vec3p(0.0f);
         u32 type = ~0u;
@@ -67,7 +67,8 @@ namespace OWC
         f32 innerConeAngle = 0.0f;
         f32 outerConeAngle = 0.0f;
         float radius = 0.0f; // 0.0f for point light radius > 0.0f for sphere
-        u32 _[1] = { 0 }; // pad to 64 bytes
+        float luminosity = 0.0f;
+        //u32 _[1] = { 0 }; // pad to 64 bytes
     };
 
     struct AttributeData
