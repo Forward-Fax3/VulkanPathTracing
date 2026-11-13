@@ -64,6 +64,7 @@ foreach (TargetArch SSE4_2 AVX2 AVX512)
             SDL3_${TargetArch}
             ImGui_${TargetArch}
             Assimp_${TargetArch}
+            NRD_${TargetArch}
             ${Vulkan_LIBRARIES}
             ${Polly_LINK_FLAGS}
             ${TargetLinks}

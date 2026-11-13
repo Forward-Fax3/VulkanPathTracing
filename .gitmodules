@@ -17,3 +17,6 @@
 [submodule "OOPWithCpp/3rdParty/Projects/git/assimp"]
 	path = OOPWithCpp/3rdParty/Projects/git/assimp
 	url = https://github.com/assimp/assimp.git
+[submodule "OOPWithCpp/3rdParty/Projects/git/NRD"]
+	path = OOPWithCpp/3rdParty/Projects/git/NRD
+	url = https://github.com/NVIDIA-RTX/NRD.git
