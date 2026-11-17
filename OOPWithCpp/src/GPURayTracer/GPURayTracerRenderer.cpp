@@ -91,18 +91,12 @@ namespace OWC
 
 		m_UniformBuffer->UpdateBufferData(std::as_bytes(std::span<const UniformBufferObject>(&ubo, 1)));
 
-		std::array<std::string_view, 1> rayTracerWaitSemaphoreNames = { "PreviousFrameDisplayDone" };
-		std::array<std::string_view, 1> rayTracerSignalSemaphoreNames = { "RayTracerDone" };
-		std::array<std::string_view, 2> displayWaitSemaphoreNames = { "ImageReady", "RayTracerDone" };
-		std::array<std::string_view, 1> displaySignalSemaphoreNames = { "PreviousFrameDisplayDone" };
+		static constexpr std::array rayTracerWaitSemaphoreNames = { std::string_view{ "PreviousFrameDisplayDone" }, };
+		static constexpr std::array rayTracerSignalSemaphoreNames = { std::string_view{ "RayTracerDone" }, };
+		static constexpr std::array displayWaitSemaphoreNames = { std::string_view{ "ImageReady" }, std::string_view{ "RayTracerDone" }, };
+		static constexpr std::array displaySignalSemaphoreNames = { std::string_view{ "PreviousFrameDisplayDone" }, };
 
-		if (m_FirstFrame)
-		{
-			Renderer::SubmitRenderPass(m_RayTracingRenderPass, {}, rayTracerSignalSemaphoreNames);
-			m_FirstFrame = false;
-		}
-		else
-			Renderer::SubmitRenderPass(m_RayTracingRenderPass, {}, rayTracerSignalSemaphoreNames, rayTracerWaitSemaphoreNames);
+		Renderer::SubmitRenderPass(m_RayTracingRenderPass, {}, rayTracerSignalSemaphoreNames, rayTracerWaitSemaphoreNames);
 		Renderer::SubmitRenderPass(m_DisplayRenderPass, displayWaitSemaphoreNames, displaySignalSemaphoreNames);
 	}
 
@@ -641,7 +635,7 @@ namespace OWC
 
 		m_StratifiedPosition += m_NumberOfSamples;
 		GeneralGPUData generalGPUData {
-			.InvProjection = glm::inverse(projectionMatrix),
+			.InvProjection = glm::transpose(glm::inverse(projectionMatrix)),
 			.InvViewMatrix = glm::transpose(invView),
 			.randSeed = Rand::LinearFastRandValue(0u, std::numeric_limits<u32>::max()),
 			.stratifiedGridPosition = m_StratifiedPosition

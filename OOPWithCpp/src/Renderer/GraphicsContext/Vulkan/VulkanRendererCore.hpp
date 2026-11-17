@@ -1,4 +1,6 @@
 #pragma once
+#include <expected>
+
 #include "RendererCore.hpp"
 #include <vulkan/vulkan_raii.hpp>
 

@@ -1,4 +1,6 @@
-﻿#include "VulkanRenderPass.hpp"
+﻿#include <expected>
+
+#include "VulkanRenderPass.hpp"
 #include "VulkanRendererCore.hpp"
 #include "Application.hpp"
 
@@ -16,18 +18,12 @@ namespace OWC::Graphics
 	{
 		const VulkanCore& vkCore = VulkanCore::GetConstInstance();
 
-		const vk::Rect2D rect(
-			vk::Offset2D(0, 0),
-			{
-				Application::GetConstInstance().GetPixelWidth(),
-				Application::GetConstInstance().GetPixelHeight()
-			});
-
 		if (type == RenderPassType::Static)
 		{
 			m_CommandBuffers = vkCore.GetGraphicsCommandBuffer();
 			for (auto& cmdBuf : m_CommandBuffers)
-				cmdBuf.begin(vk::CommandBufferBeginInfo());
+				if (const auto& result = cmdBuf.begin(vk::CommandBufferBeginInfo()); !result)
+					Log<LogLevel::Critical>("Failed to begin command buffer: {}", vk::to_string(result.error()));
 		}
 		else if (type == RenderPassType::Dynamic)
 			m_CommandBuffers = vkCore.GetDynamicGraphicsCommandBuffer();
@@ -35,7 +31,8 @@ namespace OWC::Graphics
 		{
 			m_CommandBuffers = vkCore.GetComputeCommandBuffer();
 			for (auto& cmdBuf : m_CommandBuffers)
-				cmdBuf.begin(vk::CommandBufferBeginInfo());
+				if (const auto& result = cmdBuf.begin(vk::CommandBufferBeginInfo()); !result)
+					Log<LogLevel::Critical>("Failed to begin command buffer: {}", vk::to_string(result.error()));
 		}
 		else if (type == RenderPassType::DynamicRayTracing)
 			m_CommandBuffers = vkCore.GetDynamicComputeCommandBuffer();
@@ -207,7 +204,8 @@ namespace OWC::Graphics
 		}
 
 		const auto& cmdBuf = m_CommandBuffers[VulkanCore::GetConstInstance().GetCurrentFrameIndex()];
-		cmdBuf.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+		if (const auto& result = cmdBuf.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit)); !result)
+			Log<LogLevel::Critical>("Failed to begin command buffer: {}", vk::to_string(result.error()));
 	}
 
 	void VulkanRenderPass::BeginRasterPass()
@@ -404,19 +402,23 @@ namespace OWC::Graphics
 	void VulkanRenderPass::EndPass()
 	{
 		if (testBitMask(GetRenderPassType(), RenderPassType::Dynamic))
-			m_CommandBuffers[VulkanCore::GetConstInstance().GetCurrentFrameIndex()].end();
+		{
+			if (const auto& result = m_CommandBuffers[VulkanCore::GetConstInstance().GetCurrentFrameIndex()].end(); !result)
+				Log<LogLevel::Critical>("Failed to end command buffer: {}", vk::to_string(result.error()));
+		}
 		else
 			for (auto& cmdBuf : m_CommandBuffers)
-				cmdBuf.end();
+				if (const auto& result = cmdBuf.end(); !result)
+					Log<LogLevel::Critical>("Failed to end command buffer: {}", vk::to_string(result.error()));
 	}
 
-	void VulkanRenderPass::submitRenderPass(const std::span<std::string_view> waitSemaphoreNames, const std::span<std::string_view> startSemaphore, const std::span<std::string_view> waitPreviousFrameSemaphoreNames)
+	void VulkanRenderPass::submitRenderPass(const std::span<const std::string_view> waitSemaphoreNames, const std::span<const std::string_view> startSemaphore, const std::span<const std::string_view> waitPreviousFrameSemaphoreNames)
 	{
 		const auto& vkCore = VulkanCore::GetConstInstance();
 
-		const std::vector<vk::Semaphore> waitSemaphores = VulkanCore::GetSemaphoresFromNames(waitSemaphoreNames);
+		const std::vector<vk::Semaphore> waitSemaphores = VulkanCore::GetSemaphoresFromNames(waitSemaphoreNames, false);
 		const std::vector<vk::Semaphore> signalSemaphores = VulkanCore::GetSemaphoresFromNames(startSemaphore);
-		const std::vector<vk::Semaphore> waitPreviousFrameSemaphores = VulkanCore::GetPreviousFrameSemaphoresFromNames(waitPreviousFrameSemaphoreNames);
+		const std::vector<vk::Semaphore> waitPreviousFrameSemaphores = VulkanCore::GetPreviousFrameSemaphoresFromNames(waitPreviousFrameSemaphoreNames, false);
 
 		constexpr vk::PipelineStageFlags2 waitDestinationStageMask(vk::PipelineStageFlagBits2::eAllCommands);
 
@@ -472,17 +474,24 @@ namespace OWC::Graphics
 			submitInfo.setSignalSemaphoreInfos(signalSemaphoreSubmitInfo);
 		}
 
+		vk::ResultValueType<void>::type result;
 		if (testBitMask(GetRenderPassType(), RenderPassType::RayTracingBit))
-			vkCore.GetComputeQueue().submit2(submitInfo);
+			result = vkCore.GetComputeQueue().submit2(submitInfo);
 		else
-			vkCore.GetGraphicsQueue().submit2(submitInfo);
+			result = vkCore.GetGraphicsQueue().submit2(submitInfo);
+
+		if (!result)
+			Log<LogLevel::Critical>("Failed to submit command buffer: {}", vk::to_string(result.error()));
 	}
 
 	void VulkanRenderPass::RestartRenderPass()
 	{
 		const VulkanCore& vkCore = VulkanCore::GetConstInstance();
 		if (testBitMask(GetRenderPassType(), RenderPassType::Dynamic))
-			m_CommandBuffers[vkCore.GetCurrentFrameIndex()].reset(vk::CommandBufferResetFlags());
+		{
+			if (const auto& result = m_CommandBuffers[vkCore.GetCurrentFrameIndex()].reset(vk::CommandBufferResetFlags()); !result)
+				Log<LogLevel::Critical>("Failed to reset command buffer: {}", vk::to_string(result.error()));
+		}
 		else
 			Log<LogLevel::Critical>("RestartRenderPass can not be call on static render pass. This is not allowed.");
 	}
@@ -532,7 +541,7 @@ namespace OWC::Graphics
     	cmd.bindVertexBuffers(0, vulkanVertexBuffer->GetBuffer(), { 0 });
     	cmd.bindIndexBuffer(vulkanIndexBuffer->GetBuffer(), 0, vk::IndexType::eUint32);
 
-    	vk::Viewport viewport{};
+    	vk::Viewport viewport;
     	viewport.x = 0.0f;
     	viewport.y = 0.0f;
     	viewport.width = drawData->DisplaySize.x * drawData->FramebufferScale.x;
@@ -610,6 +619,7 @@ namespace OWC::Graphics
 
 	void VulkanRenderPass::WaitTillIdle()
 	{
-		VulkanCore::GetConstInstance().GetDevice().waitIdle();
+		if (const auto& result = VulkanCore::GetConstInstance().GetDevice().waitIdle(); !result)
+			Log<LogLevel::Critical>("Failed to wait for device idle: {}", vk::to_string(result.error()));
 	}
 }

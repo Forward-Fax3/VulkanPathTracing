@@ -1,4 +1,6 @@
 ﻿#pragma once
+#include <expected>
+
 #include "GraphicsContext.hpp"
 #include "Renderer.hpp"
 
@@ -49,10 +51,6 @@ namespace OWC::Graphics
 		void Resize() override { RecreateVulkanSwapchain(); RewriteCommandBuffers(); }
 		void RecreateSwapchain() override { RecreateVulkanSwapchain(); RewriteCommandBuffers(); }
 
-		void ImGuiInit() override;
-		void ImGuiShutdown() override;
-		void ImGuiNewFrame() override;
-
 	private:
 		static void StartInstance();
 #ifndef DIST
@@ -83,6 +81,7 @@ namespace OWC::Graphics
 
 		const WindowProperties& m_WindowProperties;
 
+		bool m_SwapChainNeedsRecreation = false;
 		bool m_IsMinimized = false;
 	};
 }

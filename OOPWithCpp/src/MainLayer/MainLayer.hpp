@@ -1,6 +1,4 @@
 ﻿#pragma once
-#include <vulkan/vulkan_raii.hpp>
-
 #include "Layer.hpp"
 #include "CPURayTracerRenderer.hpp"
 #include "CPURayTracer.hpp"

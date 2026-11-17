@@ -31,7 +31,7 @@ namespace OWC::Graphics
 		void RayTrace(const BaseShader& shader, u32 width, u32 height, u32 depth) override;
 		void EndRenderPass() override;
 		void EndPass() override;
-		void submitRenderPass(std::span<std::string_view> waitSemaphoreNames, std::span<std::string_view> startSemaphore, std::span<std::string_view> waitPreviousFrameSemaphoreNames) override;
+		void submitRenderPass(std::span<const std::string_view> waitSemaphoreNames, std::span<const std::string_view> startSemaphore, std::span<const std::string_view> waitPreviousFrameSemaphoreNames) override;
 
 		void RestartRenderPass() override;
 

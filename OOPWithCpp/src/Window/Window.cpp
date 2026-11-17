@@ -46,9 +46,7 @@ namespace OWC
 	void Window::Update() const
 	{
 		PollEvents();
-
-		if (!m_IsMinimized)
-			m_GraphicsContext->SwapPresentImage();
+		m_GraphicsContext->SwapPresentImage();
 
 #ifndef DIST
 		m_GraphicsContext->FlushValidationMessages();
@@ -99,20 +97,17 @@ namespace OWC
 
 	void Window::ImGuiInit() const
 	{
-		//ImGui_ImplSDL3_InitForVulkan(m_Window.get());
 		ImGui_ImplSDL3_InitForOther(m_Window.get());
 	}
 
 	void Window::ImGuiShutdown() const
 	{
 		m_GraphicsContext->WaitForIdle();
-		m_GraphicsContext->ImGuiShutdown();
 		ImGui_ImplSDL3_Shutdown();
 	}
 
 	void Window::ImGuiNewFrame() const
 	{
-		m_GraphicsContext->ImGuiNewFrame();
 		ImGui_ImplSDL3_NewFrame();
 	}
 

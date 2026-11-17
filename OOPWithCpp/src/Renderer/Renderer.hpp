@@ -78,7 +78,7 @@ namespace OWC::Graphics
 		void virtual RayTrace(const BaseShader& shader, u32 width, u32 height, u32 depth) = 0;
 		void virtual EndRenderPass() = 0;
 		void virtual EndPass() = 0;
-		void virtual submitRenderPass(std::span<std::string_view> waitSemaphoreNames, std::span<std::string_view> startSemaphore, std::span<std::string_view> waitPreviousFrameSemaphoreNames) = 0;
+		void virtual submitRenderPass(std::span<const std::string_view> waitSemaphoreNames, std::span<const std::string_view> startSemaphore, std::span<const std::string_view> waitPreviousFrameSemaphoreNames) = 0;
 
 		void virtual RestartRenderPass() = 0;
 
@@ -122,7 +122,7 @@ namespace OWC::Graphics
 		static void RayTrace(const std::shared_ptr<RenderPassData>& data, const BaseShader& shader, u32 width, u32 height, u32 depth);
 		static void EndRasterPass(const std::shared_ptr<RenderPassData>& data);
 		static void EndPass(const std::shared_ptr<RenderPassData>& data);
-		static void SubmitRenderPass(const std::shared_ptr<RenderPassData>& data, std::span<std::string_view> waitSemaphoreNames = {}, std::span<std::string_view> startSemaphoreNames = {}, std::span<std::string_view> waitPreviousFrameSemaphoreNames = {});
+		static void SubmitRenderPass(const std::shared_ptr<RenderPassData>& data, std::span<const std::string_view> waitSemaphoreNames = {}, std::span<const std::string_view> startSemaphoreNames = {}, std::span<const std::string_view> waitPreviousFrameSemaphoreNames = {});
 
 		static void RestartRenderPass(const std::shared_ptr<RenderPassData>& data);
 

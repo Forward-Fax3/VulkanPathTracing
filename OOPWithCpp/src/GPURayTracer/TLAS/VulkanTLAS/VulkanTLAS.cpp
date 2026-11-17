@@ -86,7 +86,10 @@ namespace OWC
             .setFlags(vma::AllocationCreateFlagBits::eCanAlias)
             .setMinAlignment(vkCore.GetAccelerationStructureProperties().minAccelerationStructureScratchOffsetAlignment);
 
-        vma::raii::Buffer scratchBuffer(allocator, scratchDataCreateInfo, scratchDataAllocInfo);
+        auto scratchBufferResult = allocator.createBuffer(scratchDataCreateInfo, scratchDataAllocInfo);
+        if (!scratchBufferResult)
+            Log<LogLevel::Critical>("Failed to create scratch buffer for Vulkan TLAS. Error: {}", vk::to_string(scratchBufferResult.error()));
+        const vma::raii::Buffer& scratchBuffer = scratchBufferResult.value();
 
         constexpr auto bufferUsageInfo2 = vk::BufferUsageFlags2CreateInfo()
             .setUsage(
@@ -106,7 +109,10 @@ namespace OWC
             .setFlags(vma::AllocationCreateFlagBits::eCanAlias)
             .setMinAlignment(vkCore.GetAccelerationStructureProperties().minAccelerationStructureScratchOffsetAlignment);
 
-        vma::raii::Buffer scratchTLASBuffer(allocator, bufferInfo, allocInfo);
+        auto scratchTLASBufferResult = allocator.createBuffer(bufferInfo, allocInfo);
+        if (!scratchTLASBufferResult)
+            Log<LogLevel::Critical>("Failed to create scratch buffer for Vulkan TLAS. Error: {}", vk::to_string(scratchTLASBufferResult.error()));
+        const vma::raii::Buffer& scratchTLASBuffer = scratchTLASBufferResult.value();
 
         auto accelerationStructureCreateInfo = vk::AccelerationStructureCreateInfoKHR()
             .setType(vk::AccelerationStructureTypeKHR::eTopLevel)
@@ -114,11 +120,13 @@ namespace OWC
             .setBuffer(*scratchTLASBuffer);
 
         auto scratchTLAS = device.createAccelerationStructureKHR(accelerationStructureCreateInfo);
+        if (!scratchTLAS)
+            Log<LogLevel::Critical>("Failed to create scratch TLAS for Vulkan TLAS. Error: {}", vk::to_string(scratchTLAS.error()));
 
-        OWC::Log<LogLevel::Trace>("created scratch TLAS: ID: 0x{:x}", std::bit_cast<u64>(std::bit_cast<const VkAccelerationStructureKHR>(*scratchTLAS)));
+        OWC::Log<LogLevel::Trace>("created scratch TLAS: ID: 0x{:x}", std::bit_cast<u64>(std::bit_cast<const VkAccelerationStructureKHR>(*scratchTLAS.value())));
 
         buildInfo.setScratchData(vk::DeviceOrHostAddressKHR().setDeviceAddress(vkCore.GetDevice().getBufferAddress(vk::BufferDeviceAddressInfo().setBuffer(*scratchBuffer))))
-            .setDstAccelerationStructure(scratchTLAS);
+            .setDstAccelerationStructure(scratchTLAS.value());
 
         auto cmd = vkCore.GetSingleTimeComputeCommandBuffer();
         constexpr auto barrierData = vk::MemoryBarrier2()
@@ -129,21 +137,26 @@ namespace OWC
 
         const auto buildRangesPtr = &accelerationStructureBuildRangeInfo;
 
-        cmd.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+        if (const auto beginResult = cmd.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit)); !beginResult)
+            Log<LogLevel::Critical>("Failed to begin Vulkan command buffer: {}", vk::to_string(beginResult.error()));
         cmd.buildAccelerationStructuresKHR(buildInfo, buildRangesPtr);
         cmd.pipelineBarrier2(vk::DependencyInfo().setMemoryBarriers(barrierData));
-        cmd.end();
-        
+        if (const auto endResult = cmd.end(); !endResult)
+            Log<LogLevel::Critical>("Failed to end Vulkan command buffer: {}", vk::to_string(endResult.error()));
+
         auto fence = device.createFence(vk::FenceCreateInfo());
+        if (!fence)
+            Log<LogLevel::Critical>("Failed to create fence for Vulkan TLAS build. Error: {}", vk::to_string(fence.error()));
         auto cmdSubmitInfo = vk::CommandBufferSubmitInfo().setCommandBuffer(cmd);
-        vkCore.GetComputeQueue().submit2(vk::SubmitInfo2().setCommandBufferInfos(cmdSubmitInfo), *fence);
-        if (device.waitForFences(*fence, VK_TRUE, std::numeric_limits<uint64_t>::max()) != vk::Result::eSuccess)
-            Log<LogLevel::Critical>("Failed to wait for acceleration structure build fence");
+        if (const auto submitResult = vkCore.GetComputeQueue().submit2(vk::SubmitInfo2().setCommandBufferInfos(cmdSubmitInfo), *fence); !submitResult)
+            Log<LogLevel::Critical>("Failed to submit Vulkan command buffer: {}", vk::to_string(submitResult.error()));
+        if (const auto waitFenceResult = device.waitForFences(*fence.value(), VK_TRUE, std::numeric_limits<uint64_t>::max()); waitFenceResult != vk::Result::eSuccess)
+            Log<LogLevel::Critical>("Failed to wait for acceleration structure build fence: {}", vk::to_string(waitFenceResult));
         
         // Skip TLAS compaction — the TLAS is tiny (~35KB) and compact-copy on AMD RX 9070 XT
         // causes GPU-AV VUID-RuntimeSpirv-OpRayQueryInitializeKHR-06352 (AS reported as "not built").
-        m_TLASBuffer = std::move(scratchTLASBuffer);
-        m_TLAS = std::move(scratchTLAS);
+        m_TLASBuffer = std::move(scratchTLASBufferResult).value();
+        m_TLAS = std::move(scratchTLAS).value();
 
         //// TLAS compaction (commented out — see above)
         // vk::raii::QueryPool queryPool(device, vk::QueryPoolCreateInfo()
@@ -276,7 +289,10 @@ namespace OWC
             .setSharingMode(vk::SharingMode::eConcurrent)
             .setQueueFamilyIndices(queueIndices);
 
-        vma::raii::Buffer scratchBuffer(allocator, scratchBufferCreateInfo, allocInfo);
+        auto scratchBufferResult = allocator.createBuffer(scratchBufferCreateInfo, allocInfo);
+        if (!scratchBufferResult)
+            Log<LogLevel::Critical>("Failed to create scratch buffer for Vulkan TLAS build. Error: {}", vk::to_string(scratchBufferResult.error()));
+        const auto& scratchBuffer = scratchBufferResult.value();
 
         constexpr auto bufferUsageInfo2 = vk::BufferUsageFlags2CreateInfo()
             .setUsage(
@@ -291,7 +307,10 @@ namespace OWC
             .setSharingMode(vk::SharingMode::eConcurrent)
             .setQueueFamilyIndices(queueIndices);
 
-        auto scratchBLASBuffer = vma::raii::Buffer(allocator, bufferInfo, allocInfo);
+        auto scratchBLASBufferResult = allocator.createBuffer(bufferInfo, allocInfo);
+        if (!scratchBLASBufferResult)
+            Log<LogLevel::Critical>("Failed to create scratch buffer for Vulkan TLAS build. Error: {}", vk::to_string(scratchBLASBufferResult.error()));
+        const auto& scratchBLASBuffer = scratchBLASBufferResult.value();
 
         vk::DeviceSize scratchBufferOffset = 0;
         vk::DeviceSize scratchBLASesOffset = 0;
@@ -315,7 +334,10 @@ namespace OWC
                 .setBuffer(scratchBLASBuffer)
                 .setOffset(scratchBLASesOffset);
 
-            scratchBLASes.emplace_back(device.createAccelerationStructureKHR(accelerationStructureCreateInfo));
+            auto scratchBLASResult = device.createAccelerationStructureKHR(accelerationStructureCreateInfo);
+            if (!scratchBLASResult)
+                Log<LogLevel::Critical>("Failed to create scratch BLAS for Vulkan TLAS build. Error: {}", vk::to_string(scratchBLASResult.error()));
+            scratchBLASes.emplace_back(std::move(scratchBLASResult).value());
 
             buildGeometryInfos.emplace_back(vk::AccelerationStructureTypeKHR::eBottomLevel,
                 (vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace | vk::BuildAccelerationStructureFlagBitsKHR::eAllowCompaction | vk::BuildAccelerationStructureFlagBitsKHR::eAllowDataAccess),
@@ -339,27 +361,34 @@ namespace OWC
 
         auto cmd = vkCore.GetSingleTimeComputeCommandBuffer();
 
-        vk::raii::QueryPool queryPool(device, vk::QueryPoolCreateInfo()
+        auto queryPoolResult = device.createQueryPool(vk::QueryPoolCreateInfo()
             .setQueryType(vk::QueryType::eAccelerationStructureCompactedSizeKHR)
             .setQueryCount(scratchBLASes.size()));
+        if (!queryPoolResult)
+            Log<LogLevel::Critical>("Failed to create query pool for Vulkan TLAS build. Error: {}", vk::to_string(queryPoolResult.error()));
 
         auto BLASesNonOwning = std::ranges::to<std::vector<vk::AccelerationStructureKHR>>(scratchBLASes | std::views::transform([](const auto& blas) { return *blas; }));
 
-        cmd.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+        if (const auto cmdBeginResult = cmd.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit)); !cmdBeginResult)
+            Log<LogLevel::Critical>("Failed to begin single time compute command buffer for Vulkan TLAS build. Error: {}", vk::to_string(cmdBeginResult.error()));
         cmd.buildAccelerationStructuresKHR(buildGeometryInfos, buildRangeInfos);
-        cmd.resetQueryPool(*queryPool, 0, buildGeometryInfos.size());
-        cmd.writeAccelerationStructuresPropertiesKHR(BLASesNonOwning, vk::QueryType::eAccelerationStructureCompactedSizeKHR, *queryPool, 0);
-        cmd.end();
+        cmd.resetQueryPool(*queryPoolResult.value(), 0, buildGeometryInfos.size());
+        cmd.writeAccelerationStructuresPropertiesKHR(BLASesNonOwning, vk::QueryType::eAccelerationStructureCompactedSizeKHR, *queryPoolResult.value(), 0);
+        if (const auto cmdEndResult = cmd.end(); !cmdEndResult)
+            Log<LogLevel::Critical>("Failed to end single time compute command buffer for Vulkan TLAS build. Error: {}", vk::to_string(cmdEndResult.error()));
 
         auto fence = device.createFence(vk::FenceCreateInfo());
+        if (!fence)
+            Log<LogLevel::Critical>("Failed to create fence for Vulkan TLAS build. Error: {}", vk::to_string(fence.error()));
         auto cmdSubmitInfo = vk::CommandBufferSubmitInfo().setCommandBuffer(cmd);
-        vkCore.GetComputeQueue().submit2(vk::SubmitInfo2().setCommandBufferInfos(cmdSubmitInfo), *fence);
-        if(device.waitForFences(*fence, VK_TRUE, std::numeric_limits<uint64_t>::max()) != vk::Result::eSuccess)
+        if (const auto submitResult = vkCore.GetComputeQueue().submit2(vk::SubmitInfo2().setCommandBufferInfos(cmdSubmitInfo), *fence.value()); !submitResult)
+            Log<LogLevel::Critical>("Failed to submit command buffer for Vulkan TLAS build. Error: {}", vk::to_string(submitResult.error()));
+        if(device.waitForFences(*fence.value(), VK_TRUE, std::numeric_limits<uint64_t>::max()) != vk::Result::eSuccess)
             Log<LogLevel::Critical>("Failed to wait for acceleration structure build fence");
 
-        const auto [result, sizes] = (*device).getQueryPoolResults<vk::DeviceSize>(*queryPool, 0, scratchBLASes.size(), sizeof(vk::DeviceSize) * scratchBLASes.size(), sizeof(vk::DeviceSize));
+        const auto [result, sizes] = (*device).getQueryPoolResults<vk::DeviceSize>(*queryPoolResult.value(), 0, scratchBLASes.size(), sizeof(vk::DeviceSize) * scratchBLASes.size(), sizeof(vk::DeviceSize));
         if (result != vk::Result::eSuccess)
-            Log<LogLevel::Critical>("Failed to get compacted size for BLASes");
+            Log<LogLevel::Critical>("Failed to get compacted size for BLASes. Error: {}", vk::to_string(result));
 
         vk::DeviceSize trueBLASesSize = 0;
 
@@ -367,14 +396,18 @@ namespace OWC
             trueBLASesSize += alignUp(size, accelerationStructureAlignment);
 
         bufferInfo.setSize(trueBLASesSize);
-        m_BLASesBuffer = vma::raii::Buffer(allocator, bufferInfo, allocInfo);
+        auto BLASesBufferResult = allocator.createBuffer(bufferInfo, allocInfo);
+        if (!BLASesBufferResult)
+            Log<LogLevel::Critical>("Failed to create buffer for compacted BLASes. Error: {}", vk::to_string(BLASesBufferResult.error()));
+        m_BLASesBuffer = std::move(BLASesBufferResult).value();
 
         m_BLASSes.reserve(meshes.size());
 
         vk::DeviceSize trueBLASesSizeOffset = 0;
 
         cmd = vkCore.GetSingleTimeComputeCommandBuffer();
-        cmd.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+        if (const auto cmdResult = cmd.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit)); !cmdResult)
+            Log<LogLevel::Critical>("Failed to begin command buffer for Vulkan TLAS build. Error: {}", vk::to_string(cmdResult.error()));
 
         for (uSize i = 0; i < meshes.size(); i++)
         {
@@ -389,7 +422,10 @@ namespace OWC
 
             trueBLASesSizeOffset += alignUp(sizes[i], accelerationStructureAlignment);
 
-            m_BLASSes.emplace_back(device.createAccelerationStructureKHR(accelerationStructureCreateInfo));
+            auto BLASResult = device.createAccelerationStructureKHR(accelerationStructureCreateInfo);
+            if (!BLASResult)
+                Log<LogLevel::Critical>("Failed to create BLAS for mesh {}. Error: {}", meshIndex, vk::to_string(BLASResult.error()));
+            m_BLASSes.emplace_back(std::move(BLASResult).value());
 
             vk::CopyAccelerationStructureInfoKHR copyAccelerationStructureInfo(
                 *scratchBLASes[i],
@@ -411,12 +447,15 @@ namespace OWC
             .setDstAccessMask(vk::AccessFlagBits2::eAccelerationStructureReadKHR);
 
         cmd.pipelineBarrier2(vk::DependencyInfo().setMemoryBarriers(barrierDataCopy));
-        cmd.end();
+        if (const auto cmdResult = cmd.end(); !cmdResult)
+            Log<LogLevel::Critical>("Failed to end command buffer for Vulkan TLAS build. Error: {}", vk::to_string(cmdResult.error()));
 
-        device.resetFences(*fence);
+        if (const auto fenceResult = device.resetFences(*fence.value()); !fenceResult)
+            Log<LogLevel::Critical>("Failed to reset acceleration structure copy fence. Error: {}", vk::to_string(fenceResult.error()));
         cmdSubmitInfo = vk::CommandBufferSubmitInfo().setCommandBuffer(cmd);
-        vkCore.GetComputeQueue().submit2(vk::SubmitInfo2().setCommandBufferInfos(cmdSubmitInfo), *fence);
-        if(device.waitForFences(*fence, VK_TRUE, std::numeric_limits<uint64_t>::max()) != vk::Result::eSuccess)
+        if (const auto submitResult = vkCore.GetComputeQueue().submit2(vk::SubmitInfo2().setCommandBufferInfos(cmdSubmitInfo), *fence.value()); !submitResult)
+            Log<LogLevel::Critical>("Failed to submit command buffer for Vulkan TLAS build. Error: {}", vk::to_string(submitResult.error()));
+        if(device.waitForFences(*fence.value(), VK_TRUE, std::numeric_limits<uint64_t>::max()) != vk::Result::eSuccess)
             Log<LogLevel::Critical>("Failed to wait for acceleration structure copy fence");
     }
 

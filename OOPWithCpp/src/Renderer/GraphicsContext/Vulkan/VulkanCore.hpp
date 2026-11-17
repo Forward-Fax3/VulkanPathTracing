@@ -1,12 +1,37 @@
 ﻿#pragma once
 #include "Core.hpp"
+
+#include <expected>
+
 #include "Log.hpp"
 #include "Renderer.hpp"
 #include "VulkanRenderPass.hpp"
 
 #include <vulkan/vulkan_raii.hpp>
 #define VMA_VULKAN_VERSION 1004000
+#if defined(__clang__)
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wnullability-completeness"
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wnullability-extension"
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wmissing-field-initializers"
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wunused-parameter"
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wunused-variable"
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wunused-private-field"
+#endif
 #include "vk_mem_alloc_raii.hpp"
+#if defined(__clang__)
+#  pragma clang diagnostic pop
+#  pragma clang diagnostic pop
+#  pragma clang diagnostic pop
+#  pragma clang diagnostic pop
+#  pragma clang diagnostic pop
+#  pragma clang diagnostic pop
+#endif
 
 #include <list>
 #include <mutex>
@@ -82,16 +107,20 @@ namespace OWC::Graphics
 				m_FreeIndexReusable.reserve(m_PoolCount);
 				for (size_t i = 0; i < m_PoolCount; i++)
 				{
-					m_Pools.emplace_back(device, vk::CommandPoolCreateInfo().setQueueFamilyIndex(vkCore.m_TransferQueueFamilyIndex));
+					auto result = device.createCommandPool(vk::CommandPoolCreateInfo().setQueueFamilyIndex(vkCore.m_TransferQueueFamilyIndex));
+					if (!result)
+						Log<LogLevel::Critical>("Failed to create transfer command pool {}. Error: {}", i, vk::to_string(result.error()));
+					m_Pools.emplace_back(std::move(result).value());
 					Log<LogLevel::Trace>("Created transfer command pool {} with handle {}", i, static_cast<void*>(*m_Pools.back()));
 					m_FreeIndex.emplace_back(static_cast<u32>(i));
 				}
 
 				for (size_t i = 0; i < m_PoolCount; i++)
 				{
-					m_Pools.emplace_back(device, vk::CommandPoolCreateInfo()
-						.setQueueFamilyIndex(vkCore.m_TransferQueueFamilyIndex)
-						.setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer));
+					auto result = device.createCommandPool(vk::CommandPoolCreateInfo().setQueueFamilyIndex(vkCore.m_TransferQueueFamilyIndex).setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer));
+					if (!result)
+						Log<LogLevel::Critical>("Failed to create reusable transfer command pool {}. Error: {}", i + m_PoolCount, vk::to_string(result.error()));
+					m_Pools.emplace_back(std::move(result).value());
 					Log<LogLevel::Trace>("Created reusable transfer command pool {} with handle {}", i + m_PoolCount, static_cast<void*>(*m_Pools.back()));
 
 					m_FreeIndexReusable.emplace_back(static_cast<u32>(i) + m_PoolCount);
@@ -150,8 +179,8 @@ namespace OWC::Graphics
 		[[nodiscard]] vk::raii::CommandBuffer GetSingleTimeReusableComputeCommandBuffer() const;
 		[[nodiscard]] OWC_FORCE_INLINE vk::raii::CommandBuffer GetSingleTimeReusableTransferCommandBuffer(const TransferPoolToken& token) const { return GetSingleTimeTransferCommandBuffer(token); }
 
-		[[nodiscard]] static std::vector<vk::Semaphore> GetSemaphoresFromNames(std::span<std::string_view> semaphoreNames);
-		[[nodiscard]] static  std::vector<vk::Semaphore> GetPreviousFrameSemaphoresFromNames(std::span<std::string_view> semaphoreNames);
+		[[nodiscard]] static std::vector<vk::Semaphore> GetSemaphoresFromNames(std::span<const std::string_view> semaphoreNames, bool createIfNotFound = true);
+		[[nodiscard]] static  std::vector<vk::Semaphore> GetPreviousFrameSemaphoresFromNames(std::span<const std::string_view> semaphoreNames, bool createIfNotFound = true);
 		[[nodiscard]] vk::raii::Semaphore GetSingleSemaphore() const;
 
 		[[nodiscard]] u32 FindMemoryType(vk::DeviceSize size, vk::MemoryPropertyFlags properties) const;
@@ -213,7 +242,7 @@ namespace OWC::Graphics
 		OWC_FORCE_INLINE static void SetDynamicComputeCommandPool(vk::raii::CommandPool&& commandPool) { s_Instance->m_DynamicComputeCommandPool = std::move(commandPool); }
 		OWC_FORCE_INLINE static void SetSwapchainImageFormat(const vk::Format& format) { s_Instance->m_SwapchainImageFormat = format; }
 		OWC_FORCE_INLINE static void SetImGuiDescriptorPool(vk::raii::DescriptorPool&& pool) { s_Instance->m_ImGuiDescriptorPool = std::move(pool);  }
-		OWC_FORCE_INLINE static void SetSwapchain(vk::raii::SwapchainKHR&& swapchain) { s_Instance->m_Swapchain = std::move(swapchain); s_Instance->m_SwapchainImages = s_Instance->m_Swapchain.getImages(); }
+		OWC_FORCE_INLINE static void SetSwapchain(vk::raii::SwapchainKHR&& swapchain) { s_Instance->m_Swapchain = std::move(swapchain); s_Instance->m_SwapchainImages = s_Instance->m_Swapchain.getImages().value(); }
 		OWC_FORCE_INLINE static void SetSwapchainImageViews(std::vector<vk::raii::ImageView>&& swapchainImageViews) { s_Instance->m_SwapchainImageViews = std::move(swapchainImageViews); }
 		OWC_FORCE_INLINE static void SetCurrentFrameIndex(const uSize newIndex) { s_Instance->m_CurrentFrameIndex = newIndex; }
 		OWC_FORCE_INLINE static void SetPreviousFrameIndex(const uSize newIndex) { s_Instance->m_PreviousFrameIndex = newIndex; }
@@ -270,10 +299,10 @@ namespace OWC::Graphics
 			s_Instance->m_Semaphores.clear();
 		}
 
-		OWC_FORCE_INLINE void SubmitTransferCommandBuffer(const vk::SubmitInfo2& info, const vk::Fence& fence = {}) const
+		OWC_FORCE_INLINE auto SubmitTransferCommandBuffer(const vk::SubmitInfo2& info, const vk::Fence& fence = {}) const
 		{
 			std::unique_lock lock(m_TransferCommandQueueMutex);
-			m_TransferQueue.submit2(info, fence);
+			return m_TransferQueue.submit2(info, fence);
 		}
 
 		OWC_FORCE_INLINE void ReturnTransferPoolToken(const TransferPoolToken& token) const
@@ -314,7 +343,7 @@ namespace OWC::Graphics
 
 		vma::raii::Allocator m_Allocator = nullptr;
 
-		std::vector<std::map<std::string, vk::raii::Semaphore>> m_Semaphores{};
+		std::vector<std::unordered_map<std::string, vk::raii::Semaphore>> m_Semaphores{};
 		uSize m_CurrentFrameIndex = 0;
 		uSize m_PreviousFrameIndex = 0;
 

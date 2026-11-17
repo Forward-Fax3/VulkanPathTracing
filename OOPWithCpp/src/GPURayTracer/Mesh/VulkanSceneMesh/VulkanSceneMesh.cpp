@@ -14,7 +14,6 @@
 
 #include "glm/gtc/type_ptr.hpp"
 
-#include <algorithm>
 #include <cstring>
 
 static constexpr OWC::i32 DEFAULT_TRIANGLES = -1l;

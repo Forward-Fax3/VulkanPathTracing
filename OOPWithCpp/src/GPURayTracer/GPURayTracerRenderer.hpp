@@ -59,7 +59,7 @@ namespace OWC
         std::shared_ptr<Graphics::UniformBuffer> m_RayTracingGPUDataBuffer = nullptr;
         uSize m_NumberOfAccumulatedSamples = 0;
 
-        float m_HFOV = 140.0f;
+        float m_HFOV = 60.0f;
         Vec3 m_CameraPosition = Vec3(1.0f, 0.2f, 0.0f);
         Vec3 m_CameraRotation = Vec3(0.0f, -90.0f, 0.0f);
         float m_MoveSpeed = 1.0f;

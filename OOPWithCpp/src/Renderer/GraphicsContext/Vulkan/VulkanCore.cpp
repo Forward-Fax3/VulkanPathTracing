@@ -56,7 +56,7 @@ namespace OWC::Graphics
 				return;
 			}
 
-			if (const auto runtimeVersion = vk::enumerateInstanceVersion(); runtimeVersion < g_VulkanVersion)
+			if (const auto runtimeVersion = vk::enumerateInstanceVersion().value_or(0); runtimeVersion < g_VulkanVersion)
 				Log<LogLevel::Critical>("Vulkan runtime version {}.{}.{} is lower than the required version {}.{}.{}",
 					VK_VERSION_MAJOR(runtimeVersion), VK_VERSION_MINOR(runtimeVersion), VK_VERSION_PATCH(runtimeVersion),
 					VK_VERSION_MAJOR(g_VulkanVersion), VK_VERSION_MINOR(g_VulkanVersion), VK_VERSION_PATCH(g_VulkanVersion));
@@ -74,11 +74,13 @@ namespace OWC::Graphics
 			.setLevel(vk::CommandBufferLevel::ePrimary)
 			.setCommandBufferCount(static_cast<u32>(m_SwapchainImageViews.size()))
 		);
+		if (!commandBuffers)
+			Log<LogLevel::Critical>("Failed to allocate graphics command buffers. Error: {}", vk::to_string(commandBuffers.error()));
 
-		for (const auto& cmdBuf : commandBuffers)
+		for (const auto& cmdBufs = commandBuffers.value(); const auto& cmdBuf : cmdBufs)
 			Log<LogLevel::Debug>("Created graphics command buffer: ID: 0x{:x}", std::bit_cast<const uint64_t>(std::bit_cast<const VkCommandBuffer>(*cmdBuf)));
 
-		return commandBuffers;
+		return std::move(commandBuffers).value();
 	}
 
 	std::vector<vk::raii::CommandBuffer> VulkanCore::GetComputeCommandBuffer() const
@@ -89,7 +91,10 @@ namespace OWC::Graphics
 				.setLevel(vk::CommandBufferLevel::ePrimary)
 				.setCommandBufferCount(static_cast<u32>(m_SwapchainImageViews.size()))
 		);
-		return commandBuffers;
+		if (!commandBuffers)
+			Log<LogLevel::Critical>("Failed to allocate compute command buffers. Error: {}", vk::to_string(commandBuffers.error()));
+
+		return std::move(commandBuffers).value();
 	}
 
 	std::vector<vk::raii::CommandBuffer> VulkanCore::GetTransferCommandBuffer(const TransferPoolToken& token) const
@@ -106,7 +111,10 @@ namespace OWC::Graphics
 				.setLevel(vk::CommandBufferLevel::ePrimary)
 				.setCommandBufferCount(static_cast<u32>(m_SwapchainImageViews.size()))
 		);
-		return commandBuffers;
+		if (!commandBuffers)
+			Log<LogLevel::Critical>("Failed to allocate transfer command buffers. Error: {}", vk::to_string(commandBuffers.error()));
+
+		return std::move(commandBuffers).value();
 	}
 
 	std::vector<vk::raii::CommandBuffer> VulkanCore::GetDynamicGraphicsCommandBuffer() const
@@ -117,11 +125,12 @@ namespace OWC::Graphics
 			.setLevel(vk::CommandBufferLevel::ePrimary)
 			.setCommandBufferCount(static_cast<u32>(m_SwapchainImageViews.size()))
 		);
+		if (!commandBuffers)
+			Log<LogLevel::Critical>("Failed to allocate dynamic graphics command buffers. Error: {}", vk::to_string(commandBuffers.error()));
 
-		for (const auto& cmdbuf : commandBuffers)
+		for (const auto& cmdBufs = commandBuffers.value(); const auto& cmdbuf : cmdBufs)
 			Log<LogLevel::Debug>("Allocated dynamic graphics command buffer: ID: 0x{:x}", std::bit_cast<const uint64_t>(std::bit_cast<const VkCommandBuffer>(*cmdbuf)));
-
-		return commandBuffers;
+		return std::move(commandBuffers).value();
 	}
 
 	std::vector<vk::raii::CommandBuffer> VulkanCore::GetDynamicComputeCommandBuffer() const
@@ -132,31 +141,37 @@ namespace OWC::Graphics
 			.setLevel(vk::CommandBufferLevel::ePrimary)
 			.setCommandBufferCount(static_cast<u32>(m_SwapchainImageViews.size()))
 		);
-		return commandBuffers;
+		if (!commandBuffers)
+			Log<LogLevel::Critical>("Failed to allocate dynamic compute command buffers. Error: {}", vk::to_string(commandBuffers.error()));
+		return std::move(commandBuffers).value();
 	}
 
 	vk::raii::CommandBuffer VulkanCore::GetSingleTimeGraphicsCommandBuffer() const
 	{
 		std::unique_lock lock(m_SingleUseGraphicsCommandPoolMutex);
 
-		return std::move(m_Device.allocateCommandBuffers(
+		auto cmdBuf = m_Device.allocateCommandBuffers(
 			vk::CommandBufferAllocateInfo()
 			.setCommandPool(*m_GraphicsCommandPool)
 			.setLevel(vk::CommandBufferLevel::ePrimary)
-			.setCommandBufferCount(1)
-		)[0]);
+			.setCommandBufferCount(1));
+		if (!cmdBuf)
+			Log<LogLevel::Critical>("Failed to allocate command buffer: Error: {}", vk::to_string(cmdBuf.error()));
+		return std::move(cmdBuf.value()[0]);
 	}
 
 	vk::raii::CommandBuffer VulkanCore::GetSingleTimeComputeCommandBuffer() const
 	{
 		std::unique_lock lock(m_SingleUseComputeCommandPoolMutex);
 
-		return std::move(m_Device.allocateCommandBuffers(
+		auto cmdBuf = m_Device.allocateCommandBuffers(
 			vk::CommandBufferAllocateInfo()
 			.setCommandPool(*m_ComputeCommandPool)
 			.setLevel(vk::CommandBufferLevel::ePrimary)
-			.setCommandBufferCount(1)
-		)[0]);
+			.setCommandBufferCount(1));
+		if (!cmdBuf)
+			Log<LogLevel::Critical>("Failed to allocate command buffer: Error: {}", vk::to_string(cmdBuf.error()));
+		return std::move(cmdBuf.value()[0]);
 	}
 
 	vk::raii::CommandBuffer VulkanCore::GetSingleTimeTransferCommandBuffer(const TransferPoolToken& token) const
@@ -167,35 +182,43 @@ namespace OWC::Graphics
 			return nullptr;
 		}
 
-		return std::move(m_Device.allocateCommandBuffers(
-			vk::CommandBufferAllocateInfo()
+		auto cmdBuf = m_Device.allocateCommandBuffers(vk::CommandBufferAllocateInfo()
 			.setCommandPool(m_TransferPoolRing->GetPool(token))
 			.setLevel(vk::CommandBufferLevel::ePrimary)
-			.setCommandBufferCount(1)
-		)[0]);
+			.setCommandBufferCount(1));
+		if (!cmdBuf)
+			Log<LogLevel::Critical>("Failed to allocate command buffer: Error: {}", vk::to_string(cmdBuf.error()));
+
+		return std::move(cmdBuf.value()[0]);
 	}
 
 	vk::raii::CommandBuffer VulkanCore::GetSingleTimeReusableGraphicsCommandBuffer() const
 	{
-		return std::move(m_Device.allocateCommandBuffers(
+		auto cmdBuf = m_Device.allocateCommandBuffers(
 			vk::CommandBufferAllocateInfo()
 			.setCommandPool(*m_DynamicGraphicsCommandPool)
 			.setLevel(vk::CommandBufferLevel::ePrimary)
 			.setCommandBufferCount(1)
-		)[0]);
+		);
+		if (!cmdBuf)
+			Log<LogLevel::Critical>("Failed to allocate command buffer: Error: {}", vk::to_string(cmdBuf.error()));
+		return std::move(cmdBuf.value()[0]);
 	}
 
 	vk::raii::CommandBuffer VulkanCore::GetSingleTimeReusableComputeCommandBuffer() const
 	{
-		return std::move(m_Device.allocateCommandBuffers(
+		auto cmdBuf = m_Device.allocateCommandBuffers(
 			vk::CommandBufferAllocateInfo()
 			.setCommandPool(*m_DynamicComputeCommandPool)
 			.setLevel(vk::CommandBufferLevel::ePrimary)
 			.setCommandBufferCount(1)
-		)[0]);
+		);
+		if (!cmdBuf)
+			Log<LogLevel::Critical>("Failed to allocate command buffer: Error: {}", vk::to_string(cmdBuf.error()));
+		return std::move(cmdBuf.value()[0]);
 	}
 
-	std::vector<vk::Semaphore> VulkanCore::GetSemaphoresFromNames(const std::span<std::string_view> semaphoreNames)
+	std::vector<vk::Semaphore> VulkanCore::GetSemaphoresFromNames(const std::span<const std::string_view> semaphoreNames, const bool createIfNotFound /*= true */)
 	{
 		if (semaphoreNames.empty())
 			return {};
@@ -208,15 +231,18 @@ namespace OWC::Graphics
 			if (auto it = s_Instance->m_Semaphores[s_Instance->m_CurrentFrameIndex].find(std::string(name));
 				it != s_Instance->m_Semaphores[s_Instance->m_CurrentFrameIndex].end())
 				semaphores.emplace_back(*it->second);
-
+			else if (!createIfNotFound)
+				Log<LogLevel::Trace>("Semaphore with name '{}' not found in current frame semaphores.", name);
 			else
 			{
 				for (uSize i = 0; i < s_Instance->m_SwapchainImageViews.size(); ++i)
 				{
 					constexpr auto semaphoreCreateInfo = vk::SemaphoreCreateInfo().setFlags(vk::SemaphoreCreateFlags());
 					auto semaphore = s_Instance->m_Device.createSemaphore(semaphoreCreateInfo);
-					Log<LogLevel::Debug>("Created semaphore: name: {}, ID: 0x{:x}", name, std::bit_cast<uint64_t>(static_cast<VkSemaphore>(*semaphore)));
-					s_Instance->m_Semaphores[i].insert_or_assign(std::string(name), std::move(semaphore));
+					if (!semaphore)
+						Log<LogLevel::Critical>("Failed to create semaphore: name: {}, Error: {}", name, vk::to_string(semaphore.error()));
+					Log<LogLevel::Debug>("Created semaphore: name: {}, ID: 0x{:x}", name, std::bit_cast<uint64_t>(static_cast<VkSemaphore>(*semaphore.value())));
+					s_Instance->m_Semaphores[i].insert_or_assign(std::string(name), std::move(semaphore).value());
 				}
 				semaphores.emplace_back(*s_Instance->m_Semaphores[s_Instance->m_CurrentFrameIndex].at(std::string(name)));
 			}
@@ -225,7 +251,7 @@ namespace OWC::Graphics
 		return semaphores;
 	}
 
-	std::vector<vk::Semaphore> VulkanCore::GetPreviousFrameSemaphoresFromNames(const std::span<std::string_view> semaphoreNames)
+	std::vector<vk::Semaphore> VulkanCore::GetPreviousFrameSemaphoresFromNames(const std::span<const std::string_view> semaphoreNames, const bool createIfNotFound /*= true */)
 	{
 		if (semaphoreNames.empty())
 			return {};
@@ -238,15 +264,18 @@ namespace OWC::Graphics
 			if (auto it = s_Instance->m_Semaphores[s_Instance->m_PreviousFrameIndex].find(std::string(name));
 				it != s_Instance->m_Semaphores[s_Instance->m_PreviousFrameIndex].end())
 				semaphores.emplace_back(*it->second);
-
+			else if (!createIfNotFound)
+				Log<LogLevel::Trace>("Semaphore with name '{}' not found in previous frame semaphores.", name);
 			else
 			{
 				for (uSize i = 0; i < s_Instance->m_SwapchainImageViews.size(); ++i)
 				{
 					constexpr auto semaphoreCreateInfo = vk::SemaphoreCreateInfo().setFlags(vk::SemaphoreCreateFlags());
 					auto semaphore = s_Instance->m_Device.createSemaphore(semaphoreCreateInfo);
-					Log<LogLevel::Debug>("Created semaphore: name: {}, ID: 0x{:x}", name, std::bit_cast<uint64_t>(static_cast<VkSemaphore>(*semaphore)));
-					s_Instance->m_Semaphores[i].insert_or_assign(std::string(name), std::move(semaphore));
+					if (!semaphore)
+						Log<LogLevel::Critical>("Failed to create semaphore: name: {}, Error: {}", name, vk::to_string(semaphore.error()));
+					Log<LogLevel::Debug>("Created semaphore: name: {}, ID: 0x{:x}", name, std::bit_cast<uint64_t>(static_cast<VkSemaphore>(*semaphore.value())));
+					s_Instance->m_Semaphores[i].insert_or_assign(std::string(name), std::move(semaphore).value());
 				}
 				semaphores.emplace_back(*s_Instance->m_Semaphores[s_Instance->m_PreviousFrameIndex].at(std::string(name)));
 			}
@@ -259,7 +288,10 @@ namespace OWC::Graphics
 	{
 		constexpr auto semaphoreCreateInfo = vk::SemaphoreCreateInfo()
 			.setFlags(vk::SemaphoreCreateFlags());
-		return vk::raii::Semaphore{ m_Device, semaphoreCreateInfo };
+		auto semaphore = m_Device.createSemaphore(semaphoreCreateInfo);
+		if (!semaphore)
+			Log<LogLevel::Critical>("Failed to create semaphore. Error: {}", vk::to_string(semaphore.error()));
+		return std::move(semaphore).value();
 	}
 
 	u32 VulkanCore::FindMemoryType(const vk::DeviceSize size, const vk::MemoryPropertyFlags properties) const

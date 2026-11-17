@@ -46,6 +46,9 @@ foreach (TargetArch SSE4_2 AVX2 AVX512)
             -DGLM_FORCE_DEFAULT_ALIGNED_GENTYPES
             -DGLM_FORCE_INLINE
             -DTINYGLTF_JSON_NO_EXCEPTIONS
+            -DVULKAN_HPP_NO_EXCEPTIONS
+            -DVULKAN_HPP_EXPECTED=std::expected
+            -DVULKAN_HPP_UNEXPECTED=std::unexpected
             "-DIMGUI_USER_CONFIG=\"${CMAKE_CURRENT_SOURCE_DIR}/OOPWithCpp/3rdParty/Projects/git/CmakeFiles/imconfig.h\""
     )
     target_include_directories(GraphicsProgrammingWithCpp${TargetArch} PUBLIC

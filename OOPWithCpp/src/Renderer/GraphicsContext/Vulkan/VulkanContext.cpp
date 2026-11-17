@@ -2,6 +2,7 @@
 #include <ranges>
 #include <mutex>
 #include <map>
+#include <expected>
 
 #include "Core.hpp"
 
@@ -145,7 +146,7 @@ static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugMessageFunc( // TODO: add objects i
 		}
 	}
 
-	return vk::True;
+	return vk::False;
 }
 #endif
 
@@ -190,31 +191,20 @@ namespace OWC::Graphics
 	{
 		VULKAN_HPP_DEFAULT_DISPATCHER.init();
 		VulkanCore::Init();
-		
-		try
-		{
-			StartInstance();
+
+		StartInstance();
 #ifndef DIST
-			EnableVulkanDebugging();
+		EnableVulkanDebugging();
 #endif
-			SurfaceInit(windowHandle);
-			SelectPhysicalDevice();
-			FindQueueFamilies();
-			CreateLogicalDevice();
-			GetAndStoreGlobalQueueFamilies();
-			CreateSwapchain(&windowHandle);
-			CreateCommandPools();
-			WriteCommandBuffers();
-			CreateVulkanMemoryAllocator();
-		}
-		catch (const vk::SystemError& err)
-		{
-			Log<LogLevel::Critical>("Vulkan Context initialization failed: {}", err.what());
-		}
-		catch (const std::exception& ex)
-		{
-			Log<LogLevel::Critical>("Vulkan Context initialization failed: {}", ex.what());
-		}
+		SurfaceInit(windowHandle);
+		SelectPhysicalDevice();
+		FindQueueFamilies();
+		CreateLogicalDevice();
+		GetAndStoreGlobalQueueFamilies();
+		CreateSwapchain(&windowHandle);
+		CreateCommandPools();
+		WriteCommandBuffers();
+		CreateVulkanMemoryAllocator();
 
 		SwapPresentImage();
 
@@ -270,53 +260,82 @@ namespace OWC::Graphics
 			std::array<std::string_view, 1> semaphoreNames = { "RenderFinished" };
 			auto semaphores = VulkanCore::GetSemaphoresFromNames(semaphoreNames);
 
-			const vk::SubmitInfo submitInfo = vk::SubmitInfo()
+			const auto submitInfo = vk::SubmitInfo()
 				.setSignalSemaphores(semaphores)
 				.setCommandBuffers(*m_EndRenderCmdBuf[vkCore.GetCurrentFrameIndex()]);
 
-			device.resetFences(*m_EndOfFrameFences[vkCore.GetCurrentFrameIndex()]);
-			vkCore.GetGraphicsQueue().submit(submitInfo, m_EndOfFrameFences[vkCore.GetCurrentFrameIndex()]);
+			if (const auto fenceResetResult = device.resetFences(*m_EndOfFrameFences[vkCore.GetCurrentFrameIndex()]); !fenceResetResult)
+				Log<LogLevel::Critical>("Failed to reset fence. Error: {}", vk::to_string(fenceResetResult.error()));
+			if (const auto submitResult = vkCore.GetGraphicsQueue().submit(submitInfo, *m_EndOfFrameFences[vkCore.GetCurrentFrameIndex()]); !submitResult)
+				Log<LogLevel::Critical>("Failed to submit command buffer. Error: {}", vk::to_string(submitResult.error()));
 
-			auto indices = static_cast<u32>(vkCore.GetCurrentFrameIndex());
-			const auto _ = VulkanCore::GetConstInstance().GetPresentQueue().presentKHR(
+			if (auto indices = static_cast<u32>(vkCore.GetCurrentFrameIndex()); VulkanCore::GetConstInstance().GetPresentQueue().presentKHR(
 				vk::PresentInfoKHR()
 				.setSwapchains(*vkCore.GetSwapchain())
 				.setSwapchainCount(1)
 				.setImageIndices(indices)
 				.setWaitSemaphores(semaphores)
-			);
+			) != vk::Result::eSuccess)
+				m_SwapChainNeedsRecreation = true;
 		}
 	}
 
 	void VulkanContext::SwapPresentImage()
 	{
+		if (m_IsMinimized) return;
+
 		auto& vkCore = VulkanCore::GetInstance();
 
+		if (m_SwapChainNeedsRecreation)
+		{
+			RecreateVulkanSwapchain();
+			RewriteCommandBuffers();
+			m_SwapChainNeedsRecreation = false;
+		}
+
+		std::vector<vk::raii::Semaphore> semaphores{};
+		semaphores.reserve(2);
+
 		auto currentFrameImageAcquired = vkCore.GetDevice().createSemaphore(vk::SemaphoreCreateInfo());
+		if (!currentFrameImageAcquired)
+			Log<LogLevel::Critical>("Failed to create semaphore for acquiring next image from swapchain: {}", vk::to_string(currentFrameImageAcquired.error()));
 
 		auto result = vkCore.GetDevice().acquireNextImage2KHR(vk::AcquireNextImageInfoKHR()
 			.setSwapchain(vkCore.GetSwapchain())
-			.setSemaphore(currentFrameImageAcquired)
+			.setSemaphore(currentFrameImageAcquired.value())
 //			.setTimeout(16'666)
-			.setTimeout(std::numeric_limits<u32>::max())
+			.setTimeout(std::numeric_limits<u64>::max())
 			.setDeviceMask(1)
 		);
+		semaphores.emplace_back(std::move(currentFrameImageAcquired.value()));
+		uSize semaphoreIndex = 0;
 
 		if (result.result == vk::Result::eErrorOutOfDateKHR)
 		{
 			RecreateVulkanSwapchain();
+			RewriteCommandBuffers();
+			currentFrameImageAcquired = vkCore.GetDevice().createSemaphore(vk::SemaphoreCreateInfo());
+			if (!currentFrameImageAcquired)
+				Log<LogLevel::Critical>("Failed to create semaphore for acquiring next image from swapchain: {}", vk::to_string(currentFrameImageAcquired.error()));
+
 			result = vkCore.GetDevice().acquireNextImage2KHR(vk::AcquireNextImageInfoKHR()
 				.setSwapchain(vkCore.GetSwapchain())
-				.setSemaphore(*currentFrameImageAcquired)
+				.setSemaphore(currentFrameImageAcquired.value())
 //				.setTimeout(16'666)
-				.setTimeout(std::numeric_limits<u32>::max())
+				.setTimeout(std::numeric_limits<u64>::max())
 				.setDeviceMask(1)
 			);
 
-			if (result.result == vk::Result::eErrorOutOfDateKHR)
-				Log<LogLevel::Critical>("Failed to acquire next image from swapchain: {}", vk::to_string(result.result));
+			if (result.result != vk::Result::eErrorOutOfDateKHR)
+			{
+				semaphores.emplace_back(std::move(currentFrameImageAcquired.value()));
+				semaphoreIndex = 1;
+			}
 		}
-		else if (result.result != vk::Result::eSuccess && result.result != vk::Result::eSuboptimalKHR)
+
+		if (result.result == vk::Result::eSuboptimalKHR)
+			m_SwapChainNeedsRecreation = true;
+		else if (result.result != vk::Result::eSuccess)
 			Log<LogLevel::Critical>("Failed to acquire next image from swapchain: {}", vk::to_string(result.result));
 
 		// this should never happen since acquireNextImage2KHR should return an error if the index is out of bounds, but just in case
@@ -326,31 +345,33 @@ namespace OWC::Graphics
 		VulkanCore::SetPreviousFrameIndex(vkCore.GetCurrentFrameIndex());
 		VulkanCore::SetCurrentFrameIndex(result.value);
 
-		if (vkCore.GetDevice().waitForFences(*m_EndOfFrameFences[vkCore.GetCurrentFrameIndex()], true, std::numeric_limits<u32>::max()) != vk::Result::eSuccess)
-			Log<LogLevel::Critical>("Failed to wait for render finished fence");
+		if (const auto fenceResult = vkCore.GetDevice().waitForFences(*m_EndOfFrameFences[vkCore.GetCurrentFrameIndex()], vk::True, std::numeric_limits<u32>::max()); fenceResult != vk::Result::eSuccess)
+			Log<LogLevel::Critical>("Failed to wait for render finished fence. Error: {}", vk::to_string(fenceResult));
 
 		auto& endOfFrameFuncs = VulkanCore::GetEndOfFrameCleanUp()[vkCore.GetCurrentFrameIndex()];
 		for (auto& func : endOfFrameFuncs)
 			func();
 		endOfFrameFuncs.clear();
 
-		std::array<std::string_view, 1> imageReadyName = { "ImageReady" };
+		static constexpr std::array imageReadyName = { std::string_view{ "ImageReady" }, };
 		auto imageReady = VulkanCore::GetSemaphoresFromNames(imageReadyName)[0];
 
 		vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
 		const auto submitInfo = vk::SubmitInfo()
-			.setWaitSemaphores(*currentFrameImageAcquired)
+			.setWaitSemaphores(*semaphores[semaphoreIndex])
 			.setSignalSemaphores(imageReady)
 			.setCommandBuffers(*m_BeginRenderCmdBuf[vkCore.GetCurrentFrameIndex()])
 			.setWaitDstStageMask(waitDestinationStageMask);
 
-		vkCore.GetGraphicsQueue().submit(submitInfo);
-		VulkanCore::AddVulkanEndOfFrameCleanUpFunction([temp = std::move(currentFrameImageAcquired)](){});
+		if (const auto result2 = vkCore.GetGraphicsQueue().submit(submitInfo); !result2)
+			Log<LogLevel::Critical>("Failed to submit command buffer for acquiring next image from swapchain: {}", vk::to_string(result2.error()));
+		VulkanCore::AddVulkanEndOfFrameCleanUpFunction([temp = std::move(semaphores)](){});
 	}
 
 	void VulkanContext::WaitForIdle()
 	{
-		VulkanCore::GetConstInstance().GetDevice().waitIdle();
+		if (const auto result = VulkanCore::GetConstInstance().GetDevice().waitIdle(); result.error() != vk::Result::eSuccess)
+			Log<LogLevel::Critical>("Failed to wait for idle: {}", vk::to_string(result.error()));
 	}
 
 #ifndef DIST
@@ -383,6 +404,9 @@ namespace OWC::Graphics
 
 		const auto instanceExtensionProperties = vk::enumerateInstanceExtensionProperties();
 
+		if (!instanceExtensionProperties)
+			Log<LogLevel::Critical>("Failed to enumerate Vulkan instance extension properties: {}", vk::to_string(instanceExtensionProperties.error()));
+
 		extensions.emplace_back(vk::KHRGetSurfaceCapabilities2ExtensionName);
 
 		vk::InstanceCreateInfo createInfo;
@@ -403,10 +427,10 @@ namespace OWC::Graphics
 		createInfo.setPNext(&validationFeatures);
 #endif
 
-		if (const auto [extensionsAvailable, missingExtension] = IsExtensionAvailable(instanceExtensionProperties, extensions); !extensionsAvailable)
+		if (const auto [extensionsAvailable, missingExtension] = IsExtensionAvailable(instanceExtensionProperties.value(), extensions); !extensionsAvailable)
 			Log<LogLevel::Critical>("Vulkan instance is missing required extension: {}", missingExtension);
 
-		if (IsExtensionAvailable(instanceExtensionProperties, vk::EXTSwapchainColorSpaceExtensionName))
+		if (IsExtensionAvailable(instanceExtensionProperties.value(), vk::EXTSwapchainColorSpaceExtensionName))
 			extensions.emplace_back(vk::EXTSwapchainColorSpaceExtensionName);
 
 		constexpr auto appInfo = vk::ApplicationInfo()
@@ -423,9 +447,12 @@ namespace OWC::Graphics
 
 		const auto& vkCore = VulkanCore::GetConstInstance();
 
-		VulkanCore::SetInstance(vk::raii::Instance(vkCore.GetVKContext(), createInfo));
-		const auto& vkInstance = vkCore.GetVKInstance();
-		VULKAN_HPP_DEFAULT_DISPATCHER.init(*vkInstance);
+		auto instance = vkCore.GetVKContext().createInstance(createInfo);
+		if (!instance)
+			Log<LogLevel::Critical>("Failed to create Vulkan instance: {}", vk::to_string(instance.error()));
+
+		VULKAN_HPP_DEFAULT_DISPATCHER.init(*instance.value());
+        VulkanCore::SetInstance(std::move(instance).value());
 	}
 
 #ifndef DIST
@@ -433,7 +460,7 @@ namespace OWC::Graphics
 	{
 		const auto& vkInstance = VulkanCore::GetConstInstance().GetVKInstance();
 
-		constexpr auto debugUtilsCreateInfo = vk::DebugUtilsMessengerCreateInfoEXT()
+		static constexpr auto debugUtilsCreateInfo = vk::DebugUtilsMessengerCreateInfoEXT()
 			.setMessageSeverity(
 			vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
 			vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo |
@@ -445,7 +472,12 @@ namespace OWC::Graphics
 			vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation
 			).setPfnUserCallback(debugMessageFunc);
 
-		VulkanCore::SetDebugCallback(vk::raii::DebugUtilsMessengerEXT(vkInstance, debugUtilsCreateInfo));
+		auto debugCallback = vkInstance.createDebugUtilsMessengerEXT(debugUtilsCreateInfo);
+
+		if (!debugCallback)
+			Log<LogLevel::Critical>("Failed to create Vulkan debug callback: {}", vk::to_string(debugCallback.error()));
+
+		VulkanCore::SetDebugCallback(std::move(debugCallback).value());
 	}
 #endif
 
@@ -465,13 +497,13 @@ namespace OWC::Graphics
 		const auto& vkCore = VulkanCore::GetConstInstance();
 		const auto& vkInstance = vkCore.GetVKInstance();
 
-		const vk::raii::PhysicalDevices physicalDevices(vkInstance);
+		const auto physicalDevices = vkInstance.enumeratePhysicalDevices();
 
-		if (physicalDevices.empty())
-			Log<LogLevel::Critical>("Failed to find GPUs with Vulkan support");
+		if (!physicalDevices)
+			Log<LogLevel::Critical>("Failed to find GPUs with Vulkan support. Error: {}", vk::to_string(physicalDevices.error()));
 
 		u32 highestScore = 0;
-		for (const auto& device : physicalDevices)
+		for (const auto& devices = physicalDevices.value(); const auto& device : devices)
 		{
 			if (const auto [isSuitable, score, supportedExtensions] = IsPhysicalDeviceSuitable(device);
 				isSuitable && score > highestScore)
@@ -516,13 +548,20 @@ namespace OWC::Graphics
 		u32 score = 0;
 		const auto deviceProperties = device.getProperties2().properties;
 		auto supportedExtensions = device.enumerateDeviceExtensionProperties();
+		if (!supportedExtensions)
+		{
+			Log<LogLevel::Warn>("Failed to enumerate Vulkan device ({}): extension properties: {}",
+				std::string_view(deviceProperties.deviceName.data(), ::OWC::strnlen_s(deviceProperties.deviceName.data(), deviceProperties.deviceName.size())),
+				vk::to_string(supportedExtensions.error()));
+			return { false, 0, {} };
+		}
 
 		if (deviceProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu)
 			score += 1000;
 
 		score += deviceProperties.limits.maxImageDimension2D;
 
-		if (const auto [extensionsAvailable, missingExtension] = IsExtensionAvailable(supportedExtensions, g_DeviceExtensions); !extensionsAvailable)
+		if (const auto [extensionsAvailable, missingExtension] = IsExtensionAvailable(supportedExtensions.value(), g_DeviceExtensions); !extensionsAvailable)
 		{
 			Log<LogLevel::Warn>("Physical device {} is missing required extension: {}",
 				std::string_view(deviceProperties.deviceName.data(), ::OWC::strnlen_s(deviceProperties.deviceName.data(), deviceProperties.deviceName.size())),
@@ -530,7 +569,7 @@ namespace OWC::Graphics
 			return { false, 0, {} };
 		}
 
-		return { true, score, std::move(supportedExtensions) };
+		return { true, score, std::move(supportedExtensions).value() };
 	}
 
 	void VulkanContext::FindQueueFamilies()
@@ -796,7 +835,10 @@ namespace OWC::Graphics
 		else
 			deviceCreateInfo.setPEnabledExtensionNames(g_DeviceExtensions);
 
-		VulkanCore::SetDevice(vk::raii::Device(VulkanCore::GetConstInstance().GetPhysicalDev(), deviceCreateInfo));
+		auto device = VulkanCore::GetConstInstance().GetPhysicalDev().createDevice(deviceCreateInfo);
+		if (!device)
+			Log<LogLevel::Critical>("Failed to create Vulkan logical device: {}", vk::to_string(device.error()));
+		VulkanCore::SetDevice(std::move(device).value());
 
 		m_QueueFamilyIndices.UniqueIndices.reserve(uniqueQueueFamiliesMap.size());
 		for (const auto& familyIndex : std::views::keys(uniqueQueueFamiliesMap))
@@ -813,10 +855,13 @@ namespace OWC::Graphics
 
 		const auto& vkCore = VulkanCore::GetConstInstance();
 
-		const std::vector<vk::SurfaceFormatKHR> surfaceFormats = vkCore.GetPhysicalDev().getSurfaceFormatsKHR(vkCore.GetSurface());
-		if (surfaceFormats.empty())
+		const auto surfaceFormatsResult = vkCore.GetPhysicalDev().getSurfaceFormatsKHR(vkCore.GetSurface());
+		if (!surfaceFormatsResult)
+			Log<LogLevel::Critical>("Failed to get surface formats for the swapchain: {}", vk::to_string(surfaceFormatsResult.error()));
+		else if (surfaceFormatsResult.value().empty())
 			Log<LogLevel::Critical>("Failed to find any surface formats for the swapchain");
 
+		const auto& surfaceFormats = surfaceFormatsResult.value();
 		vk::Format imageFormat = surfaceFormats[0].format == vk::Format::eUndefined ? vk::Format::eR8G8B8A8Unorm : surfaceFormats[0].format;
 		vk::ColorSpaceKHR colourSpace = surfaceFormats[0].colorSpace;
 
@@ -851,8 +896,10 @@ namespace OWC::Graphics
 		Log<LogLevel::Debug>(" Color Space: {}", vk::to_string(colourSpace));
 
 		const vk::PhysicalDeviceSurfaceInfo2KHR surfaceInfo(*vkCore.GetSurface());
-		const vk::SurfaceCapabilities2KHR surfaceCapabilities = vkCore.GetPhysicalDev().getSurfaceCapabilities2KHR(surfaceInfo);
-
+		const auto surfaceCapabilitiesResult = vkCore.GetPhysicalDev().getSurfaceCapabilities2KHR(surfaceInfo);
+		if (!surfaceCapabilitiesResult)
+			Log<LogLevel::Critical>("Failed to get surface capabilities for the swapchain: {}", vk::to_string(surfaceCapabilitiesResult.error()));
+		const auto& surfaceCapabilities = surfaceCapabilitiesResult.value();
 		if (surfaceCapabilities.surfaceCapabilities.currentExtent.width == 0 || surfaceCapabilities.surfaceCapabilities.currentExtent.height == 0)
 			Log<LogLevel::Critical>("Failed to get valid surface extents for the swapchain");
 
@@ -865,11 +912,13 @@ namespace OWC::Graphics
 
 		const auto presentModeCompatibilities = vkCore.GetPhysicalDev().getSurfacePresentModesKHR(vkCore.GetSurface());
 
-		if (presentModeCompatibilities.empty())
+		if (!presentModeCompatibilities)
+			Log<LogLevel::Critical>("Failed to get present modes for the swapchain: {}", vk::to_string(presentModeCompatibilities.error()));
+		if (presentModeCompatibilities.value().empty())
 			Log<LogLevel::Critical>("Failed to find any present modes for the swapchain");
 
 		Log<LogLevel::Debug>("Vulkan Swapchain Present Modes supported:");
-		for (const auto& presentMode : presentModeCompatibilities)
+		for (const auto& presentModes = presentModeCompatibilities.value(); const auto& presentMode : presentModes)
 			Log<LogLevel::Debug>(" {}", vk::to_string(presentMode));
 
 		auto selectedPresentMode = vk::PresentModeKHR::eFifo; // guaranteed to be available
@@ -920,11 +969,19 @@ namespace OWC::Graphics
 				.setPQueueFamilyIndices(m_QueueFamilyIndices.UniqueIndices.data())
 				.setOldSwapchain(*vkCore.GetSwapchain());
 
-		VulkanCore::SetSwapchain(vk::raii::SwapchainKHR(vkCore.GetDevice(), swapchainCreateInfo));
+		auto swapchain = vkCore.GetDevice().createSwapchainKHR(swapchainCreateInfo);
+		if (!swapchain)
+			Log<LogLevel::Critical>("Failed to create Vulkan swapchain: {}", vk::to_string(swapchain.error()));
+		VulkanCore::SetSwapchain(std::move(swapchain).value());
 
 		m_EndOfFrameFences.reserve(vkCore.GetSwapchainImages().size());
 		for (uSize i = 0; i < vkCore.GetSwapchainImages().size(); i++)
-			m_EndOfFrameFences.emplace_back(vkCore.GetDevice().createFence(vk::FenceCreateInfo().setFlags(vk::FenceCreateFlagBits::eSignaled)));
+		{
+			auto fence = vkCore.GetDevice().createFence(vk::FenceCreateInfo().setFlags(vk::FenceCreateFlagBits::eSignaled));
+			if (!fence)
+				Log<LogLevel::Critical>("Failed to create end of frame fence {}: {}", i, vk::to_string(fence.error()));
+			m_EndOfFrameFences.emplace_back(std::move(fence).value());
+		}
 
 		Log<LogLevel::Debug>("Vulkan Swapchain created with {} images", vkCore.GetSwapchainImages().size());
 
@@ -934,8 +991,10 @@ namespace OWC::Graphics
 		std::vector<vk::raii::ImageView> swapchainImageViews;
 		swapchainImageViews.reserve(vkCore.GetSwapchainImages().size());
 
-		for (const auto& image : vkCore.GetSwapchainImages())
+		for (uSize i = 0; i < vkCore.GetSwapchainImages().size(); i++)
 		{
+			const auto& image = vkCore.GetSwapchainImages()[i];
+
 			auto imageViewCreateInfo = vk::ImageViewCreateInfo()
 				.setImage(image)
 				.setViewType(vk::ImageViewType::e2D)
@@ -953,7 +1012,10 @@ namespace OWC::Graphics
 					.setBaseArrayLayer(0)
 					.setLayerCount(1)
 				);
-			swapchainImageViews.emplace_back(vkCore.GetDevice(), imageViewCreateInfo);
+			auto imageView = vkCore.GetDevice().createImageView(imageViewCreateInfo);
+			if (!imageView)
+				Log<LogLevel::Critical>("Failed to create image view for swapchain image {}: {}", i, vk::to_string(imageView.error()));
+			swapchainImageViews.emplace_back(std::move(imageView).value());
 
 			Log<LogLevel::Debug>(" Created image view for swapchain with handle {}", static_cast<void*>(*swapchainImageViews.back()));
 		}
@@ -967,39 +1029,43 @@ namespace OWC::Graphics
 	{
 		const auto& vkCore = VulkanCore::GetConstInstance();
 
-		VulkanCore::SetGraphicsCommandPool(
-			VulkanCore::GetConstInstance().GetDevice().createCommandPool(
-				vk::CommandPoolCreateInfo()
-				.setQueueFamilyIndex(m_QueueFamilyIndices.GraphicsFamily)
-			)
+		auto result = vkCore.GetDevice().createCommandPool(
+			vk::CommandPoolCreateInfo()
+			.setQueueFamilyIndex(m_QueueFamilyIndices.GraphicsFamily)
 		);
+		if (!result)
+			Log<LogLevel::Critical>("Failed to create graphics command pool: {}", vk::to_string(result.error()));
+		VulkanCore::SetGraphicsCommandPool(std::move(result).value());
 		Log<LogLevel::Trace>("Created graphics command pool with handle {}", static_cast<void*>(*vkCore.GetGraphicsCommandPool()));
 
-
-		VulkanCore::SetComputeCommandPool(
-			VulkanCore::GetConstInstance().GetDevice().createCommandPool(
-				vk::CommandPoolCreateInfo()
-				.setQueueFamilyIndex(m_QueueFamilyIndices.ComputeFamily)
-			)
+		result = VulkanCore::GetConstInstance().GetDevice().createCommandPool(
+			vk::CommandPoolCreateInfo()
+			.setQueueFamilyIndex(m_QueueFamilyIndices.ComputeFamily)
 		);
+		if (!result)
+			Log<LogLevel::Critical>("Failed to create compute command pool: {}", vk::to_string(result.error()));
+
+		VulkanCore::SetComputeCommandPool(std::move(result).value());
 		Log<LogLevel::Trace>("Created compute command pool with handle {}", static_cast<void*>(*vkCore.GetComputeCommandPool()));
 
-		VulkanCore::SetDynamicGraphicsCommandPool(
-			VulkanCore::GetConstInstance().GetDevice().createCommandPool(
-				vk::CommandPoolCreateInfo()
-				.setQueueFamilyIndex(m_QueueFamilyIndices.GraphicsFamily)
-				.setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer)
-			)
+		result = VulkanCore::GetConstInstance().GetDevice().createCommandPool(
+			vk::CommandPoolCreateInfo()
+			.setQueueFamilyIndex(m_QueueFamilyIndices.GraphicsFamily)
+			.setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer)
 		);
+		if (!result)
+			Log<LogLevel::Critical>("Failed to create dynamic graphics command pool: {}", vk::to_string(result.error()));
+		VulkanCore::SetDynamicGraphicsCommandPool(std::move(result).value());
 		Log<LogLevel::Trace>("Created reusable graphics command pool with handle {}", static_cast<void*>(*vkCore.GetDynamicGraphicsCommandPool()));
 
-		VulkanCore::SetDynamicComputeCommandPool(
-			VulkanCore::GetConstInstance().GetDevice().createCommandPool(
-				vk::CommandPoolCreateInfo()
-				.setQueueFamilyIndex(m_QueueFamilyIndices.ComputeFamily)
-				.setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer)
-			)
+		result = VulkanCore::GetConstInstance().GetDevice().createCommandPool(
+			vk::CommandPoolCreateInfo()
+			.setQueueFamilyIndex(m_QueueFamilyIndices.ComputeFamily)
+			.setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer)
 		);
+		if (!result)
+			Log<LogLevel::Critical>("Failed to create dynamic compute command pool: {}", vk::to_string(result.error()));
+		VulkanCore::SetDynamicComputeCommandPool(std::move(result).value());
 		Log<LogLevel::Trace>("Created reusable compute command pool with handle {}", static_cast<void*>(*vkCore.GetDynamicComputeCommandPool()));
 
 		VulkanCore::SetupTransferPools();
@@ -1043,7 +1109,9 @@ namespace OWC::Graphics
 						.setLayerCount(1)
 					) };
 
-			cmdBuf.begin(vk::CommandBufferBeginInfo());
+			if (const auto cmdBeginResult = cmdBuf.begin(vk::CommandBufferBeginInfo()); !cmdBeginResult)
+				Log<LogLevel::Critical>("Failed to begin command buffer. Error: {}", vk::to_string(cmdBeginResult.error()));
+
 			cmdBuf.pipelineBarrier2(vk::DependencyInfo()
 				.setImageMemoryBarriers(imageMemoryBarrier)
 			);
@@ -1067,13 +1135,16 @@ namespace OWC::Graphics
 			cmdBuf.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<f32>(m_WindowProperties.PixelWidth), static_cast<f32>(m_WindowProperties.PixelHeight)));
 			cmdBuf.setScissor(0, rect);
 			cmdBuf.endRendering();
-			cmdBuf.end();
+
+			if (const auto cmdEndResult = cmdBuf.end(); !cmdEndResult)
+				Log<LogLevel::Critical>("Failed to end command buffer. Error: {}", vk::to_string(cmdEndResult.error()));
 		}
 
 		for (uSize i = 0; i != vkCore.GetSwapchainImageViews().size(); i++)
 		{
 			const auto& cmdBuf = m_EndRenderCmdBuf[i];
-			cmdBuf.begin(vk::CommandBufferBeginInfo());
+			if (const auto cmdBeginResult = cmdBuf.begin(vk::CommandBufferBeginInfo()); !cmdBeginResult)
+				Log<LogLevel::Critical>("Failed to begin command buffer. Error: {}", vk::to_string(cmdBeginResult.error()));
 
 			const std::array imageMemoryBarrier = {
 				vk::ImageMemoryBarrier2()
@@ -1096,7 +1167,8 @@ namespace OWC::Graphics
 			cmdBuf.pipelineBarrier2(vk::DependencyInfo()
 				.setImageMemoryBarriers(imageMemoryBarrier)
 			);
-			cmdBuf.end();
+			if (const auto cmdEndResult = cmdBuf.end(); !cmdEndResult)
+				Log<LogLevel::Critical>("Failed to end command buffer. Error: {}", vk::to_string(cmdEndResult.error()));
 		}
 	}
 
@@ -1104,13 +1176,12 @@ namespace OWC::Graphics
 	{
 		auto& vkCore = VulkanCore::GetInstance();
 
-		vma::AllocatorCreateFlags allocatorFlags;
-		allocatorFlags |= vma::AllocatorCreateFlagBits::eKhrMaintenance5;
-		allocatorFlags |= vma::AllocatorCreateFlagBits::eKhrDedicatedAllocation;
-		allocatorFlags |= vma::AllocatorCreateFlagBits::eKhrBindMemory2;
-		allocatorFlags |= vma::AllocatorCreateFlagBits::eExtMemoryPriority;
-		allocatorFlags |= vma::AllocatorCreateFlagBits::eExtMemoryBudget;
-		allocatorFlags |= vma::AllocatorCreateFlagBits::eBufferDeviceAddress;
+		constexpr vma::AllocatorCreateFlags allocatorFlags = vma::AllocatorCreateFlagBits::eKhrMaintenance5 |
+			vma::AllocatorCreateFlagBits::eKhrDedicatedAllocation |
+			vma::AllocatorCreateFlagBits::eKhrBindMemory2 |
+			vma::AllocatorCreateFlagBits::eExtMemoryPriority |
+			vma::AllocatorCreateFlagBits::eExtMemoryBudget |
+			vma::AllocatorCreateFlagBits::eBufferDeviceAddress;
 
 		const auto allocatorCreateInfo = vma::AllocatorCreateInfo()
 			.setPhysicalDevice(vkCore.GetPhysicalDev())
@@ -1118,7 +1189,11 @@ namespace OWC::Graphics
 			.setFlags(allocatorFlags)
 			.setPreferredLargeHeapBlockSize(256ull * 1024 * 1024); // 256mb
 
-		VulkanCore::SetVulkanMemoryAllocator(vma::raii::Allocator(vkCore.GetVKInstance(), vkCore.GetDevice(), allocatorCreateInfo));
+		auto allocator = vma::raii::createAllocator(vkCore.GetVKInstance(), vkCore.GetDevice(), allocatorCreateInfo);
+		if (!allocator)
+			Log<LogLevel::Critical>("Failed to create Vulkan memory allocator. Error: {}", vk::to_string(allocator.error()));
+
+		VulkanCore::SetVulkanMemoryAllocator(std::move(allocator).value());
 	}
 
 	void VulkanContext::RecreateVulkanSwapchain()
@@ -1155,63 +1230,5 @@ namespace OWC::Graphics
 		m_IsMinimized = false;
 		CreateSwapchain();
 		RewriteCommandBuffers();
-	}
-	
-	void VulkanContext::ImGuiInit()
-	{
-		/*const auto& vkCore = VulkanCore::GetConstInstance();
-
-		std::array poolSizes = {
-			vk::DescriptorPoolSize()
-				.setType(vk::DescriptorType::eCombinedImageSampler)
-				.setDescriptorCount(1000)
-		};
-
-		const auto poolInfo = vk::DescriptorPoolCreateInfo()
-			.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet)
-			.setMaxSets(1000)
-			.setPoolSizes(poolSizes);
-
-		VulkanCore::GetInstance().SetImGuiDescriptorPool(vkCore.GetDevice().createDescriptorPool(poolInfo));
-
-		ImGui_ImplVulkan_InitInfo initInfo = {};
-		initInfo.ApiVersion = g_VulkanVersion;
-		initInfo.Instance = *vkCore.GetVKInstance();
-		initInfo.PhysicalDevice = *vkCore.GetPhysicalDev();
-		initInfo.Device = *vkCore.GetDevice();
-		initInfo.QueueFamily = m_QueueFamilyIndices.GraphicsFamily;
-		initInfo.Queue = vkCore.GetGraphicsQueue();
-		initInfo.PipelineCache = nullptr;
-		initInfo.DescriptorPool = *vkCore.GetImGuiDescriptorPool();
-		initInfo.UseDynamicRendering = true;
-		initInfo.MinAllocationSize = 1024 * 1024;
-		initInfo.MinImageCount = static_cast<u32>(vkCore.GetSwapchainImages().size());
-		initInfo.ImageCount = static_cast<u32>(vkCore.GetSwapchainImages().size());
-		initInfo.Allocator = nullptr;
-		initInfo.CheckVkResultFn = [](VkResult err)
-		{
-			if (err != VK_SUCCESS)
-				Log<LogLevel::Error>("ImGui Vulkan Error: {}", vk::to_string(static_cast<vk::Result>(err)));
-		};
-
-		const auto pipelineInfo = vk::PipelineRenderingCreateInfo()
-			.setColorAttachmentCount(1)
-			.setColorAttachmentFormats(vkCore.GetSwapchainImageFormat())
-			.setDepthAttachmentFormat(vk::Format::eUndefined)
-			.setStencilAttachmentFormat(vk::Format::eUndefined);
-
-		initInfo.PipelineInfoMain.PipelineRenderingCreateInfo = pipelineInfo;
-
-		ImGui_ImplVulkan_Init(&initInfo);*/
-	}
-
-	void VulkanContext::ImGuiShutdown()
-	{
-		//ImGui_ImplVulkan_Shutdown();
-	}
-
-	void VulkanContext::ImGuiNewFrame()
-	{
-		//ImGui_ImplVulkan_NewFrame();
 	}
 }

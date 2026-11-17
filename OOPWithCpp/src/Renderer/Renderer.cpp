@@ -131,7 +131,7 @@ namespace OWC::Graphics
 		data->EndPass();
 	}
 
-	void Renderer::SubmitRenderPass(const std::shared_ptr<RenderPassData>& data, const std::span<std::string_view> waitSemaphoreNames, const std::span<std::string_view> startSemaphoreNames, const std::span<std::string_view> waitPreviousFrameSemaphoreNames)
+	void Renderer::SubmitRenderPass(const std::shared_ptr<RenderPassData>& data, const std::span<const std::string_view> waitSemaphoreNames, const std::span<const std::string_view> startSemaphoreNames, const std::span<const std::string_view> waitPreviousFrameSemaphoreNames)
 	{
 		data->submitRenderPass(waitSemaphoreNames, startSemaphoreNames, waitPreviousFrameSemaphoreNames);
 	}

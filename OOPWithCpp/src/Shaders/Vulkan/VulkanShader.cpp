@@ -454,7 +454,10 @@ namespace OWC::Graphics
 		const auto layoutInfo = vk::DescriptorSetLayoutCreateInfo()
 			.setBindings(bindings);
 
-		SetDescriptorSetLayout(device.createDescriptorSetLayout(layoutInfo));
+		auto descriptorSetLayout = device.createDescriptorSetLayout(layoutInfo);
+		if (!descriptorSetLayout)
+			Log<LogLevel::Critical>("Failed to create descriptor set layout for Vulkan shader. Error: {}", vk::to_string(descriptorSetLayout.error()));
+		SetDescriptorSetLayout(std::move(descriptorSetLayout).value());
 
 		constexpr auto pushConstantRange = vk::PushConstantRange()
 			.setOffset(0)
@@ -465,7 +468,10 @@ namespace OWC::Graphics
 			.setSetLayouts(*GetDescriptorSetLayout())
 			.setPushConstantRanges(pushConstantRange);
 
-		SetPipelineLayout(device.createPipelineLayout(pipelineLayoutInfo));
+		auto pipelineLayout = device.createPipelineLayout(pipelineLayoutInfo);
+		if (!pipelineLayout)
+			Log<LogLevel::Critical>("Failed to create pipeline layout for Vulkan shader. Error: {}", vk::to_string(pipelineLayout.error()));
+		SetPipelineLayout(std::move(pipelineLayout).value());
 
 		const auto pipelineInfo = vk::GraphicsPipelineCreateInfo()
 			.setPNext(&pipelineRenderingInfo)
@@ -480,7 +486,10 @@ namespace OWC::Graphics
 			.setLayout(GetPipelineLayout())
 			.setSubpass(0);
 
-		SetPipeline(vk::raii::Pipeline(device, nullptr, pipelineInfo));
+		auto pipeline = device.createGraphicsPipeline(nullptr, pipelineInfo);
+		if (!pipeline)
+			Log<LogLevel::Critical>("Failed to create graphics pipeline for Vulkan shader. Error: {}", vk::to_string(pipeline.error()));
+		SetPipeline(std::move(pipeline).value());
 
 		// build Descriptor Pool
 		// TODO: make this dynamic based on actual usage
@@ -517,7 +526,10 @@ namespace OWC::Graphics
 			.setPoolSizes(poolSize)
 			.setMaxSets(static_cast<u32>(vkCore.GetNumberOfFramesInFlight()));
 
-		SetDescriptorPool(device.createDescriptorPool(poolInfo));
+		auto descriptorPool = device.createDescriptorPool(poolInfo);
+		if (!descriptorPool)
+			Log<LogLevel::Critical>("Failed to create descriptor pool for Vulkan shader. Error: {}", vk::to_string(descriptorPool.error()));
+		SetDescriptorPool(std::move(descriptorPool).value());
 		const auto allocInfo = vk::DescriptorSetAllocateInfo()
 			.setDescriptorPool(GetDescriptorPool())
 			.setSetLayouts(*GetDescriptorSetLayout());
@@ -526,7 +538,12 @@ namespace OWC::Graphics
 		descriptorSets.reserve(vkCore.GetNumberOfFramesInFlight());
 
 		for (uSize i = 0; i < vkCore.GetNumberOfFramesInFlight(); i++)
-			descriptorSets.push_back(std::move(device.allocateDescriptorSets(allocInfo).front()));
+		{
+			auto descriptorSet = device.allocateDescriptorSets(allocInfo);
+			if (!descriptorSet)
+				Log<LogLevel::Critical>("Failed to allocate descriptor set for Vulkan shader. Error: {}", vk::to_string(descriptorSet.error()));
+			descriptorSets.push_back(std::move(descriptorSet.value().front()));
+		}
 
 		SetDescriptorSets(std::move(descriptorSets));
 	}
@@ -652,7 +669,10 @@ namespace OWC::Graphics
 		const auto layoutInfo = vk::DescriptorSetLayoutCreateInfo()
 			.setBindings(bindings);
 
-		SetDescriptorSetLayout(device.createDescriptorSetLayout(layoutInfo));
+		auto descriptorSetLayout = device.createDescriptorSetLayout(layoutInfo);
+		if (!descriptorSetLayout)
+			Log<LogLevel::Critical>("Failed to create descriptor set layout for Vulkan ray tracing shader. Error: {}", vk::to_string(descriptorSetLayout.error()));
+		SetDescriptorSetLayout(std::move(descriptorSetLayout).value());
 
 		constexpr auto pushConstantRange = vk::PushConstantRange()
 			.setOffset(0)
@@ -663,7 +683,10 @@ namespace OWC::Graphics
 			.setSetLayouts(*GetDescriptorSetLayout())
 			.setPushConstantRanges(pushConstantRange);
 
-		SetPipelineLayout(device.createPipelineLayout(pipelineLayoutInfo));
+		auto pipelineLayout = device.createPipelineLayout(pipelineLayoutInfo);
+		if (!pipelineLayout)
+			Log<LogLevel::Critical>("Failed to create pipeline layout for Vulkan ray tracing shader. Error: {}", vk::to_string(pipelineLayout.error()));
+		SetPipelineLayout(std::move(pipelineLayout).value());
 
 		constexpr auto rayTracingPipelineInfoFlagsInfo = vk::PipelineCreateFlags2CreateInfo(vk::PipelineCreateFlagBits2::eRayTracingSkipAabbsKHR | vk::PipelineCreateFlagBits2::eLinkTimeOptimizationEXT);
 
@@ -674,7 +697,10 @@ namespace OWC::Graphics
 			.setMaxPipelineRayRecursionDepth(1) // TODO: make this configurable
 			.setLayout(GetPipelineLayout());
 
-		SetPipeline(vk::raii::Pipeline(device, nullptr, nullptr, rayTracingPipelineInfo));
+		auto rayTracingPipeline = device.createRayTracingPipelineKHR(nullptr, nullptr, rayTracingPipelineInfo);
+		if (!rayTracingPipeline)
+			Log<LogLevel::Critical>("Failed to create ray tracing pipeline for Vulkan shader. Error: {}", vk::to_string(rayTracingPipeline.error()));
+		SetPipeline(std::move(rayTracingPipeline).value());
 
 		m_ShaderGroupCount = static_cast<u32>(shaderGroups.size());
 
@@ -710,7 +736,10 @@ namespace OWC::Graphics
 			.setPoolSizes(poolSize)
 			.setMaxSets(static_cast<u32>(vkCore.GetNumberOfFramesInFlight()));
 
-		SetDescriptorPool(device.createDescriptorPool(poolInfo));
+		auto descriptorPool = device.createDescriptorPool(poolInfo);
+		if (!descriptorPool)
+			Log<LogLevel::Critical>("Failed to create descriptor pool for Vulkan ray tracing shader. Error: {}", vk::to_string(descriptorPool.error()));
+		SetDescriptorPool(std::move(descriptorPool).value());
 		const auto allocInfo = vk::DescriptorSetAllocateInfo()
 			.setDescriptorPool(GetDescriptorPool())
 			.setSetLayouts(*GetDescriptorSetLayout());
@@ -719,7 +748,12 @@ namespace OWC::Graphics
 		descriptorSets.reserve(vkCore.GetNumberOfFramesInFlight());
 
 		for (uSize i = 0; i < vkCore.GetNumberOfFramesInFlight(); i++)
-			descriptorSets.emplace_back(std::move(device.allocateDescriptorSets(allocInfo).front()));
+		{
+			auto descriptorSet = device.allocateDescriptorSets(allocInfo);
+			if (!descriptorSet)
+				Log<LogLevel::Critical>("Failed to allocate descriptor set for Vulkan ray tracing shader. Error: {}", vk::to_string(descriptorSet.error()));
+			descriptorSets.emplace_back(std::move(descriptorSet.value().front()));
+		}
 
 		SetDescriptorSets(std::move(descriptorSets));
 	}
@@ -742,7 +776,10 @@ namespace OWC::Graphics
 		const u32 baseAlignment = RTProps.shaderGroupBaseAlignment;
 
 		const uSize shaderHandleSize = handleSize * numberOfGroups;
-		m_ShaderHandles = GetPipeline().getRayTracingShaderGroupHandlesKHR<u8>(0, numberOfGroups, shaderHandleSize);
+		auto shaderHandleReturn = GetPipeline().getRayTracingShaderGroupHandlesKHR<u8>(0, numberOfGroups, shaderHandleSize);
+		if (!shaderHandleReturn)
+			Log<LogLevel::Critical>("Failed to get ray tracing shader group handles for Vulkan shader. Error: {}", vk::to_string(shaderHandleReturn.error()));
+		m_ShaderHandles = std::move(shaderHandleReturn.value());
 
 		const u32 handleSizeAligned = alignUp(handleSize, handleAlignment);
 		const u32 recordStride = alignUp(handleSizeAligned, baseAlignment);
@@ -779,7 +816,10 @@ namespace OWC::Graphics
 			.setFlags(vma::AllocationCreateFlagBits::eMapped | vma::AllocationCreateFlagBits::eHostAccessRandom);
 
 		vma::AllocationInfo allocationInfo;
-		m_SBTBuffer = vma::raii::Buffer(allocator, bufferInfo, allocInfo, vk::Optional(allocationInfo));
+		auto SBTBufferReturn = allocator.createBuffer(bufferInfo, allocInfo, vk::Optional(allocationInfo));
+		if (!SBTBufferReturn)
+			Log<LogLevel::Critical>("Failed to create shader binding table buffer for Vulkan ray tracing shader. Error: {}", vk::to_string(SBTBufferReturn.error()));
+		m_SBTBuffer = std::move(SBTBufferReturn).value();
 
 		const auto pData = static_cast<u8*>(allocationInfo.pMappedData);
 
