@@ -175,7 +175,7 @@ namespace OWC::Graphics
 		switch (s_API)
 		{
 		case OWC::Graphics::RendererAPI::Vulkan:
-			return VulkanCore::GetConstInstance().GetNumberOfFramesInFlight();
+			return VulkanCore::GetInstance().GetNumberOfFramesInFlight();
 		default:
 			std::unreachable();
 		}
@@ -191,7 +191,7 @@ namespace OWC::Graphics
 		switch (s_API) // Switch statement for future APIs
 		{
 		case OWC::Graphics::RendererAPI::Vulkan:
-			return VulkanCore::GetConstInstance().HasSERSupport();
+			return VulkanCore::GetInstance().HasSERSupport();
 		default:
 			return false;
 		}

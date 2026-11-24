@@ -1,5 +1,5 @@
-#include "../GeneralHelperShaders/Core.slang"
-#include "../GeneralHelperShaders/HDR.slang"
+#include "../GeneralHelperShaders/Core.slangh"
+#include "../GeneralHelperShaders/HDR.slangh"
 
 
 struct VertexData

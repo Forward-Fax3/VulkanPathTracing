@@ -26,3 +26,26 @@ float3 ApplySaturation(float3 color, float saturation)
     float luma = dot(color, float3(0.2126, 0.7152, 0.0722));
     return lerp(float3(luma, luma, luma), color, saturation);
 }
+
+float2 ProjectToPixel(float4x4 worldToClip, float3 p)
+{
+    float4 clip = mul(float4(p, 1.0), worldToClip);
+    float2 ndc = clip.xy / clip.w;
+    return (ndc * 0.5 + 0.5) * float2(DispatchRaysDimensions().xy);
+}
+
+float3 GetMotion(float3 x, float3 preX, float4x4 worldToView, float4x4 preWorldToView, float4x4 worldToClip, float4x4 preWorldToClip)
+{
+    float2 rect = float2(DispatchRaysDimensions().xy);
+
+    float viewZ     = mul(float4(x,     1.0), worldToView).z;
+    float viewZPrev = mul(float4(preX, 1.0), preWorldToView).z;
+
+    float2 uv     = ProjectToPixel(worldToClip,    x)     / rect;
+    float2 uvPrev = ProjectToPixel(preWorldToClip, preX) / rect;
+
+    float3 motion;
+    motion.xy = (uvPrev - uv) * rect;
+    motion.z  = viewZPrev - viewZ;
+    return motion;
+}

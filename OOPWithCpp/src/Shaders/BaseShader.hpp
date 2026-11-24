@@ -2,6 +2,9 @@
 #include "GPUBuffers.hpp"
 #include "BaseTLAS.hpp"
 
+#include "NRD.h"
+#include "NRDDescs.h"
+
 #include <string>
 #include <vector>
 #include <span>
@@ -151,6 +154,5 @@ namespace OWC::Graphics
 
 	private:
 		virtual void BindDynamicTextureImpl(u32 binding, const std::shared_ptr<DynamicTextureBuffer>& dTextureBuffer, DescriptorType descriptorType, i32 frameOffset) = 0;
-
 	};
 }

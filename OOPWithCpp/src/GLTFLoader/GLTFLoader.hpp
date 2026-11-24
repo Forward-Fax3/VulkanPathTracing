@@ -32,6 +32,7 @@ namespace OWC
         [[nodiscard]] uSize GetDeviceMaterialBufferPtr() const { return m_GPUBuffer->GetDeviceBufferPtr() + m_MaterialBufferOffset; }
         [[nodiscard]] uSize GetLightBufferPtr() const { return m_GPUBuffer->GetDeviceBufferPtr() + m_LightBufferOffset; }
         [[nodiscard]] u32 GetNumberOfLights() const { return m_NumberOfLights; }
+        [[nodiscard]] std::optional<u32> GetSelectedSunLightIndex() const { return m_SelectedSunLightIndex; }
 
         [[nodiscard]] const std::shared_ptr<Graphics::TextureArraySampler>& GetTextureArraySampler() const { return m_TextureArraySampler; }
         [[nodiscard]] const std::shared_ptr<Graphics::TextureArray>& GetColourTextureArray() const { return m_ColourTextureArray; }
@@ -54,6 +55,7 @@ namespace OWC
         std::shared_ptr<Graphics::TextureArray> m_NormalTextureArray;
         std::shared_ptr<Graphics::TextureArray> m_MetallicRoughnessTextureArray;
         std::shared_ptr<Graphics::TextureArray> m_EmissiveTextureArray;
+        std::optional<u32> m_SelectedSunLightIndex = std::nullopt;
         uSize m_LightBufferOffset = 0;
         uSize m_GeometryBufferOffset = 0;
         uSize m_MaterialBufferOffset = 0;

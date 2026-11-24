@@ -22,6 +22,7 @@ namespace OWC
         [[nodiscard]] OWC_FORCE_INLINE uSize GetDeviceMaterialBufferPtr() const override { return m_MeshReuseInstancingLoader.GetDeviceMaterialBufferPtr(); }
         [[nodiscard]] OWC_FORCE_INLINE uSize GetLightBufferPtr() const override { return m_MeshReuseInstancingLoader.GetLightBufferPtr(); }
         [[nodiscard]] OWC_FORCE_INLINE u32 GetNumberOfLights() const override { return m_MeshReuseInstancingLoader.GetNumberOfLights(); }
+        [[nodiscard]] OWC_FORCE_INLINE std::optional<u32> GetSelectedSunLightIndex() const override { return m_MeshReuseInstancingLoader.GetSelectedSunLightIndex(); }
 
         [[nodiscard]] OWC_FORCE_INLINE const std::shared_ptr<Graphics::TextureArraySampler>& GetTextureArraySampler() const override { return m_MeshReuseInstancingLoader.GetTextureArraySampler(); }
         [[nodiscard]] OWC_FORCE_INLINE const std::shared_ptr<Graphics::TextureArray>& GetColourTextureArray() const override { return m_MeshReuseInstancingLoader.GetColourTextureArray(); }

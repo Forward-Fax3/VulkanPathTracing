@@ -98,7 +98,7 @@ namespace OWC
 				MessageBoxA(nullptr, std::format(str, std::forward<Args>(args)...).c_str(), "Critical Error", MB_OK | MB_ICONERROR);
 #endif
 			
-			exit(EXIT_FAILURE);
+			exit(EXIT_FAILURE); // ensure the program will close on critical logs
 		}
 		else if constexpr (level == NewLine)
 		{

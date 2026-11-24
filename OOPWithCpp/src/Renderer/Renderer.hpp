@@ -4,6 +4,7 @@
 #include "GraphicsContext.hpp"
 #endif
 #include "BaseShader.hpp"
+#include "../NRD/Shader/BaseNRDShader.hpp"
 #include "GPUBuffers.hpp"
 
 #include <imgui.h>

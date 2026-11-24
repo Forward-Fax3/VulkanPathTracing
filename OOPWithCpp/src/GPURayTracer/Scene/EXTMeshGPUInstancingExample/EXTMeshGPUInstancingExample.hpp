@@ -22,6 +22,7 @@ namespace OWC
         [[nodiscard]] OWC_FORCE_INLINE uSize GetDeviceMaterialBufferPtr() const override { return m_EXTMeshGPUInstancingLoader.GetDeviceMaterialBufferPtr(); }
         [[nodiscard]] OWC_FORCE_INLINE uSize GetLightBufferPtr() const override { return m_EXTMeshGPUInstancingLoader.GetLightBufferPtr(); }
         [[nodiscard]] OWC_FORCE_INLINE u32 GetNumberOfLights() const override { return m_EXTMeshGPUInstancingLoader.GetNumberOfLights(); }
+        [[nodiscard]] OWC_FORCE_INLINE std::optional<u32> GetSelectedSunLightIndex() const override { return m_EXTMeshGPUInstancingLoader.GetSelectedSunLightIndex(); }
 
         [[nodiscard]] OWC_FORCE_INLINE bool GetNeedScreenRefresh() const override { return m_EXTMeshGPUInstancingLoader.GetNeedScreenRefresh(); }
 

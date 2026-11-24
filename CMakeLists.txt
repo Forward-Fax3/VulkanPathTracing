@@ -1,8 +1,14 @@
 ﻿cmake_minimum_required(VERSION 4.1)
 project(OOPWithCpp LANGUAGES CXX C)
 
-set(CMAKE_CXX_STANDARD 26)
-set(CMAKE_CXX_STANDARD_REQUIRED 23)
+# Use C++26 when the compiler supports it, otherwise require C++23 as the minimum.
+if ("cxx_std_26" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    set(CMAKE_CXX_STANDARD 26)
+else()
+    set(CMAKE_CXX_STANDARD 23)
+endif()
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+message(STATUS "Using C++${CMAKE_CXX_STANDARD}")
 set(CMAKE_CXX_EXTENSIONS ON)
 set(CMAKE_C_STANDARD 23)
 set(CMAKE_C_STANDARD_REQUIRED OFF)

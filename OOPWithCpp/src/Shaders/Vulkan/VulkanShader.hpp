@@ -24,7 +24,6 @@ namespace OWC::Graphics
 	class VulkanBaseShader : public BaseShader
 	{
 	public:
-		VulkanBaseShader() = default;
 		~VulkanBaseShader() override = default;
 		VulkanBaseShader(VulkanBaseShader&) = delete;
 		VulkanBaseShader& operator=(VulkanBaseShader&) = delete;
@@ -37,25 +36,40 @@ namespace OWC::Graphics
 		void BindSampler2D(u32 binding, const std::shared_ptr<TextureArraySampler>& sampler) override;
 		void BindTextureArray(u32 binding, const std::shared_ptr<TextureArray>& textureArray) override;
 
-		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::Pipeline& GetPipeline() const { return m_Pipeline; }
-		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::PipelineLayout& GetPipelineLayout() const { return m_PipelineLayout; }
-		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::DescriptorSetLayout& GetDescriptorSetLayout() const { return m_DescriptorSetLayout; }
-		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::DescriptorSet& GetDescriptorSet() const { return m_DescriptorSets[VulkanCore::GetConstInstance().GetCurrentFrameIndex()]; }
-		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::DescriptorSet& GetSpecificDescriptorSet(const uSize i) const { return m_DescriptorSets[i]; }
+		[[nodiscard]] virtual OWC_FORCE_INLINE const vk::raii::Pipeline& GetPipeline() const = 0;
+		[[nodiscard]] virtual OWC_FORCE_INLINE const vk::raii::PipelineLayout& GetPipelineLayout() const = 0;
+		[[nodiscard]] virtual OWC_FORCE_INLINE const vk::raii::DescriptorSetLayout& GetDescriptorSetLayout() const = 0;
+		[[nodiscard]] virtual OWC_FORCE_INLINE const vk::raii::DescriptorSet& GetDescriptorSet() const = 0;
+		[[nodiscard]] virtual OWC_FORCE_INLINE const vk::raii::DescriptorSet& GetSpecificDescriptorSet(uSize i) const = 0;
 
 	protected:
-		[[nodiscard]] OWC_FORCE_INLINE vk::DescriptorPool GetDescriptorPool() const { return m_DescriptorPool; }
-
-		void OWC_FORCE_INLINE SetPipeline(vk::raii::Pipeline&& pipeline) { m_Pipeline = std::move(pipeline); }
-		void OWC_FORCE_INLINE SetPipelineLayout(vk::raii::PipelineLayout&& pipelineLayout) { m_PipelineLayout = std::move(pipelineLayout); }
-		void OWC_FORCE_INLINE SetDescriptorSetLayout(vk::raii::DescriptorSetLayout&& descriptorSetLayout) { m_DescriptorSetLayout = std::move(descriptorSetLayout); }
-		void OWC_FORCE_INLINE SetDescriptorPool(vk::raii::DescriptorPool&& descriptorPool) { m_DescriptorPool = std::move(descriptorPool); }
-		void OWC_FORCE_INLINE SetDescriptorSets(std::vector<vk::raii::DescriptorSet>&& descriptorSet) { m_DescriptorSets = std::move(descriptorSet); }
+		VulkanBaseShader() = default;
 
 		[[nodiscard]] static VulkanShaderData ProcessShaderData(const ShaderData& shaderData, std::map<const std::span<const u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap);
 		[[nodiscard]] static vk::ShaderStageFlagBits ConvertToVulkanShaderStage(ShaderType type);
 		[[nodiscard]] static vk::VertexInputRate ConvertToVulkanVertexInputRate(VertexInputRate rate);
 		[[nodiscard]] static vk::DescriptorType ConvertToVulkanDescriptorType(DescriptorType type);
+	};
+
+	class VulkanShader final : public VulkanBaseShader
+	{
+	public:
+		explicit VulkanShader(const std::span<const ShaderData>& shaderDatas, const std::span<const VertexBindings>& vertexBindings, const std::span<const VertexAttributes>& vertexAttributes);
+		VulkanShader(VulkanShader&) = delete;
+		VulkanShader& operator=(VulkanShader&) = delete;
+		VulkanShader(VulkanShader&&) noexcept = delete;
+		VulkanShader& operator=(VulkanShader&&) noexcept = delete;
+
+		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::Pipeline& GetPipeline() const override { return m_Pipeline; }
+		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::PipelineLayout& GetPipelineLayout() const override { return m_PipelineLayout; }
+		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::DescriptorSetLayout& GetDescriptorSetLayout() const override { return m_DescriptorSetLayout; }
+		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::DescriptorSet& GetDescriptorSet() const override { return m_DescriptorSets[VulkanCore::GetInstance().GetCurrentFrameIndex()]; }
+		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::DescriptorSet& GetSpecificDescriptorSet(const uSize i) const override { return m_DescriptorSets[i]; }
+
+		void BindTLAS(u32, const std::shared_ptr<BaseTLAS>&) override { Log<LogLevel::Error>("VulkanShader::BindTLAS: TLAS can only be bound to ray tracing shaders! For this shader type please use VulkanRayTracingShader."); }
+
+	private:
+		void CreateVulkanPipeline(const std::span<VulkanShaderData>& vulkanShaderDatas, const std::map<const std::span<const u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap, const std::span<const VertexBindings>& vertexBindings, const std::span<const VertexAttributes>& vertexAttributes);
 
 	private:
 		vk::raii::Pipeline m_Pipeline = nullptr;
@@ -65,22 +79,7 @@ namespace OWC::Graphics
 		std::vector<vk::raii::DescriptorSet> m_DescriptorSets = {};
 	};
 
-	class VulkanShader : public VulkanBaseShader
-	{
-	public:
-		explicit VulkanShader(const std::span<const ShaderData>& shaderDatas, const std::span<const VertexBindings>& vertexBindings, const std::span<const VertexAttributes>& vertexAttributes);
-		VulkanShader(VulkanShader&) = delete;
-		VulkanShader& operator=(VulkanShader&) = delete;
-		VulkanShader(VulkanShader&&) noexcept = delete;
-		VulkanShader& operator=(VulkanShader&&) noexcept = delete;
-
-		void BindTLAS(u32, const std::shared_ptr<BaseTLAS>&) override { Log<LogLevel::Error>("VulkanShader::BindTLAS: TLAS can only be bound to ray tracing shaders! For this shader type please use VulkanRayTracingShader."); }
-
-	private:
-		void CreateVulkanPipeline(const std::span<VulkanShaderData>& vulkanShaderDatas, const std::map<const std::span<const u32>*, vk::ShaderModuleCreateInfo>& srcToShaderModulesMap, const std::span<const VertexBindings>& vertexBindings, const std::span<const VertexAttributes>& vertexAttributes);
-	};
-
-	class VulkanRayTracingShader : public VulkanBaseShader
+	class VulkanRayTracingShader final : public VulkanBaseShader
 	{
 	public:
 		explicit VulkanRayTracingShader(const std::span<const ShaderData>& shaderDatas);
@@ -96,6 +95,12 @@ namespace OWC::Graphics
 		[[nodiscard]] OWC_FORCE_INLINE const vk::StridedDeviceAddressRegionKHR& GetMissGroupSBTEntry() const { return m_MissGroupSBTEntry; }
 		[[nodiscard]] OWC_FORCE_INLINE const vk::StridedDeviceAddressRegionKHR& GetCallableGroupSBTEntry() const { return m_CallableGroupSBTEntry; }
 
+		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::Pipeline& GetPipeline() const override { return m_Pipeline; }
+		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::PipelineLayout& GetPipelineLayout() const override { return m_PipelineLayout; }
+		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::DescriptorSetLayout& GetDescriptorSetLayout() const override { return m_DescriptorSetLayout; }
+		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::DescriptorSet& GetDescriptorSet() const override { return m_DescriptorSets[VulkanCore::GetInstance().GetCurrentFrameIndex()]; }
+		[[nodiscard]] OWC_FORCE_INLINE const vk::raii::DescriptorSet& GetSpecificDescriptorSet(const uSize i) const override { return m_DescriptorSets[i]; }
+
 		void BindTLAS(u32 binding, const std::shared_ptr<BaseTLAS>& tlasBuffer) override;
 
 	private:
@@ -103,6 +108,11 @@ namespace OWC::Graphics
 		void CreateShaderBindingTable(u32 numberOfGroups);
 
 	private:
+		vk::raii::Pipeline m_Pipeline = nullptr;
+		vk::raii::PipelineLayout m_PipelineLayout = nullptr;
+		vk::raii::DescriptorSetLayout m_DescriptorSetLayout = nullptr;
+		vk::raii::DescriptorPool m_DescriptorPool = nullptr;
+		std::vector<vk::raii::DescriptorSet> m_DescriptorSets = {};
 		vk::StridedDeviceAddressRegionKHR m_RayGenShaderSBTEntry = {};
 		vk::StridedDeviceAddressRegionKHR m_HitGroupSBTEntry = {};
 		vk::StridedDeviceAddressRegionKHR m_MissGroupSBTEntry = {};

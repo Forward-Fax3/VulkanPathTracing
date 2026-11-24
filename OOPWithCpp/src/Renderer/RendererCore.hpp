@@ -4,13 +4,63 @@
 namespace OWC::Graphics
 {
     enum class Format : u32
-    { // TODO actually add some more formats not just what ImGui needs
+    {
         Undefined = 0,
-        R32G32_SFloat,
-        R32G32B32A32_SFloat,
+
+        R8_UNorm,
+        R8_SNorm,
+        R8_Uint,
+        R8_Sint,
+
+        R8G8_UNorm,
+        R8G8_SNorm,
+        R8G8_Uint,
+        R8G8_Sint,
+
         R8G8B8A8_UNorm,
+        R8G8B8A8_SNorm,
+        R8G8B8A8_Uint,
+        R8G8B8A8_Sint,
         R8G8B8A8_Srgb,
-        R10G10B10A2_Uint
+
+        R16_UNorm,
+        R16_SNorm,
+        R16_Uint,
+        R16_Sint,
+        R16_SFloat,
+
+        R16G16_UNorm,
+        R16G16_SNorm,
+        R16G16_Uint,
+        R16G16_Sint,
+        R16G16_SFloat,
+
+        R16G16B16A16_UNorm,
+        R16G16B16A16_SNorm,
+        R16G16B16A16_Uint,
+        R16G16B16A16_Sint,
+        R16G16B16A16_SFloat,
+
+        R32_Uint,
+        R32_Sint,
+        R32_SFloat,
+
+        R32G32_Uint,
+        R32G32_Sint,
+        R32G32_SFloat,
+
+        R32G32B32_Uint,
+        R32G32B32_Sint,
+        R32G32B32_SFloat,
+
+        R32G32B32A32_Uint,
+        R32G32B32A32_Sint,
+        R32G32B32A32_SFloat,
+
+        R10G10B10A2_UNorm,
+        R10G10B10A2_Uint,
+        R11G11B10_UFloat,
+        R9G9B9E5_UFloat,
     };
 
     enum class ImageLayout : u8

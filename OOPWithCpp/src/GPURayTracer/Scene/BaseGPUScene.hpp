@@ -24,6 +24,7 @@ namespace OWC
         [[nodiscard]] virtual uSize GetDeviceMaterialBufferPtr() const = 0;
         [[nodiscard]] virtual uSize GetLightBufferPtr() const = 0;
         [[nodiscard]] virtual u32 GetNumberOfLights() const = 0;
+        [[nodiscard]] virtual std::optional<u32> GetSelectedSunLightIndex() const = 0;
 
         [[nodiscard]] virtual const std::shared_ptr<Graphics::TextureArraySampler>& GetTextureArraySampler() const { return m_EmptyTextureArraySampler; }
         [[nodiscard]] virtual const std::shared_ptr<Graphics::TextureArray>& GetColourTextureArray() const { return m_EmptyTextureArray; }

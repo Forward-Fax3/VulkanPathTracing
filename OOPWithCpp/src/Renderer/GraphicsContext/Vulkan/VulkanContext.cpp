@@ -166,6 +166,7 @@ namespace OWC::Graphics
 		vk::KHRRayQueryExtensionName,
 		vk::KHRRayTracingMaintenance1ExtensionName,
 		vk::KHRRayTracingPositionFetchExtensionName,
+		vk::KHRComputeShaderDerivativesExtensionName,
 	};
 
 
@@ -183,6 +184,7 @@ namespace OWC::Graphics
 		vk::KHRRayQueryExtensionName,
 		vk::KHRRayTracingMaintenance1ExtensionName,
 		vk::KHRRayTracingPositionFetchExtensionName,
+		vk::KHRComputeShaderDerivativesExtensionName,
 		vk::EXTRayTracingInvocationReorderExtensionName,
 	};
 
@@ -269,7 +271,7 @@ namespace OWC::Graphics
 			if (const auto submitResult = vkCore.GetGraphicsQueue().submit(submitInfo, *m_EndOfFrameFences[vkCore.GetCurrentFrameIndex()]); !submitResult)
 				Log<LogLevel::Critical>("Failed to submit command buffer. Error: {}", vk::to_string(submitResult.error()));
 
-			if (auto indices = static_cast<u32>(vkCore.GetCurrentFrameIndex()); VulkanCore::GetConstInstance().GetPresentQueue().presentKHR(
+			if (auto indices = static_cast<u32>(vkCore.GetCurrentFrameIndex()); VulkanCore::GetInstance().GetPresentQueue().presentKHR(
 				vk::PresentInfoKHR()
 				.setSwapchains(*vkCore.GetSwapchain())
 				.setSwapchainCount(1)
@@ -370,7 +372,7 @@ namespace OWC::Graphics
 
 	void VulkanContext::WaitForIdle()
 	{
-		if (const auto result = VulkanCore::GetConstInstance().GetDevice().waitIdle(); result.error() != vk::Result::eSuccess)
+		if (const auto result = VulkanCore::GetInstance().GetDevice().waitIdle(); !result)
 			Log<LogLevel::Critical>("Failed to wait for idle: {}", vk::to_string(result.error()));
 	}
 
@@ -445,7 +447,7 @@ namespace OWC::Graphics
 			.setPpEnabledExtensionNames(extensions.data())
 			.setPApplicationInfo(&appInfo);
 
-		const auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& vkCore = VulkanCore::GetInstance();
 
 		auto instance = vkCore.GetVKContext().createInstance(createInfo);
 		if (!instance)
@@ -458,7 +460,7 @@ namespace OWC::Graphics
 #ifndef DIST
 	void VulkanContext::EnableVulkanDebugging()
 	{
-		const auto& vkInstance = VulkanCore::GetConstInstance().GetVKInstance();
+		const auto& vkInstance = VulkanCore::GetInstance().GetVKInstance();
 
 		static constexpr auto debugUtilsCreateInfo = vk::DebugUtilsMessengerCreateInfoEXT()
 			.setMessageSeverity(
@@ -483,7 +485,7 @@ namespace OWC::Graphics
 
 	void VulkanContext::SurfaceInit(SDL_Window& windowHandle)
 	{
-		const auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& vkCore = VulkanCore::GetInstance();
 
 		VkSurfaceKHR surface{};
 		SDL_Vulkan_CreateSurface(&windowHandle, *VulkanCore::GetInstance().GetVKInstance(), nullptr, &surface);
@@ -494,7 +496,7 @@ namespace OWC::Graphics
 
 	void VulkanContext::SelectPhysicalDevice()
 	{
-		const auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& vkCore = VulkanCore::GetInstance();
 		const auto& vkInstance = vkCore.GetVKInstance();
 
 		const auto physicalDevices = vkInstance.enumeratePhysicalDevices();
@@ -515,7 +517,7 @@ namespace OWC::Graphics
 			}
 		}
 
-		if (const auto pDevice = VulkanCore::GetConstInstance().GetPhysicalDev(); pDevice == nullptr)
+		if (const auto pDevice = VulkanCore::GetInstance().GetPhysicalDev(); pDevice == nullptr)
 			Log<LogLevel::Critical>("Failed to find a suitable GPU");
 		else
 		{
@@ -528,7 +530,7 @@ namespace OWC::Graphics
 
 			Log<LogLevel::Trace>("Vulkan Physical Device Selection:\n\tHighest Score: {}\n\tHas SER Support: {}\nSelected GPU: {} (ID: {}, GPU Type: {})",
 				highestScore,
-				VulkanCore::GetConstInstance().HasSERSupport() ? "Yes" : "No",
+				VulkanCore::GetInstance().HasSERSupport() ? "Yes" : "No",
 				std::string_view(deviceProperties.deviceName.data(), ::OWC::strnlen_s(deviceProperties.deviceName.data(), deviceProperties.deviceName.size())),
 				deviceProperties.deviceID,
 				vk::to_string(deviceProperties.deviceType));
@@ -574,7 +576,7 @@ namespace OWC::Graphics
 
 	void VulkanContext::FindQueueFamilies()
 	{
-		const auto queueFamilies = VulkanCore::GetConstInstance().GetPhysicalDev().getQueueFamilyProperties();
+		const auto queueFamilies = VulkanCore::GetInstance().GetPhysicalDev().getQueueFamilyProperties();
 		constexpr auto indexMax = std::numeric_limits<u32>::max();
 
 		for (u32 i = 0; i < static_cast<u32>(queueFamilies.size()); i++) // try to find all queue families in one loop and have different queue families if possible
@@ -584,14 +586,14 @@ namespace OWC::Graphics
 				i,
 				queueFamilies[i].queueCount,
 				vk::to_string(queueFamilies[i].queueFlags),
-				static_cast<bool>(VulkanCore::GetConstInstance().GetPhysicalDev().getSurfaceSupportKHR(
+				static_cast<bool>(VulkanCore::GetInstance().GetPhysicalDev().getSurfaceSupportKHR(
 					i,
-					VulkanCore::GetConstInstance().GetSurface()
+					VulkanCore::GetInstance().GetSurface()
 				))
 			);
 
 			if (m_QueueFamilyIndices.PresentFamily == indexMax &&
-				VulkanCore::GetConstInstance().GetPhysicalDev().getSurfaceSupportKHR(i, VulkanCore::GetConstInstance().GetSurface()))
+				VulkanCore::GetInstance().GetPhysicalDev().getSurfaceSupportKHR(i, VulkanCore::GetInstance().GetSurface()))
 				m_QueueFamilyIndices.PresentFamily = i;
 
 			if (m_QueueFamilyIndices.GraphicsFamily == indexMax && (queueFamilies[i].queueFlags & vk::QueueFlagBits::eGraphics) == vk::QueueFlagBits::eGraphics)
@@ -687,7 +689,7 @@ namespace OWC::Graphics
 			if (!queueFamilyUsageCount.contains(familyIndex))
 				queueFamilyUsageCount[familyIndex] = 0;
 
-			return VulkanCore::GetConstInstance().GetDevice().getQueue(familyIndex, queueFamilyUsageCount[familyIndex]++);
+			return VulkanCore::GetInstance().GetDevice().getQueue(familyIndex, queueFamilyUsageCount[familyIndex]++);
 		};
 		
 		VulkanCore::SetGraphicsQueue(l_getQueue(m_QueueFamilyIndices.GraphicsFamily));
@@ -696,7 +698,7 @@ namespace OWC::Graphics
 
 		if (queueFamilyUsageCount.contains(m_QueueFamilyIndices.PresentFamily))
 			VulkanCore::SetPresentQueue(
-				VulkanCore::GetConstInstance().GetDevice().getQueue(m_QueueFamilyIndices.PresentFamily, 0)
+				VulkanCore::GetInstance().GetDevice().getQueue(m_QueueFamilyIndices.PresentFamily, 0)
 			);
 		else
 			VulkanCore::SetPresentQueue(l_getQueue(m_QueueFamilyIndices.PresentFamily));
@@ -755,7 +757,7 @@ namespace OWC::Graphics
 
 		auto shaderExecutionReordering = vk::PhysicalDeviceRayTracingInvocationReorderFeaturesEXT()
 			.setPNext(&shaderObjectFeature)
-			.setRayTracingInvocationReorder(VulkanCore::GetConstInstance().HasSERSupport() ? vk::True : vk::False);
+			.setRayTracingInvocationReorder(VulkanCore::GetInstance().HasSERSupport() ? vk::True : vk::False);
 
 		auto rayTracingPositionFetch = vk::PhysicalDeviceRayTracingPositionFetchFeaturesKHR()
 			.setPNext(&shaderExecutionReordering)
@@ -782,8 +784,23 @@ namespace OWC::Graphics
 			.setPNext(&rayTracingPipelineFeature)
 			.setSwapchainMaintenance1(vk::True);
 
-		auto vulkan12features = vk::PhysicalDeviceVulkan12Features()
+		auto computeShaderDerivativesFeature = vk::PhysicalDeviceComputeShaderDerivativesFeaturesKHR()
 			.setPNext(&swapchainMaintenance1Feature)
+			.setComputeDerivativeGroupQuads(vk::True); // required by NRD shaders (SPV_KHR_compute_shader_derivatives)
+
+		auto vulkan14features = vk::PhysicalDeviceVulkan14Features()
+			.setMaintenance5(vk::True)
+			.setDynamicRenderingLocalRead(vk::True)
+			.setPushDescriptor(vk::True)
+			.setPNext(&computeShaderDerivativesFeature);
+
+		auto vulkan13features = vk::PhysicalDeviceVulkan13Features()
+			.setPNext(&vulkan14features)
+			.setSynchronization2(vk::True)
+			.setDynamicRendering(vk::True);
+
+		auto vulkan12features = vk::PhysicalDeviceVulkan12Features()
+			.setPNext(&vulkan13features)
 			.setScalarBlockLayout(vk::True)
 			.setBufferDeviceAddress(vk::True)
 			.setRuntimeDescriptorArray(vk::True)
@@ -793,28 +810,12 @@ namespace OWC::Graphics
 			.setShaderStorageBufferArrayNonUniformIndexing(vk::True)
 			.setShaderUniformBufferArrayNonUniformIndexing(vk::True);
 
-		auto maintenance5Feature = vk::PhysicalDeviceMaintenance5Features()
+		auto Vulkan11features = vk::PhysicalDeviceVulkan11Features()
 			.setPNext(&vulkan12features)
-			.setMaintenance5(vk::True);
-
-		auto shaderDrawParametersFeature = vk::PhysicalDeviceShaderDrawParametersFeatures()
-			.setPNext(&maintenance5Feature)
 			.setShaderDrawParameters(vk::True);
 
-		auto synchronization2Feature = vk::PhysicalDeviceSynchronization2Features()
-			.setPNext(&shaderDrawParametersFeature)
-			.setSynchronization2(vk::True);
-
-		auto dynamicRenderingLocalReadFeature = vk::PhysicalDeviceDynamicRenderingLocalReadFeatures()
-			.setPNext(&synchronization2Feature)
-			.setDynamicRenderingLocalRead(vk::True);
-
-		auto dynamicRenderingFeature = vk::PhysicalDeviceDynamicRenderingFeatures()
-			.setPNext(&dynamicRenderingLocalReadFeature)
-			.setDynamicRendering(vk::True);
-
 		auto enabledFeatures = vk::PhysicalDeviceFeatures2()
-			.setPNext(&dynamicRenderingFeature)
+			.setPNext(&Vulkan11features)
 			.setFeatures(vk::PhysicalDeviceFeatures()
 				.setSamplerAnisotropy(vk::True)
 				.setSampleRateShading(vk::True)
@@ -830,12 +831,12 @@ namespace OWC::Graphics
 			.setQueueCreateInfos(deviceQueueCreateInfos)
 			.setPNext(&enabledFeatures);
 
-		if (VulkanCore::GetConstInstance().HasSERSupport())
+		if (VulkanCore::GetInstance().HasSERSupport())
 			deviceCreateInfo.setPEnabledExtensionNames(g_DeviceExtensionsWithSER);
 		else
 			deviceCreateInfo.setPEnabledExtensionNames(g_DeviceExtensions);
 
-		auto device = VulkanCore::GetConstInstance().GetPhysicalDev().createDevice(deviceCreateInfo);
+		auto device = VulkanCore::GetInstance().GetPhysicalDev().createDevice(deviceCreateInfo);
 		if (!device)
 			Log<LogLevel::Critical>("Failed to create Vulkan logical device: {}", vk::to_string(device.error()));
 		VulkanCore::SetDevice(std::move(device).value());
@@ -844,7 +845,7 @@ namespace OWC::Graphics
 		for (const auto& familyIndex : std::views::keys(uniqueQueueFamiliesMap))
 			m_QueueFamilyIndices.UniqueIndices.emplace_back(familyIndex);
 
-		const auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& vkCore = VulkanCore::GetInstance();
 		VULKAN_HPP_DEFAULT_DISPATCHER.init(*vkCore.GetDevice());
 	}
 
@@ -853,7 +854,7 @@ namespace OWC::Graphics
 		if (m_IsMinimized)
 			return;
 
-		const auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& vkCore = VulkanCore::GetInstance();
 
 		const auto surfaceFormatsResult = vkCore.GetPhysicalDev().getSurfaceFormatsKHR(vkCore.GetSurface());
 		if (!surfaceFormatsResult)
@@ -869,7 +870,7 @@ namespace OWC::Graphics
 			Log<LogLevel::Debug>("Vulkan Swapchain Surface Format supported: {}, colour space: {}", vk::to_string(surfaceFormat.format), vk::to_string(surfaceFormat.colorSpace));
 
 		if (windowHandlePtr == nullptr)
-			windowHandlePtr = &Application::GetConstInstance().GetWindow().GetSDLWindow();
+			windowHandlePtr = &Application::GetInstance().GetWindow().GetSDLWindow();
 		const SDL_PropertiesID wProps = SDL_GetWindowProperties(windowHandlePtr);
 		const bool hdr = SDL_GetBooleanProperty(wProps, SDL_PROP_WINDOW_HDR_ENABLED_BOOLEAN, false);
 		const float headroom = SDL_GetFloatProperty(wProps, SDL_PROP_WINDOW_HDR_HEADROOM_FLOAT, 1.0f);
@@ -1027,7 +1028,7 @@ namespace OWC::Graphics
 
 	void VulkanContext::CreateCommandPools() const
 	{
-		const auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& vkCore = VulkanCore::GetInstance();
 
 		auto result = vkCore.GetDevice().createCommandPool(
 			vk::CommandPoolCreateInfo()
@@ -1038,7 +1039,7 @@ namespace OWC::Graphics
 		VulkanCore::SetGraphicsCommandPool(std::move(result).value());
 		Log<LogLevel::Trace>("Created graphics command pool with handle {}", static_cast<void*>(*vkCore.GetGraphicsCommandPool()));
 
-		result = VulkanCore::GetConstInstance().GetDevice().createCommandPool(
+		result = VulkanCore::GetInstance().GetDevice().createCommandPool(
 			vk::CommandPoolCreateInfo()
 			.setQueueFamilyIndex(m_QueueFamilyIndices.ComputeFamily)
 		);
@@ -1048,7 +1049,7 @@ namespace OWC::Graphics
 		VulkanCore::SetComputeCommandPool(std::move(result).value());
 		Log<LogLevel::Trace>("Created compute command pool with handle {}", static_cast<void*>(*vkCore.GetComputeCommandPool()));
 
-		result = VulkanCore::GetConstInstance().GetDevice().createCommandPool(
+		result = VulkanCore::GetInstance().GetDevice().createCommandPool(
 			vk::CommandPoolCreateInfo()
 			.setQueueFamilyIndex(m_QueueFamilyIndices.GraphicsFamily)
 			.setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer)
@@ -1058,7 +1059,7 @@ namespace OWC::Graphics
 		VulkanCore::SetDynamicGraphicsCommandPool(std::move(result).value());
 		Log<LogLevel::Trace>("Created reusable graphics command pool with handle {}", static_cast<void*>(*vkCore.GetDynamicGraphicsCommandPool()));
 
-		result = VulkanCore::GetConstInstance().GetDevice().createCommandPool(
+		result = VulkanCore::GetInstance().GetDevice().createCommandPool(
 			vk::CommandPoolCreateInfo()
 			.setQueueFamilyIndex(m_QueueFamilyIndices.ComputeFamily)
 			.setFlags(vk::CommandPoolCreateFlagBits::eResetCommandBuffer)
@@ -1074,7 +1075,7 @@ namespace OWC::Graphics
 
 	void VulkanContext::WriteCommandBuffers()
 	{
-		auto& vkCore = VulkanCore::GetConstInstance();
+		auto& vkCore = VulkanCore::GetInstance();
 		m_BeginRenderCmdBuf = vkCore.GetGraphicsCommandBuffer();
 		m_EndRenderCmdBuf = vkCore.GetGraphicsCommandBuffer();
 

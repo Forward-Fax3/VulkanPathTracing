@@ -32,14 +32,53 @@
 #include "glm/gtx/euler_angles.hpp"
 #include "glm/gtx/norm.inl"
 
+#include <NRD.h>
+
+#include "NRDImpl.hpp"
+
+#include "glm/gtc/matrix_inverse.hpp"
+
 
 namespace OWC
 {
+	static constexpr std::array denoisers = {
+		/*nrd::DenoiserDesc {
+			.identifier = static_cast<nrd::Identifier>(nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR),
+			.denoiser = nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR,
+		},*/
+		nrd::DenoiserDesc {
+			.identifier = static_cast<nrd::Identifier>(nrd::Denoiser::RELAX_DIFFUSE_SPECULAR),
+			.denoiser = nrd::Denoiser::RELAX_DIFFUSE_SPECULAR,
+		},
+		/*nrd::DenoiserDesc {
+			.identifier = static_cast<nrd::Identifier>(nrd::Denoiser::SIGMA_SHADOW),
+			.denoiser = nrd::Denoiser::SIGMA_SHADOW,
+		},*/
+	};
+
+	[[nodiscard]] static constexpr f32 Halton(u32 index, const u32 base) noexcept
+	{
+		f32 f = 1.0f, result = 0.0f;
+		while (index > 0)
+		{
+			f /= static_cast<f32>(base);
+			result += f * static_cast<f32>(index % base);
+			index /= base;
+		}
+		return result;
+	}
+
+	[[nodiscard]] static Vec2 GetCameraJitter(const u32 frameIndex) noexcept
+	{
+		constexpr u32 phaseCount = 16;                 // 8–16 at native res
+		const u32 i = frameIndex % phaseCount + 1;     // Halton(0) == 0, so start at 1
+		return { Halton(i, 2) - 0.5f, Halton(i, 3) - 0.5f };
+	}
+
 	GPURayTracerRenderer::GPURayTracerRenderer()
 		: m_UniformBuffer(Graphics::UniformBuffer::CreateUniformBuffer(sizeof(UniformBufferObject))),
 		  m_RayTracingGPUDataBuffer(Graphics::UniformBuffer::CreateUniformBuffer(sizeof(GeneralGPUData))),
 		  m_RayTracingResolution(Application::GetConstInstance().GetPixelWidth(), Application::GetConstInstance().GetPixelHeight()),
-		  m_ScreenNeedsRefreshing(true),
 		  m_Scene(std::make_shared<MeshReuseInstancingExample>())
 	{
 		SetUpRenderImage();
@@ -53,50 +92,82 @@ namespace OWC
 	{
 		using namespace OWC::Graphics;
 
-		if (glm::length2(m_KeyPressedOnVec3) > 0.0f) // length squared instead of length to avoid unnecessary square root
-		{
-			const auto& app = Application::GetConstInstance();
-			const float deltaTime = app.GetDeltaTime();
-			const Vec3 movePos = m_KeyPressedOnVec3 * m_MoveSpeed * deltaTime;
-			m_CameraNeedsRefreshing = Renderer::GetNumberOfFramesInFlight() - 1;
-			CalculateCamera(movePos);
-		}
-		else if (m_CameraNeedsRefreshing != 0)
-		{
-			m_CameraNeedsRefreshing--;
-			CalculateCamera();
-		}
-		else // CalculateCamera already creates a new random but camera may not be moved so a new random is sent to the GPU here
-		{
-			m_StratifiedPosition = (m_StratifiedPosition + m_NumberOfSamples);
-			std::array newRandAndStratifiedPos{ Rand::LinearFastRandValue(0u, std::numeric_limits<u32>::max()), m_StratifiedPosition };
-			m_RayTracingGPUDataBuffer->UpdateBufferData(std::as_bytes(std::span<const u32>(newRandAndStratifiedPos.data(), newRandAndStratifiedPos.size())), sizeof(newRandAndStratifiedPos), offsetof(GeneralGPUData, randSeed));
-		}
+		m_PreViewToClip = m_ViewToClip;
+		m_PreWorldToView = m_WorldToView;
+		m_PreCamJit = m_CamJit;
+		m_CamJit = GetCameraJitter(m_FrameIndex);
+		m_FrameIndex++;
 
-		u32 GPURefreshScreen = false;
-		if (m_ScreenNeedsRefreshing || m_Scene->GetNeedScreenRefresh() || !m_AccumulationOn)
-		{
-			m_ScreenNeedsRefreshing = false;
-			m_NumberOfAccumulatedSamples = 0;
-			GPURefreshScreen = true;
-		}
+		const auto& app = Application::GetConstInstance();
 
-		m_RayTracingGPUDataBuffer->UpdateBufferData(std::as_bytes(std::span<const u32>(&GPURefreshScreen, 1)), sizeof(GeneralGPUData::GPURefreshScreen), offsetof(GeneralGPUData, GPURefreshScreen));
-
-		m_NumberOfAccumulatedSamples = m_AccumulationOn ? m_NumberOfAccumulatedSamples + m_NumberOfSamples : m_NumberOfSamples;
+		const float deltaTime = app.GetDeltaTime();
+		const Vec3 movePos = m_KeyPressedOnVec3 * m_MoveSpeed * deltaTime;
+		m_CameraNeedsRefreshing = Renderer::GetNumberOfFramesInFlight() - 1;
+		CalculateCamera(movePos);
 
 		UniformBufferObject ubo {
-			.divider = 1.0f / static_cast<f32>(m_NumberOfAccumulatedSamples)
+			.denoisingRange = 500000.f,
+			.validationEnable = m_ValidationOn ? 1u : 0u,
+			.SigmaOn = m_Scene->GetSelectedSunLightIndex().has_value() ? 1u : 0u,
+			.fullscreenPanel = m_FullscreenPanel,
 		};
 
-		m_UniformBuffer->UpdateBufferData(std::as_bytes(std::span<const UniformBufferObject>(&ubo, 1)));
+		m_UniformBuffer->UpdateBufferData(std::as_bytes(std::span{ &ubo, 1 }));
 
 		static constexpr std::array rayTracerWaitSemaphoreNames = { std::string_view{ "PreviousFrameDisplayDone" }, };
 		static constexpr std::array rayTracerSignalSemaphoreNames = { std::string_view{ "RayTracerDone" }, };
 		static constexpr std::array displayWaitSemaphoreNames = { std::string_view{ "ImageReady" }, std::string_view{ "RayTracerDone" }, };
 		static constexpr std::array displaySignalSemaphoreNames = { std::string_view{ "PreviousFrameDisplayDone" }, };
 
-		Renderer::SubmitRenderPass(m_RayTracingRenderPass, {}, rayTracerSignalSemaphoreNames, rayTracerWaitSemaphoreNames);
+		static constexpr auto cpyMat4 = []<uSize N>(float (&dst)[N], const Mat4& src) noexcept
+		{
+			static_assert(N == 16, "expected a 4x4 float matrix");
+#if AVX512
+			_mm512_storeu_ps(dst, _mm512_loadu_ps(glm::value_ptr(src)));
+#else
+			std::memcpy(dst, glm::value_ptr(src), sizeof(dst));
+#endif
+		};
+
+		Renderer::SubmitRenderPass(m_RayTracingRenderPass, {}, {}, rayTracerWaitSemaphoreNames);
+
+		nrd::CommonSettings commonSettings {};
+		cpyMat4(commonSettings.viewToClipMatrix, m_ViewToClip);
+		cpyMat4(commonSettings.viewToClipMatrixPrev, m_PreViewToClip);
+		cpyMat4(commonSettings.worldToViewMatrix, m_WorldToView);
+		cpyMat4(commonSettings.worldToViewMatrixPrev, m_PreWorldToView);
+
+		commonSettings.frameIndex = m_FrameIndex;
+		
+		commonSettings.motionVectorScale[2] = 1.0f;
+
+		commonSettings.resourceSizePrev[0] = m_RayTracingResolution.x;
+		commonSettings.resourceSizePrev[1] = m_RayTracingResolution.y;
+		commonSettings.rectSizePrev[0] = m_RayTracingResolution.x;
+		commonSettings.rectSizePrev[1] = m_RayTracingResolution.y;
+
+		commonSettings.resourceSize[0] = m_RayTracingResolution.x;
+		commonSettings.resourceSize[1] = m_RayTracingResolution.y;
+		commonSettings.rectSize[0] = m_RayTracingResolution.x;
+		commonSettings.rectSize[1] = m_RayTracingResolution.y;
+
+		commonSettings.cameraJitter[0] = m_CamJit.x;
+		commonSettings.cameraJitter[1] = m_CamJit.y;
+		commonSettings.cameraJitterPrev[0] = m_PreCamJit.x;
+		commonSettings.cameraJitterPrev[1] = m_PreCamJit.y;
+
+		commonSettings.enableValidation = m_ValidationOn;
+
+		commonSettings.timeDeltaBetweenFrames = app.GetDeltaTime();
+
+		if (m_ScreenNeedsRefreshing)
+		{
+			commonSettings.accumulationMode = nrd::AccumulationMode::CLEAR_AND_RESTART;
+			m_ScreenNeedsRefreshing = false;
+		}
+
+		m_NRDImpl->SetCommonSettings(commonSettings);
+		m_NRDImpl->Denoise(denoisers, m_NRDInputsAndOutputs, {}, rayTracerSignalSemaphoreNames);
 		Renderer::SubmitRenderPass(m_DisplayRenderPass, displayWaitSemaphoreNames, displaySignalSemaphoreNames);
 	}
 
@@ -104,9 +175,27 @@ namespace OWC
 	{
 		constexpr std::array scenes = { "mesh Reuse Instancing Example", "EXT_mesh_gpu_instancing Example", "Sponza Palace", "Bistro Exterior", "Bistro Interior" };
 
+		static constexpr u32 kNoPanel = 0xFFFFFFFF;
+		struct NrdPanel { const char* name; u32 id; };
+		static constexpr std::array kNrdPanels {
+			NrdPanel{ .name = "All (4x4 grid)", .id = kNoPanel },
+			NrdPanel{ .name = "Noisy diffuse", .id = 12 },
+			NrdPanel{ .name = "Denoised diffuse", .id = 13 },
+			NrdPanel{ .name = "Noisy specular", .id = 15 },
+			NrdPanel{ .name = "Denoised specular", .id = 14 },
+			NrdPanel{ .name = "Diffuse factor", .id = 7  },
+			NrdPanel{ .name = "Specular factor", .id = 11 },
+			NrdPanel{ .name = "World units", .id = 0  },
+			NrdPanel{ .name = "Roughness", .id = 1  },
+			NrdPanel{ .name = "View Z", .id = 2  },
+			NrdPanel{ .name = "Motion vectors", .id = 3  },
+			NrdPanel{ .name = "Normals", .id = 4  },
+			NrdPanel{ .name = "History length", .id = 8  },
+		};
+
 		bool cameraMoved = false;
 		ImGui::Begin("GPU Renderer");
-		ImGui::Text("Number of samples: %zu", m_NumberOfAccumulatedSamples);
+		ImGui::Text("Number of samples: %u", m_NumberOfSamples);
 		ImGui::Text("Ray tracer");
 
 		if (ImGui::Combo("Scene", &m_SceneIndex, scenes.data(), scenes.size()))
@@ -186,7 +275,7 @@ namespace OWC
         {
 			if (m_UseWindowResolution == true)
 			{
-				Graphics::Renderer::AddToEndOfFrameCleanUp([renderTarget = std::move(m_RenderTarget), RTS = std::move(m_RayTracingShader), DTS = std::move(m_DisplayShader), RTRR = std::move(m_RayTracingRenderPass), DRR = std::move(m_DisplayRenderPass)](){});
+				Graphics::Renderer::AddToEndOfFrameCleanUp([NRDIAO = std::move(m_NRDInputsAndOutputs), DT = std::move(m_DemodulatedTextures), RTS = std::move(m_RayTracingShader), DTS = std::move(m_DisplayShader), RTRR = std::move(m_RayTracingRenderPass), DRR = std::move(m_DisplayRenderPass)](){});
 				m_RayTracingResolution.x = Application::GetConstInstance().GetPixelWidth();
 				m_RayTracingResolution.y = Application::GetConstInstance().GetPixelHeight();
 				m_ScreenNeedsRefreshing = true;
@@ -199,20 +288,12 @@ namespace OWC
 		{
 			if (ImGui::OWC::SliderInt2WithAlignedText("Ray Tracing Resolution", "Width", "Height", glm::value_ptr(m_RayTracingResolution), 1, 8192, ImGuiSliderFlags_ClampOnInput))
 			{
-				Graphics::Renderer::AddToEndOfFrameCleanUp([renderTarget = std::move(m_RenderTarget), RTS = std::move(m_RayTracingShader), DTS = std::move(m_DisplayShader), RTRR = std::move(m_RayTracingRenderPass), DRR = std::move(m_DisplayRenderPass)](){});
+				Graphics::Renderer::AddToEndOfFrameCleanUp([NRDIAO = std::move(m_NRDInputsAndOutputs), DT = std::move(m_DemodulatedTextures), RTS = std::move(m_RayTracingShader), DTS = std::move(m_DisplayShader), RTRR = std::move(m_RayTracingRenderPass), DRR = std::move(m_DisplayRenderPass)](){});
 				m_ScreenNeedsRefreshing = true;
 				SetUpRenderImage();
 				SetupPipeline();
 				SetupRenderPass();
 			}
-		}
-		constexpr u32 minStratifiedGridSize = 1;
-		constexpr u32 maxStratifiedGridSize = 32;
-		if (ImGui::SliderScalar("Stratified Grid Size", ImGuiDataType_U32, &m_StratifiedGridSize, &minStratifiedGridSize, &maxStratifiedGridSize, "%d", ImGuiSliderFlags_ClampOnInput))
-		{
-			Graphics::Renderer::AddToEndOfFrameCleanUp([RTRR = std::move(m_RayTracingRenderPass), DRR = std::move(m_DisplayRenderPass)](){});
-			m_ScreenNeedsRefreshing = true;
-			SetupRenderPass();
 		}
 		constexpr u32 minNumberOfSamples = 1;
 		constexpr u32 maxNumberOfSamples = 16;
@@ -220,14 +301,33 @@ namespace OWC
 		{
 			Graphics::Renderer::AddToEndOfFrameCleanUp([RTRR = std::move(m_RayTracingRenderPass), DRR = std::move(m_DisplayRenderPass)](){});
 			m_ScreenNeedsRefreshing = true;
-			m_NumberOfAccumulatedSamples = 0;
 			SetupRenderPass();
 		}
-		if (ImGui::Checkbox("Accumulation On", &m_AccumulationOn))
+		ImGui::Checkbox("Validation Layers", &m_ValidationOn);
+		ImGui::BeginDisabled(!m_ValidationOn);
+
+		const char* preview = kNrdPanels[0].name;
+		for (const auto& [name, id] : kNrdPanels)
+			if (id == m_FullscreenPanel)
+			{
+				preview = name;
+				break;
+			}
+
+		if (ImGui::BeginCombo("View", preview))
 		{
-			m_ScreenNeedsRefreshing = true;
-			m_NumberOfAccumulatedSamples = 0;
+			for (const auto& [name, id] : kNrdPanels)
+			{
+				const bool selected = id == m_FullscreenPanel;
+				if (ImGui::Selectable(name, selected))
+					m_FullscreenPanel = id;
+				if (selected)
+					ImGui::SetItemDefaultFocus();
+			}
+			ImGui::EndCombo();
 		}
+
+		ImGui::EndDisabled();
 		ImGui::End();
 
 		if (cameraMoved)
@@ -347,7 +447,34 @@ namespace OWC
 
 	void GPURayTracerRenderer::SetUpRenderImage() // used in a few places
 	{
-		m_RenderTarget = Graphics::TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Graphics::Format::R32G32B32A32_SFloat);
+		using namespace Graphics;
+
+		Renderer::AddToEndOfFrameCleanUp([NRD = std::move(m_NRDImpl)](){});
+
+		m_NRDImpl = std::make_unique<NRDImpl>(denoisers, m_RayTracingResolution);
+		nrd::RelaxSettings relaxSettings;
+		relaxSettings.enableAntiFirefly = true;
+		m_NRDImpl->SetDenoiserSettings(static_cast<nrd::Identifier>(nrd::Denoiser::RELAX_DIFFUSE_SPECULAR), &relaxSettings);
+
+		m_NRDInputsAndOutputs[nrd::ResourceType::IN_MV] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R16G16B16A16_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		m_NRDInputsAndOutputs[nrd::ResourceType::IN_NORMAL_ROUGHNESS] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R10G10B10A2_UNorm, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		m_NRDInputsAndOutputs[nrd::ResourceType::IN_VIEWZ] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R32_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		m_NRDInputsAndOutputs[nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R16G16B16A16_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		m_NRDInputsAndOutputs[nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R16G16B16A16_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		m_NRDInputsAndOutputs[nrd::ResourceType::IN_PENUMBRA] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R16G16B16A16_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+
+		m_NRDInputsAndOutputs[nrd::ResourceType::OUT_VALIDATION] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R16G16B16A16_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+
+		m_NRDInputsAndOutputs[nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R16G16B16A16_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		m_NRDInputsAndOutputs[nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R16G16B16A16_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		m_NRDInputsAndOutputs[nrd::ResourceType::OUT_SHADOW_TRANSLUCENCY] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R16G16B16A16_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+
+		m_DemodulatedTextures.clear();
+		m_DemodulatedTextures.reserve(4);
+		m_DemodulatedTextures.emplace_back(Graphics::TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Graphics::Format::R16G16B16A16_SFloat));
+		m_DemodulatedTextures.emplace_back(Graphics::TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Graphics::Format::R16G16B16A16_SFloat));
+		m_DemodulatedTextures.emplace_back(Graphics::TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Graphics::Format::R16G16B16A16_SFloat));
+		m_DemodulatedTextures.emplace_back(Graphics::TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Graphics::Format::R16G16B16A16_SFloat));
 	}
 
 	void GPURayTracerRenderer::SetupRenderPass()
@@ -361,7 +488,7 @@ namespace OWC
 			u32 numberOfLights;
 			u32 numberOfBounces;
 			u32 numberOfSamples;
-			u32 StratifiedGridSize;
+			i32 SigmaLightIndex;
 		};
 
 		const PushConstantData pushConstantData = {
@@ -372,24 +499,61 @@ namespace OWC
 			.numberOfLights = m_Scene->GetNumberOfLights(),
 			.numberOfBounces = static_cast<u32>(m_NumberOfBounces),
 			.numberOfSamples = m_NumberOfSamples,
-			.StratifiedGridSize = m_StratifiedGridSize
+			.SigmaLightIndex = m_Scene->GetSelectedSunLightIndex().has_value() ? static_cast<i32>(m_Scene->GetSelectedSunLightIndex().value()) : -1,
 		};
 
 		using namespace OWC::Graphics;
 		m_RayTracingRenderPass = Renderer::GetStaticRayTracingPass();
-		Renderer::TransitionImage(m_RayTracingRenderPass, m_RenderTarget, AccessMask::ShaderWrite | AccessMask::ShaderRead, StageMask::RayTracing, ImageLayout::General);
+		Renderer::TransitionImage(m_RayTracingRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_VIEWZ), AccessMask::ShaderWrite, StageMask::RayTracing, ImageLayout::General);
+		Renderer::TransitionImage(m_RayTracingRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_MV), AccessMask::ShaderWrite, StageMask::RayTracing, ImageLayout::General);
+		Renderer::TransitionImage(m_RayTracingRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_NORMAL_ROUGHNESS), AccessMask::ShaderWrite, StageMask::RayTracing, ImageLayout::General);
+		Renderer::TransitionImage(m_RayTracingRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST), AccessMask::ShaderWrite, StageMask::RayTracing, ImageLayout::General);
+		Renderer::TransitionImage(m_RayTracingRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST), AccessMask::ShaderWrite, StageMask::RayTracing, ImageLayout::General);
+		Renderer::TransitionImage(m_RayTracingRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_PENUMBRA), AccessMask::ShaderWrite, StageMask::RayTracing, ImageLayout::General);
+		Renderer::TransitionImage(m_RayTracingRenderPass, m_DemodulatedTextures.at(0), AccessMask::ShaderWrite, StageMask::RayTracing, ImageLayout::General);
+		Renderer::TransitionImage(m_RayTracingRenderPass, m_DemodulatedTextures.at(1), AccessMask::ShaderWrite, StageMask::RayTracing, ImageLayout::General);
+		Renderer::TransitionImage(m_RayTracingRenderPass, m_DemodulatedTextures.at(2), AccessMask::ShaderWrite, StageMask::RayTracing, ImageLayout::General);
+		Renderer::TransitionImage(m_RayTracingRenderPass, m_DemodulatedTextures.at(3), AccessMask::ShaderWrite, StageMask::RayTracing, ImageLayout::General);
 		Renderer::PipelineBind(m_RayTracingRenderPass, *m_RayTracingShader);
 		Renderer::PushConstant(m_RayTracingRenderPass, *m_RayTracingShader, sizeof(PushConstantData), &pushConstantData);
 		Renderer::RayTrace(m_RayTracingRenderPass, *m_RayTracingShader, m_RayTracingResolution.x, m_RayTracingResolution.y, 1);
+		Renderer::TransitionImage(m_RayTracingRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_VIEWZ), AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		Renderer::TransitionImage(m_RayTracingRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_MV), AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		Renderer::TransitionImage(m_RayTracingRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_NORMAL_ROUGHNESS), AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		Renderer::TransitionImage(m_RayTracingRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST), AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		Renderer::TransitionImage(m_RayTracingRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST), AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		Renderer::TransitionImage(m_RayTracingRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_PENUMBRA), AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
 		Renderer::EndPass(m_RayTracingRenderPass);
 
 		m_DisplayRenderPass = Renderer::GetStaticRenderPass();
-		Renderer::TransitionImage(m_DisplayRenderPass, m_RenderTarget, AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_VIEWZ), AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST), AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST), AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST), AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST), AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::OUT_SHADOW_TRANSLUCENCY), AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::OUT_VALIDATION), AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_DemodulatedTextures.at(0), AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_DemodulatedTextures.at(1), AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_DemodulatedTextures.at(2), AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_DemodulatedTextures.at(3), AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
 		Renderer::BeginRasterPass(m_DisplayRenderPass);
 		Renderer::PipelineBind(m_DisplayRenderPass, *m_DisplayShader);
 		Renderer::Draw(m_DisplayRenderPass, 6);
 		Renderer::EndRasterPass(m_DisplayRenderPass);
-		Renderer::TransitionImage(m_DisplayRenderPass, m_RenderTarget, AccessMask::None, StageMask::TopOfPipe, ImageLayout::General);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_DemodulatedTextures.at(0), AccessMask::None, StageMask::TopOfPipe, ImageLayout::General);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_DemodulatedTextures.at(1), AccessMask::None, StageMask::TopOfPipe, ImageLayout::General);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_DemodulatedTextures.at(2), AccessMask::None, StageMask::TopOfPipe, ImageLayout::General);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_DemodulatedTextures.at(3), AccessMask::None, StageMask::TopOfPipe, ImageLayout::General);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_VIEWZ), AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST), AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST), AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_PENUMBRA), AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST), AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::OUT_VALIDATION), AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST), AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST), AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::OUT_SHADOW_TRANSLUCENCY), AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
 		Renderer::EndPass(m_DisplayRenderPass);
 	}
 
@@ -403,47 +567,101 @@ namespace OWC
 					.descriptorCount = 1,
 					.binding = 0,
 					.descriptorType = DescriptorType::StorageImage,
-					.stageFlags = ShaderType::RayGen,
+					.stageFlags = ShaderType::RayClosestHit | ShaderType::RayMiss,
 				},
 				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 1,
-					.descriptorType = DescriptorType::TLAS,
-					.stageFlags = (ShaderType::RayGen | ShaderType::RayClosestHit | ShaderType::RayAnyHit),
+					.descriptorType = DescriptorType::StorageImage,
+					.stageFlags = ShaderType::RayClosestHit | ShaderType::RayMiss,
 				},
 				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 2,
-					.descriptorType = DescriptorType::UniformBuffer,
-					.stageFlags = ShaderType::RayGen | ShaderType::RayAnyHit,
+					.descriptorType = DescriptorType::StorageImage,
+					.stageFlags = ShaderType::RayClosestHit | ShaderType::RayMiss,
 				},
 				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 3,
+					.descriptorType = DescriptorType::StorageImage,
+					.stageFlags = ShaderType::RayGen,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 4,
+					.descriptorType = DescriptorType::StorageImage,
+					.stageFlags = ShaderType::RayGen,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 5,
+					.descriptorType = DescriptorType::StorageImage,
+					.stageFlags = ShaderType::RayClosestHit,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 6,
+					.descriptorType = DescriptorType::StorageImage,
+					.stageFlags = ShaderType::RayClosestHit | ShaderType::RayMiss,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 7,
+					.descriptorType = DescriptorType::StorageImage,
+					.stageFlags = ShaderType::RayClosestHit | ShaderType::RayMiss,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 8,
+					.descriptorType = DescriptorType::StorageImage,
+					.stageFlags = ShaderType::RayClosestHit | ShaderType::RayMiss,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 9,
+					.descriptorType = DescriptorType::StorageImage,
+					.stageFlags = ShaderType::RayClosestHit,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 10,
+					.descriptorType = DescriptorType::TLAS,
+					.stageFlags = ShaderType::RayGen | ShaderType::RayClosestHit | ShaderType::RayAnyHit,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 11,
+					.descriptorType = DescriptorType::UniformBuffer,
+					.stageFlags = ShaderType::RayGen | ShaderType::RayAnyHit | ShaderType::RayClosestHit | ShaderType::RayMiss,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 12,
 					.descriptorType = DescriptorType::Sampler,
 					.stageFlags = ShaderType::RayClosestHit | ShaderType::RayAnyHit,
 				},
 				BindingDescription {
 					.descriptorCount = 1,
-					.binding = 4,
+					.binding = 13,
 					.descriptorType = DescriptorType::SampledImage,
 					.stageFlags = ShaderType::RayClosestHit | ShaderType::RayAnyHit,
 				},
 				BindingDescription {
 					.descriptorCount = 1,
-					.binding = 5,
+					.binding = 14,
 					.descriptorType = DescriptorType::SampledImage,
 					.stageFlags = ShaderType::RayClosestHit,
 				},
 				 BindingDescription{
 					.descriptorCount = 1,
-					.binding = 6,
+					.binding = 15,
 					.descriptorType = DescriptorType::SampledImage,
 					.stageFlags = ShaderType::RayClosestHit,
 				},
 				BindingDescription {
 					.descriptorCount = 1,
-					.binding = 7,
+					.binding = 16,
 					.descriptorType = DescriptorType::SampledImage,
 					.stageFlags = ShaderType::RayClosestHit,
 				},
@@ -516,14 +734,23 @@ namespace OWC
 			m_RayTracingShader = BaseShader::CreateRTShader(shaderDatas);
 #endif
 
-			m_RayTracingShader->BindTexture(0, m_RenderTarget, DescriptorType::StorageImage);
-			m_RayTracingShader->BindTLAS(1, m_Scene->GetTLAS());
-			m_RayTracingShader->BindUniform(2, m_RayTracingGPUDataBuffer);
-			m_RayTracingShader->BindSampler2D(3, m_Scene->GetTextureArraySampler());
-			m_RayTracingShader->BindTextureArray(4, m_Scene->GetColourTextureArray());
-			m_RayTracingShader->BindTextureArray(5, m_Scene->GetNormalTextureArray());
-			m_RayTracingShader->BindTextureArray(6, m_Scene->GetMetallicRoughnessTextureArray());
-			m_RayTracingShader->BindTextureArray(7, m_Scene->GetEmissiveTextureArray());
+			m_RayTracingShader->BindTexture(0, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_VIEWZ), DescriptorType::StorageImage);
+			m_RayTracingShader->BindTexture(1, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_MV), DescriptorType::StorageImage);
+			m_RayTracingShader->BindTexture(2, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_NORMAL_ROUGHNESS), DescriptorType::StorageImage);
+			m_RayTracingShader->BindTexture(3, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST), DescriptorType::StorageImage);
+			m_RayTracingShader->BindTexture(4, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST), DescriptorType::StorageImage);
+			m_RayTracingShader->BindTexture(5, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_PENUMBRA), DescriptorType::StorageImage);
+			m_RayTracingShader->BindTexture(6, m_DemodulatedTextures.at(0), DescriptorType::StorageImage);
+			m_RayTracingShader->BindTexture(7, m_DemodulatedTextures.at(1), DescriptorType::StorageImage);
+			m_RayTracingShader->BindTexture(8, m_DemodulatedTextures.at(2), DescriptorType::StorageImage);
+			m_RayTracingShader->BindTexture(9, m_DemodulatedTextures.at(3), DescriptorType::StorageImage);
+			m_RayTracingShader->BindTLAS(10, m_Scene->GetTLAS());
+			m_RayTracingShader->BindUniform(11, m_RayTracingGPUDataBuffer);
+			m_RayTracingShader->BindSampler2D(12, m_Scene->GetTextureArraySampler());
+			m_RayTracingShader->BindTextureArray(13, m_Scene->GetColourTextureArray());
+			m_RayTracingShader->BindTextureArray(14, m_Scene->GetNormalTextureArray());
+			m_RayTracingShader->BindTextureArray(15, m_Scene->GetMetallicRoughnessTextureArray());
+			m_RayTracingShader->BindTextureArray(16, m_Scene->GetEmissiveTextureArray());
 		}
 
 		{
@@ -543,6 +770,66 @@ namespace OWC
 				BindingDescription {
 					.descriptorCount = 1,
 					.binding = 2,
+					.descriptorType = DescriptorType::CombinedImageSampler,
+					.stageFlags = ShaderType::Fragment,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 3,
+					.descriptorType = DescriptorType::CombinedImageSampler,
+					.stageFlags = ShaderType::Fragment,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 4,
+					.descriptorType = DescriptorType::CombinedImageSampler,
+					.stageFlags = ShaderType::Fragment,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 5,
+					.descriptorType = DescriptorType::CombinedImageSampler,
+					.stageFlags = ShaderType::Fragment,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 6,
+					.descriptorType = DescriptorType::CombinedImageSampler,
+					.stageFlags = ShaderType::Fragment,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 7,
+					.descriptorType = DescriptorType::CombinedImageSampler,
+					.stageFlags = ShaderType::Fragment,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 8,
+					.descriptorType = DescriptorType::CombinedImageSampler,
+					.stageFlags = ShaderType::Fragment,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 9,
+					.descriptorType = DescriptorType::CombinedImageSampler,
+					.stageFlags = ShaderType::Fragment,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 10,
+					.descriptorType = DescriptorType::CombinedImageSampler,
+					.stageFlags = ShaderType::Fragment,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 11,
+					.descriptorType = DescriptorType::CombinedImageSampler,
+					.stageFlags = ShaderType::Fragment,
+				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 12,
 					.descriptorType = DescriptorType::CombinedImageSampler,
 					.stageFlags = ShaderType::Fragment,
 				},
@@ -580,7 +867,7 @@ namespace OWC
 				},
 			};
 #else
-			auto shaderSrc = LoadFileToBytecode<u32>("../ShaderSrc/GPURayTracerShaders/DisplayImage.spv");
+			auto shaderSrc = LoadFileToBytecode<u32>("ShaderSrc/GPURayTracerShaders/DisplayImage.spv");
 
 			if (!shaderSrc.has_value())
 				Log<LogLevel::Critical>("Failed to load ray tracing display shader SPIR-V bytecode"); // TODO: make this fail gracefully and boot the user back to the launch screen
@@ -606,7 +893,17 @@ namespace OWC
 			m_DisplayShader = BaseShader::CreateShader(shaderDatas);
 			m_DisplayShader->BindUniform(0, m_UniformBuffer);
 			m_DisplayShader->BindUniform(1, Renderer::GetDynamicRageUniformBuffer());
-			m_DisplayShader->BindTexture(2, m_RenderTarget, DescriptorType::CombinedImageSampler);
+			m_DisplayShader->BindTexture(2, m_DemodulatedTextures.at(0), DescriptorType::CombinedImageSampler);
+			m_DisplayShader->BindTexture(3, m_DemodulatedTextures.at(1), DescriptorType::CombinedImageSampler);
+			m_DisplayShader->BindTexture(4, m_DemodulatedTextures.at(2), DescriptorType::CombinedImageSampler);
+			m_DisplayShader->BindTexture(5, m_DemodulatedTextures.at(3), DescriptorType::CombinedImageSampler);
+			m_DisplayShader->BindTexture(6, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_VIEWZ), DescriptorType::CombinedImageSampler);
+			m_DisplayShader->BindTexture(7, m_NRDInputsAndOutputs.at(nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST), DescriptorType::CombinedImageSampler);
+			m_DisplayShader->BindTexture(8, m_NRDInputsAndOutputs.at(nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST), DescriptorType::CombinedImageSampler);
+			m_DisplayShader->BindTexture(9, m_NRDInputsAndOutputs.at(nrd::ResourceType::OUT_SHADOW_TRANSLUCENCY), DescriptorType::CombinedImageSampler);
+			m_DisplayShader->BindTexture(10, m_NRDInputsAndOutputs.at(nrd::ResourceType::OUT_VALIDATION), DescriptorType::CombinedImageSampler);
+			m_DisplayShader->BindTexture(11, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST), DescriptorType::CombinedImageSampler);
+			m_DisplayShader->BindTexture(12, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST), DescriptorType::CombinedImageSampler);
 		}
 	}
 
@@ -633,17 +930,21 @@ namespace OWC
 		const Mat4 posMat = glm::translate(mat, m_CameraPosition);
 		const Mat4 invView = posMat * rotMat;
 
+		m_WorldToView = glm::inverse(invView);
+		m_ViewToClip = projectionMatrix;
 		m_StratifiedPosition += m_NumberOfSamples;
-		GeneralGPUData generalGPUData {
-			.InvProjection = glm::transpose(glm::inverse(projectionMatrix)),
+		const GeneralGPUData generalGPUData {
+			.InvProjection = glm::inverseTranspose(projectionMatrix),
 			.InvViewMatrix = glm::transpose(invView),
+			.WorldToClip = glm::transpose(m_ViewToClip * m_WorldToView),
+			.PreWorldToClip = glm::transpose(m_PreViewToClip * m_PreWorldToView),
+			.WorldToView = glm::transpose(m_WorldToView),
+			.PreWorldToView = glm::transpose(m_PreWorldToView),
 			.randSeed = Rand::LinearFastRandValue(0u, std::numeric_limits<u32>::max()),
-			.stratifiedGridPosition = m_StratifiedPosition
+			.frameIndex = m_FrameIndex,
+			.camJit = m_CamJit,
 		};
 
-		constexpr uSize size = offsetof(GeneralGPUData, GPURefreshScreen); // better for to make sure that there isn't any alignment issues
-
-		m_RayTracingGPUDataBuffer->UpdateBufferData(std::as_bytes(std::span<const GeneralGPUData>(&generalGPUData, 1)), size);
-		m_ScreenNeedsRefreshing = true;
+		m_RayTracingGPUDataBuffer->UpdateBufferData(std::as_bytes(std::span(&generalGPUData, 1)), sizeof(GeneralGPUData));
 	}
 }

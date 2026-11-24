@@ -159,8 +159,8 @@ namespace OWC::Graphics
 		VulkanCore(VulkanCore&&) = delete;
 		VulkanCore& operator=(VulkanCore&&) = delete;
 
-		static const VulkanCore& GetInstance() { return *s_Instance; }
-		static const VulkanCore& GetConstInstance() { return *s_Instance; }
+		[[nodiscard]] static const VulkanCore& GetInstance() { return *s_Instance; }
+		[[deprecated("use GetInstance Instead")]] [[nodiscard]] static const VulkanCore& GetConstInstance() { return *s_Instance; }
 
 		static void Init();
 

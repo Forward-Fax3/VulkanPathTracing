@@ -1,6 +1,11 @@
-#include "../GeneralHelperShaders/Core.slang"
-#include "../GeneralHelperShaders/gltfData.h.slang"
-#include "../GeneralHelperShaders/BRDF.slang"
+#include "Core.slangh"
+#include "gltfData.slangh"
+#include "BRDF.slangh"
+
+// NRD.hlsli pulls in NRDConfig.hlsli, which NRD's CMake generates. Its NRD_NORMAL_ENCODING /
+// NRD_ROUGHNESS_ENCODING must match the NRD library you link (defaults: 2 = R10G10B10A2, 1 = linear).
+#include "NRD.hlsli"
+
 
 struct GetLightIndexReturn
 {
@@ -19,21 +24,40 @@ struct LightSample
 
 struct GeneralData
 {
-    float4x4 InvProjectionMatrix;
-    float4x4 InvViewMatrix;
+    float4x4 invProjectionMatrix;
+    float4x4 invViewMatrix;
+    float4x4 worldToClip;
+    float4x4 preWorldToClip;
+    float4x4 worldToView;
+    float4x4 preWorldToView;
     uint randSeed;
-    uint stratifiedGridPosition;
-    uint imageReset; // bool
+    uint frameIndex;
+    float2 cameraJitter;
+    float tanSunAngularRadius;
+    float cosSunAngularRadius;
 };
+
+// Path flags carried in the payload
+static const uint PATH_FLAG_DIFFUSE      = 1u << 0; // lobe picked at the primary hit was diffuse -> rest of the path feeds the diffuse signal
+static const uint PATH_FLAG_WRITE_GUIDES = 1u << 1; // this path writes the NRD guide buffers at the primary hit
+static const uint PATH_INDEX_SHIFT       = 8u;      // upper bits: path index within the pixel
+
+// NRD material IDs (2 bits with R10G10B10A2 normal encoding).
+// Host side: relaxSettings.minMaterialForDiffuse = 0, relaxSettings.minMaterialForSpecular = 1
+static const float MATERIAL_ID_DEFAULT = 0.0f;
+static const float MATERIAL_ID_METAL   = 1.0f;
 
 struct [raypayload] RayPayload
 {
-    float3 radiance : read(caller, closesthit, miss) : write(caller, closesthit, miss);
+    float3 diffRadiance : read(caller, closesthit, miss) : write(caller, closesthit, miss); // demodulated diffuse signal
+    float3 specRadiance : read(caller, closesthit, miss) : write(caller, closesthit, miss); // demodulated specular signal
     float3 throughput : read(caller, closesthit, miss) : write(caller, closesthit);
     float3 newOrigin : read(caller) : write(caller, closesthit);
     float3 newDirection : read(caller) : write(caller, closesthit);
+    float hitT : read(caller) : write(caller, closesthit, miss);                               // RayTCurrent() of the last trace
     uint randSeed : read(caller, closesthit) : write(caller, closesthit);
-    uint depth : read(caller, closesthit) : write(caller, closesthit, miss);
+    uint depth : read(caller, closesthit, miss) : write(caller, closesthit, miss);
+    uint flags : read(caller, closesthit, miss) : write(caller, closesthit);
 };
 
 struct PushConstantData
@@ -45,26 +69,49 @@ struct PushConstantData
     uint numOfLights;
     uint numberOfBounces;
     uint numberOfSamples;
-    uint stratifiedGridSize;
+    int sigmaLightIndex;
 };
 
 [[push_constant]] ConstantBuffer<PushConstantData> PC;
 
-[[vk::binding(0, 0)]]
-RWTexture2D<float4> resultTexture;
-[[vk::binding(1, 0)]]
+
+// ---- NRD inputs, written at the primary hit ----
+[[vk::binding(0, 0)]] [[vk::image_format("r32f")]]
+RWTexture2D<float> gOutViewZ;                   // IN_VIEWZ                 VK_FORMAT_R32_SFLOAT
+[[vk::binding(1, 0)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> gOutMotion;                 // IN_MV                    VK_FORMAT_R16G16B16A16_SFLOAT
+[[vk::binding(2, 0)]] [[vk::image_format("rgb10_a2")]]
+RWTexture2D<float4> gOutNormalRoughness;        // IN_NORMAL_ROUGHNESS      VK_FORMAT_A2B10G10R10_UNORM_PACK32
+[[vk::binding(3, 0)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> gOutDiffRadianceHitDist;    // IN_DIFF_RADIANCE_HITDIST VK_FORMAT_R16G16B16A16_SFLOAT
+[[vk::binding(4, 0)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> gOutSpecRadianceHitDist;    // IN_SPEC_RADIANCE_HITDIST VK_FORMAT_R16G16B16A16_SFLOAT
+[[vk::binding(5, 0)]] [[vk::image_format("r16f")]]
+RWTexture2D<float> gOutPenumbra;                // IN_PENUMBRA
+
+// ---- Not NRD inputs: needed to rebuild the image after denoising (NRDComposite.slang) ----
+[[vk::binding(6, 0)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> gOutDiffFactor;             // diffuse demodulation factor
+[[vk::binding(7, 0)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> gOutSpecFactor;             // specular demodulation factor
+[[vk::binding(8, 0)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> gOutEmission;               // primary-surface emission + sky; never denoised
+[[vk::binding(9, 0)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> gOutSigmaLight;             // skyLight
+
+[[vk::binding(10, 0)]]
 RaytracingAccelerationStructure sceneBVH;
-[[vk::binding(2, 0)]]
+[[vk::binding(11, 0)]]
 ConstantBuffer<GeneralData> PerFrameData;
-[[vk::binding(3, 0)]]
+[[vk::binding(12, 0)]]
 SamplerState textureSampler;
-[[vk::binding(4, 0)]]
+[[vk::binding(13, 0)]]
 Texture2DArray<float4> colourTextures;
-[[vk::binding(5, 0)]]
+[[vk::binding(14, 0)]]
 Texture2DArray<float4> normalTextures;
-[[vk::binding(6, 0)]]
+[[vk::binding(15, 0)]]
 Texture2DArray<float2> metallicRoughnessTextures;
-[[vk::binding(7, 0)]]
+[[vk::binding(16, 0)]]
 Texture2DArray<float3> emissiveTextures;
 
 float Rand(inout uint rngState)
@@ -81,6 +128,35 @@ uint PCGHash(uint v)
     uint state = v * 747796405u + 2891336453u;
     uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
     return (word >> 22u) ^ word;
+}
+
+// 4x4 Bayer dither, animated per frame (same as NVIDIA MathLib's Sequence::Bayer4x4).
+// Used for the primary lobe choice so every 3x3 block is guaranteed both a diffuse and a specular sample.
+float Bayer4x4(uint2 p, uint frameIndex)
+{
+    p &= 3u;
+    uint b = ((p.y & 1u) << 2) | ((p.x & 1u) << 3) | ((p.y & 2u) >> 1) | (p.x & 2u);
+    return (float((b + frameIndex) & 0xFu) + 0.5f) / 16.0f;
+}
+
+// Screen-uniform 1D Weyl sequence (same as MathLib's Sequence::Weyl1D)
+float Weyl1D(float p, uint n)
+{
+    return frac(p + float(n * 10368889u) / 16777216.0f);
+}
+
+float GetViewZ(float3 worldPosition)
+{
+    return mul(float4(worldPosition, 1.0f), PerFrameData.worldToView).z;
+}
+
+// After the primary hit, everything a path collects goes into the signal of the lobe it picked there
+void AddPathRadiance(inout RayPayload payload, float3 radiance)
+{
+    if ((payload.flags & PATH_FLAG_DIFFUSE) != 0)
+        payload.diffRadiance += radiance;
+    else
+        payload.specRadiance += radiance;
 }
 
 float3 DiffuseReflection(float3 normal, float3 tangent, float3 bitangent, inout uint rngState)
@@ -196,7 +272,7 @@ float LightWeight(LightData light, float3 position, float3 normal)
     float attenuation = 1.0f;
     if (light.range > 0.0f)
     {
-        const float dOverR =distance / light.range;
+        const float dOverR = distance / light.range;
         float k = saturate(1.0f - dOverR * dOverR * dOverR * dOverR);
         attenuation = k * k;
     }
@@ -210,7 +286,7 @@ float LightWeight(LightData light, float3 position, float3 normal)
     return luminosity * normalDotDelta * attenuation * spot / max(distance2, 1e-4);
 }
 
-GetLightIndexReturn GetLightIndex(float3 position, float3 normal, inout uint rngState)
+GetLightIndexReturn GetLightIndex(float3 position, float3 normal, int excludeIndex, inout uint rngState)
 {
     GetLightIndexReturn result;
     float total = 0.0f;
@@ -219,6 +295,9 @@ GetLightIndexReturn GetLightIndex(float3 position, float3 normal, inout uint rng
     float uniformRandNum = Rand(rngState);
     for (uint i = 0; i < PC.numOfLights; i++)
     {
+        if (int(i) == excludeIndex)
+            continue;
+
         float currentWeight = LightWeight(PC.lightsBuffer[i], position, normal);
         if (currentWeight <= 0.0f)
             continue;
@@ -377,6 +456,26 @@ bool IsVisible(float3 position, float3 lightDirection, float lightDistance, inou
     return rayQuery.CommittedStatus() == COMMITTED_NOTHING;
 }
 
+float TraceShadowHitDist(float3 origin, float3 dir, float tMax, inout uint rngState)
+{
+    RayQuery<RAY_FLAG_NONE> q;
+    RayDesc ray;
+    ray.Origin = origin; ray.Direction = dir; ray.TMin = 0.0f; ray.TMax = tMax;
+
+    q.TraceRayInline(sceneBVH, RAY_FLAG_NONE, 0xFF, ray);
+    while (q.Proceed())
+    {
+        if (q.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
+        {
+            GeometryDescriptor g = PC.geometryData[q.CandidateInstanceID() + q.CandidateRayGeometryIndex()];
+            float a = EvalAlpha(g, q.CandidatePrimitiveIndex(), q.CandidateTriangleBarycentrics());
+            if (a >= 1.0f || Rand(rngState) < a)
+                q.CommitNonOpaqueTriangleHit();
+        }
+    }
+    return q.CommittedStatus() == COMMITTED_TRIANGLE_HIT ? q.CommittedRayT() : NRD_FP16_MAX;
+}
+
 float3 SampleSunDisk(float3 sunDir, float cosAngularRadius, inout uint rngState)
 {
     float r1 = Rand(rngState);
@@ -397,48 +496,49 @@ float3 SampleSunDisk(float3 sunDir, float cosAngularRadius, inout uint rngState)
 [shader("raygeneration")]
 void RayGenShader()
 {
-    const uint2 intThreadIdx = DispatchRaysIndex().xy;
-    const uint2 intScreenSize = DispatchRaysDimensions().xy;
+    static_assert(NRD_NORMAL_ENCODING == 2, "NRD Normal not expected value");
 
-    const float2 threadIdx = (float2)intThreadIdx;
+    const uint2 pixel = DispatchRaysIndex().xy;
+    const uint2 intScreenSize = DispatchRaysDimensions().xy;
     const float2 screenSize = (float2)intScreenSize;
 
-    uint pixelX = intThreadIdx.x;
-    uint pixelY = intThreadIdx.y;
-
-    const uint pixelIndex = pixelX + intScreenSize.x * pixelY;
+    const uint pixelIndex = pixel.x + intScreenSize.x * pixel.y;
     uint randVal = PCGHash(pixelIndex + PerFrameData.randSeed);
 
-    const uint pixelHash = PCGHash(pixelX + intScreenSize.x * pixelY);
-    const uint rotX = pixelHash % PC.stratifiedGridSize;
-    const uint rotY = PCGHash(pixelHash) % PC.stratifiedGridSize;
+    // NRD: every pixel must sample the SAME sub-pixel offset this frame (and NRD must be told what it is),
+    // otherwise viewZ / normals / motion become noisy guides. Anti-aliasing then comes from varying
+    // cameraJitter over frames (e.g. Halton 2,3), not from per-pixel random jitter.
+    const float2 samplePos = float2(pixel) + 0.5f + PerFrameData.cameraJitter;
+    const float2 screenCoords = samplePos / screenSize * 2.0 - 1.0;
+    const float4 viewCoords = mul(float4(screenCoords, 1.0, 1.0), PerFrameData.invProjectionMatrix);
+    const float3 cameraOrigin = mul(float4(0.0f, 0.0f, 0.0f, 1.0f), PerFrameData.invViewMatrix).xyz;
+    const float3 cameraDirection = mul(float4(normalize(viewCoords.xyz), 0.0f), PerFrameData.invViewMatrix).xyz;
 
-    uint stratifiedGridPosition = PerFrameData.stratifiedGridPosition;
+    float3 diffRadiance = 0.0f;
+    float3 specRadiance = 0.0f;
+    float diffHitDist = 0.0f;
+    uint diffHitDistNum = 0;
+    float specHitDist = NRD_FrontEnd_SpecHitDistAveraging_Begin();
 
-    float3 sum = 0.0f;
-
-    for (uint i = 0; i < PC.numberOfSamples; i++)
+    for (uint path = 0; path < PC.numberOfSamples; path++)
     {
-        uint cell = stratifiedGridPosition % (PC.stratifiedGridSize * PC.stratifiedGridSize);
-        uint stratumX = (cell % PC.stratifiedGridSize + rotX) % PC.stratifiedGridSize;
-        uint stratumY = (cell / PC.stratifiedGridSize + rotY) % PC.stratifiedGridSize;
-
-        float jitterX = (float(stratumX) + Rand(randVal)) / float(PC.stratifiedGridSize);
-        float jitterY = (float(stratumY) + Rand(randVal)) / float(PC.stratifiedGridSize);
-
-        const float2 screenCoords = (threadIdx + float2(jitterX, jitterY)) / screenSize * 2.0 - 1.0;
-        const float4 viewCoords = mul(float4(screenCoords, 1.0, 1.0), PerFrameData.InvProjectionMatrix);
-
         RayDesc ray;
         ray.TMin = 0.001;
         ray.TMax = 10000.0;
         RayPayload payload;
-        payload.radiance = float3(0.0f);
+        payload.diffRadiance = float3(0.0f);
+        payload.specRadiance = float3(0.0f);
         payload.throughput = float3(1.0f);
+        payload.hitT = 0.0f;
         payload.randSeed = randVal;
         payload.depth = PC.numberOfBounces;
-        payload.newOrigin = mul(float4(0.0f, 0.0f, 0.0f, 1.0f), PerFrameData.InvViewMatrix).xyz;
-        payload.newDirection = mul(float4(normalize(viewCoords.xyz), 0.0f), PerFrameData.InvViewMatrix).xyz;
+        payload.flags = (path << PATH_INDEX_SHIFT) | (path == 0 ? PATH_FLAG_WRITE_GUIDES : 0u);
+        payload.newOrigin = cameraOrigin;
+        payload.newDirection = cameraDirection;
+
+        // NRD wants the length of the 1st bounce only (primary hit -> next hit), never the summed path length
+        float firstBounceHitT = 0.0f; // 0 = "no data" for NRD
+        uint bounce = 0;
 
         while (payload.depth != 0)
         {
@@ -462,22 +562,46 @@ void RayGenShader()
             TraceRay(sceneBVH, rayFlags, 0xFF, 0, 0, 0, ray, payload);
 #endif
 
-            if (any(isnan(payload.radiance)) || any(isinf(payload.radiance)))
+            if (bounce == 1)
+                firstBounceHitT = payload.hitT;
+            bounce++;
+
+            if (!NRD_IsValidRadiance(payload.diffRadiance) || !NRD_IsValidRadiance(payload.specRadiance))
                 break;
         }
 
-        if (any(isnan(payload.radiance)) || any(isinf(payload.radiance)))
-            payload.radiance = 0.0f;
-
-        sum += payload.radiance;
         randVal = payload.randSeed;
-        stratifiedGridPosition++;
+
+        // Radiance already includes 1 / lobe probability, so it is averaged over ALL paths below
+        if (NRD_IsValidRadiance(payload.diffRadiance) && NRD_IsValidRadiance(payload.specRadiance))
+        {
+            diffRadiance += payload.diffRadiance;
+            specRadiance += payload.specRadiance;
+        }
+
+        // Hit distances are not probability-weighted: average them only over paths of that lobe
+        if ((payload.flags & PATH_FLAG_DIFFUSE) != 0)
+        {
+            if (firstBounceHitT > 0.0f)
+            {
+                diffHitDist += firstBounceHitT;
+                diffHitDistNum++;
+            }
+        }
+        else
+            NRD_FrontEnd_SpecHitDistAveraging_Add(specHitDist, firstBounceHitT); // ignores 0
     }
 
-    if (PerFrameData.imageReset == 1)
-        resultTexture[intThreadIdx.xy] = float4(sum, (float)PC.numberOfSamples);
-    else
-        resultTexture[intThreadIdx.xy] += float4(sum, (float)PC.numberOfSamples);
+    const float invPathNum = 1.0f / float(max(PC.numberOfSamples, 1u));
+    diffRadiance *= invPathNum;
+    specRadiance *= invPathNum;
+    diffHitDist = diffHitDistNum != 0 ? diffHitDist / float(diffHitDistNum) : 0.0f;
+    NRD_FrontEnd_SpecHitDistAveraging_End(specHitDist);
+
+    // RELAX takes the raw hit distance. For REBLUR later: normalise each path's hitT with
+    // REBLUR_FrontEnd_GetNormHitDist(...) before accumulating and pack with REBLUR_FrontEnd_PackRadianceAndNormHitDist.
+    gOutDiffRadianceHitDist[pixel] = RELAX_FrontEnd_PackRadianceAndHitDist(diffRadiance, diffHitDist, true);
+    gOutSpecRadianceHitDist[pixel] = RELAX_FrontEnd_PackRadianceAndHitDist(specRadiance, specHitDist, true);
 }
 
 [shader("miss")]
@@ -487,13 +611,43 @@ void MissShader(inout RayPayload payload)
 
     const float scale = 1.0f;
     float t = 0.5f * (rayDirection.y + 1.0f);
-    payload.radiance += payload.throughput * ((1.0f - t) + t * float3(0.5f, 0.7f, 1.0f) * scale);
+    const float3 sky = (1.0f - t) + t * float3(0.5f, 0.7f, 1.0f) * scale;
+
+    // A bounce ray that escapes counts as "very far away" for NRD
+    payload.hitT = NRD_FP16_MAX;
+
+    if (payload.depth == PC.numberOfBounces)
+    {
+        // Primary miss: nothing to denoise. viewZ beyond CommonSettings::denoisingRange makes NRD skip the
+        // pixel, and the sky goes straight into the emission buffer.
+        if ((payload.flags & PATH_FLAG_WRITE_GUIDES) != 0)
+        {
+            const uint2 pixel = DispatchRaysIndex().xy;
+            const float viewDirZ = mul(float4(rayDirection, 0.0f), PerFrameData.worldToView).z;
+
+            gOutViewZ[pixel] = (viewDirZ < 0.0f ? -1.0f : 1.0f) * NRD_INF; // guides must not contain INF/NaN
+            gOutMotion[pixel] = float4(0.0f);
+            gOutNormalRoughness[pixel] = NRD_FrontEnd_PackNormalAndRoughness(-rayDirection, 1.0f, MATERIAL_ID_DEFAULT);
+            gOutDiffFactor[pixel] = float4(1.0f);
+            gOutSpecFactor[pixel] = float4(1.0f);
+            gOutEmission[pixel] = float4(sky, 0.0f);
+        }
+    }
+    else
+        AddPathRadiance(payload, payload.throughput * sky);
+
     payload.depth = 0;
 }
 
 [shader("anyhit")]
 void AnyHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
+    if (HitKind() == HIT_KIND_TRIANGLE_BACK_FACE)
+    {
+        IgnoreHit();
+        return;
+    }
+
     GeometryDescriptor geometry = PC.geometryData[InstanceID() + GeometryIndex()];
     float alpha = EvalAlpha(geometry, PrimitiveIndex(), attr.barycentrics);
     if (alpha >= 1.0f)
@@ -507,6 +661,12 @@ void AnyHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAttrib
 [shader("closesthit")]
 void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
+    const bool isPrimary = payload.depth == PC.numberOfBounces;
+    const uint2 pixel = DispatchRaysIndex().xy;
+
+    // For the ray that left the primary hit, this is NRD's "1st bounce hitT"
+    payload.hitT = RayTCurrent();
+
     float3 barycentricCoords = float3(1 - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
 
     uint instanceID = InstanceID();
@@ -518,8 +678,6 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
     uint3 attributeIndex = GetTriangleIndices(geometry, primitiveIndex);
 
     VertexData hitData = InterpolateVerticesData(geometry.vertexOffset, attributeIndex, barycentricCoords);
-
-    //payload.radiance = float3(hitData.UV[0], 0.0f);
 
     MaterialData mat;
     if (geometry.materialIndex != 0xFFFFFFFFUL)
@@ -543,17 +701,7 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
     if (mat.baseColourTextureIndex != 0xFFFFFFFFUL)
         colour4 *= colourTextures.SampleLevel(textureSampler, float3(hitData.UV[mat.baseColourTextureCoords], mat.baseColourTextureIndex), 0.0f);
 
-    //payload.radiance = colour4.xyz;
-    //payload.depth = 0;
-    //return;
-
     float3 hitLocation = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
-
-    /*if (colour4.w < 1.0f && Rand(payload.randSeed) > colour4.w)
-    {
-        payload.newOrigin = hitLocation + 0.0001f * WorldRayDirection();
-        return;
-    }*/
 
     float3x3 normalMatrix = transpose((float3x3)WorldToObject3x4());
     float3 hitNormal = normalize(mul(normalMatrix, hitData.normal));
@@ -586,10 +734,6 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
     if (dot(WorldRayDirection(), geometricNormal) > 0.0f)
         geometricNormal = -geometricNormal;
 
-    /*payload.radiance = (geometricNormal + 1.0f) / 2.0f;
-    payload.depth = 0;
-    return;*/
-
     if (dot(hitNormal, geometricNormal) < 0.0f)
     {
         hitNormal = -hitNormal; tangent = -tangent; bitangent = -bitangent;
@@ -597,19 +741,15 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
 
     if (mat.normalTextureIndex != 0xFFFFFFFFUL)
     {
-        /*float2 normalTexXY = normalTextures.SampleLevel(textureSampler, float3(texCoords, mat.normalTextureIndex), 0.0f).xy * 2.0f - 1.0f;
-        float normalZ = sqrt(max(0.0f, 1.0f - dot(normalTexXY, normalTexXY)));
-        float3 normalTexXYZ = float3(normalTexXY, normalZ);*/
-
         float3 normalTexXYZ = normalTextures.SampleLevel(textureSampler, float3(hitData.UV[mat.normalTextureCoords], mat.normalTextureIndex), 0.0f).xyz * 2.0f - 1.0f;
         float3x3 TBN = float3x3(tangent, normalize(bitangent), hitNormal);
         hitNormal = normalize(mul(normalTexXYZ, TBN));
     }
 
-    float3 V = -WorldRayDirection();
-    float nv = dot(hitNormal, V);
+    float3 negRayDir = -WorldRayDirection();
+    float nv = dot(hitNormal, negRayDir);
     if (nv < 1e-3f)
-        hitNormal = normalize(hitNormal + V * (1e-3f - nv));
+        hitNormal = normalize(hitNormal + negRayDir * (1e-3f - nv));
 
     float3 t = tangent - hitNormal * dot(hitNormal, tangent);
     if (dot(t, t) > 1e-8f)
@@ -622,12 +762,8 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
         BuildOrthonormalBasis(hitNormal, tangent, bitangent);
     }
 
-    /*payload.radiance = (hitNormal + 1.0f) / 2.0f;
-    payload.depth = 0;
-    return;*/
-
     float metallicness = mat.metallicFactor;
-    float roughness = mat.roughnessFactor;
+    float roughness = mat.roughnessFactor; // glTF perceptual roughness == NRD "linear roughness"
     if (mat.metallicRoughnessTextureIndex != 0xFFFFFFFFUL)
     {
         float2 metallicRoughness = metallicRoughnessTextures.SampleLevel(textureSampler, float3(hitData.UV[mat.metallicRoughnessTextureCoords], mat.metallicRoughnessTextureIndex), 0.0f).xy;
@@ -637,15 +773,9 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
 
     roughness = max(roughness, 0.03f); // avoid singularities in GGX
 
-    /*payload.radiance = float3(0.0, metallicness, roughness);
-    payload.depth = 0;
-    return;*/
-
     float3 emissive = mat.emissiveFactor;
     if (mat.emissiveTextureIndex != 0xFFFFFFFFUL && (emissive.x > 0.0f || emissive.y > 0.0f || emissive.z > 0.0f))
         emissive *= emissiveTextures.SampleLevel(textureSampler, float3(hitData.UV[mat.emissiveTextureCoords], mat.emissiveTextureIndex), 0.0f).xyz;
-
-    payload.radiance += payload.throughput * emissive;
 
     payload.newOrigin = hitLocation + geometricNormal * 1e-4;
 
@@ -656,10 +786,33 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
     float3 Fview = FresnelSchlick(NdotV, F0);
     float3 kD = (1.0f - Fview) * (1.0f - metallicness);
 
+    float3 diffFactor = float3(1.0f);
+    float3 specFactor = float3(1.0f);
+    if (isPrimary)
+    {
+        NRD_MaterialFactors(hitNormal, negRayDir, albedo * (1.0f - metallicness), F0, roughness, diffFactor, specFactor);
+
+        if ((payload.flags & PATH_FLAG_WRITE_GUIDES) != 0)
+        {
+            // Static geometry: previous position == current position. For moving instances, pass the hit
+            // point transformed by last frame's object-to-world matrix as the second argument.
+            const float3 motion = GetMotion(hitLocation, hitLocation, PerFrameData.worldToView, PerFrameData.preWorldToView, PerFrameData.worldToClip, PerFrameData.preWorldToClip);
+            const float materialID = metallicness > 0.5f ? MATERIAL_ID_METAL : MATERIAL_ID_DEFAULT;
+
+            gOutViewZ[pixel] = GetViewZ(hitLocation);
+            gOutMotion[pixel] = float4(motion, 0.0f);
+            gOutNormalRoughness[pixel] = NRD_FrontEnd_PackNormalAndRoughness(hitNormal, roughness, materialID);
+            gOutDiffFactor[pixel] = float4(diffFactor, 0.0f);
+            gOutSpecFactor[pixel] = float4(specFactor, 0.0f);
+            gOutEmission[pixel] = float4(emissive, 0.0f); // primary emission stays sharp: it bypasses NRD
+        }
+    }
+    else
+        AddPathRadiance(payload, payload.throughput * emissive);
+
     if (PC.numOfLights > 0)
     {
-        //GetLightIndexReturn lightIndex = GetLightIndex(payload.newOrigin, hitNormal, Rand(payload.randSeed));
-        GetLightIndexReturn lightIndex = GetLightIndex(payload.newOrigin, hitNormal, payload.randSeed);
+        GetLightIndexReturn lightIndex = GetLightIndex(payload.newOrigin, hitNormal, isPrimary ? PC.sigmaLightIndex : -1, payload.randSeed);
         if (lightIndex.lightIndex != -1 && lightIndex.pdf > 0.0f)
         {
             LightData lightData = PC.lightsBuffer[lightIndex.lightIndex];
@@ -675,19 +828,28 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
                 float NdotL_light = max(dot(hitNormal, light.direction), 0.0f);
                 if (NdotL_light > 0.0f)
                 {
-                    const GGXResult specLight = EvalGGXSpecular(hitNormal, V, light.direction, roughness, F0);
-                    const float3 brdfValueLight = kD * albedo * oneOverPi + specLight.value;
+                    const GGXResult specLight = EvalGGXSpecular(hitNormal, negRayDir, light.direction, roughness, F0);
 
-                    // everything except visibility
-                    const float3 contribution = payload.throughput * brdfValueLight * NdotL_light * light.radiance / (light.pdf * lightIndex.pdf);
+                    const float3 lightScale = payload.throughput * NdotL_light * light.radiance / (light.pdf * lightIndex.pdf);
+                    const float3 diffContribution = lightScale * kD * albedo * oneOverPi;
+                    const float3 specContribution = lightScale * specLight.value;
+                    const float3 contribution = diffContribution + specContribution;
 
-                    // Russian roulette on the shadow ray
                     const float lum = dot(contribution, float3(0.2126f, 0.7152f, 0.0722f));
                     const float shadowRayThreshold = 5e-3;
-                    const float p = saturate(lum / shadowRayThreshold);   // lum == 0 -> never traced
+                    const float p = lum / shadowRayThreshold;
 
                     if (p > 0.0f && (p >= 1.0f || Rand(payload.randSeed) < p) && IsVisible(payload.newOrigin, light.direction, light.distance, payload.randSeed))
-                        payload.radiance += contribution / p;
+                    {
+                        const float invP = 1.0f / min(p, 1.0f);
+                        if (isPrimary)
+                        {
+                            payload.diffRadiance += diffContribution * invP / diffFactor;
+                            payload.specRadiance += specContribution * invP / specFactor;
+                        }
+                        else
+                            AddPathRadiance(payload, contribution * invP);
+                    }
                 }
             }
         }
@@ -701,47 +863,147 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
 
     float diffuseLum = dot(albedo * (1.0f - metallicness), float3(0.2126f, 0.7152f, 0.0722f));
     float specularLum = dot(F0, float3(0.2126f, 0.7152f, 0.0722f));
-    float diffuseWeight = clamp(diffuseLum / max(diffuseLum + specularLum, 1e-4f), 0.05f, 0.95f);
     float3 newRayDirection;
+    float NDotL;
 
-    GGXResult evalResult;
-    if (Rand(payload.randSeed) < diffuseWeight)
+    if (isPrimary)
     {
-        newRayDirection = DiffuseReflection(hitNormal, tangent, bitangent, payload.randSeed);
-        evalResult = EvalGGXSpecular(hitNormal, -WorldRayDirection(), newRayDirection, roughness, F0);
+        float shadowHitDist = NRD_FP16_MAX;
+        float tanRadius     = 0.0f;
+        float3 unshadowed    = 0.0f;
+
+        if (PC.sigmaLightIndex >= 0)
+        {
+            const LightData sl = PC.lightsBuffer[PC.sigmaLightIndex];
+
+            float3 L;           // direction to the light's centre
+            float lightDist;
+            float3 lightRadiance;
+
+            if (sl.type == directionalLight)
+            {
+                L = -sl.direction;
+                lightDist = 1e6f;
+                tanRadius = PerFrameData.tanSunAngularRadius;
+                lightRadiance = sl.colour * sl.intensity;
+            }
+            else
+            {
+                LightSample c = SampleLight(sl, payload.newOrigin);  // centre: attenuation + spot cone
+                L = c.direction;
+                lightDist = c.distance;
+                tanRadius = sl.radius / max(c.distance, 1e-4f);
+                lightRadiance = c.radiance;
+            }
+
+            const float NdotL = dot(hitNormal, L);
+
+            if (NdotL > 0.0f && dot(geometricNormal, L) > 0.0f && any(lightRadiance > 0.0f))
+            {
+                float3 Ls = L;
+                float  tMax = lightDist;
+                if (sl.type == directionalLight)
+                    Ls = SampleSunDisk(L, PerFrameData.cosSunAngularRadius, payload.randSeed);
+                else if (sl.radius > 0.0f)
+                {
+                    LightSample s = SampleSphereLight(sl, payload.newOrigin, payload.randSeed);
+                    if (s.pdf > 0.0f)
+                    {
+                        Ls = s.direction;
+                        tMax = s.distance;
+                    }
+                }
+
+                shadowHitDist = TraceShadowHitDist(payload.newOrigin, Ls, tMax - 1e-3f, payload.randSeed);
+
+                const GGXResult spec = EvalGGXSpecular(hitNormal, negRayDir, L, roughness, F0);
+                unshadowed = lightRadiance * NdotL * (kD * albedo * oneOverPi + spec.value);
+            }
+        }
+
+        gOutPenumbra[pixel]   = SIGMA_FrontEnd_PackPenumbra(shadowHitDist, tanRadius);
+        gOutSigmaLight[pixel] = float4(unshadowed, 0.0f);
+
+        // NRD: choose ONE lobe here; the rest of the path then feeds that lobe's signal only.
+        // Probability clamped to [1/4, 3/4] + Bayer dithering guarantees both lobes inside every 3x3 block,
+        // which RELAX's HitDistanceReconstructionMode::AREA_3X3 relies on. Exact 0 (pure metal) is allowed.
+        float diffuseProbability = diffuseLum / max(diffuseLum + specularLum, 1e-4f);
+        diffuseProbability = diffuseProbability > 0.0f ? clamp(diffuseProbability, 0.25f, 0.75f) : 0.0f;
+
+        const uint pathIndex = payload.flags >> PATH_INDEX_SHIFT;
+        const float lobeRand = frac(Bayer4x4(pixel, PerFrameData.frameIndex)  + Weyl1D(rsqrt(7.0f), PerFrameData.frameIndex) + float(pathIndex) * 0.6180339887f);
+
+        float3 lobeWeight; // (BRDF * cos / pdf) of the chosen lobe / selection probability / demodulation factor
+        if (lobeRand < diffuseProbability)
+        {
+            newRayDirection = DiffuseReflection(hitNormal, tangent, bitangent, payload.randSeed);
+            NDotL = max(dot(hitNormal, newRayDirection), 0.0f);
+
+            // cosine sampling: (kD * albedo / pi) * cos / (cos / pi) = kD * albedo
+            lobeWeight = kD * albedo / (diffFactor * diffuseProbability);
+            payload.flags |= PATH_FLAG_DIFFUSE;
+        }
+        else
+        {
+            BRDFSample gs = SampleGGX(hitNormal, negRayDir, roughness, F0, float2(Rand(payload.randSeed), Rand(payload.randSeed)), tangent, bitangent);
+            newRayDirection = gs.direction;
+            NDotL = max(dot(hitNormal, newRayDirection), 0.0f);
+
+            lobeWeight = gs.ggx.pdf > 0.0f ? gs.ggx.value * NDotL / (gs.ggx.pdf * specFactor * (1.0f - diffuseProbability)) : float3(0.0f);
+        }
+
+        payload.throughput *= lobeWeight;
+
+        if (NDotL <= 0.0f || dot(geometricNormal, newRayDirection) <= 0.0f || all(lobeWeight <= 0.0f))
+        {
+            payload.depth = 0; // this lobe's hitT stays 0 = "no data", NRD reconstructs it from neighbours
+            return;
+        }
+
+        // No Russian roulette on the first bounce: a killed path would leave the pixel without a hit distance
     }
     else
     {
-        BRDFSample gs = SampleGGX(hitNormal, -WorldRayDirection(), roughness, F0, float2(Rand(payload.randSeed), Rand(payload.randSeed)), tangent, bitangent);
-        newRayDirection = gs.direction;
-        evalResult = gs.ggx;
+        float diffuseWeight = clamp(diffuseLum / max(diffuseLum + specularLum, 1e-4f), 0.05f, 0.95f);
+
+        GGXResult evalResult;
+        if (Rand(payload.randSeed) < diffuseWeight)
+        {
+            newRayDirection = DiffuseReflection(hitNormal, tangent, bitangent, payload.randSeed);
+            evalResult = EvalGGXSpecular(hitNormal, negRayDir, newRayDirection, roughness, F0);
+        }
+        else
+        {
+            BRDFSample gs = SampleGGX(hitNormal, negRayDir, roughness, F0, float2(Rand(payload.randSeed), Rand(payload.randSeed)), tangent, bitangent);
+            newRayDirection = gs.direction;
+            evalResult = gs.ggx;
+        }
+
+        float3 diffuseValue = kD * albedo * oneOverPi;
+
+        const float3 brdfValue = diffuseValue + evalResult.value;
+        NDotL = max(dot(hitNormal, newRayDirection), 0.0f);
+        float cosinePdf = NDotL * oneOverPi;
+        const float brdfpdf = diffuseWeight * cosinePdf + (1.0f - diffuseWeight) * evalResult.pdf;
+
+        payload.throughput *= (brdfpdf > 0.0f) ? (brdfValue * NDotL / brdfpdf) : float3(0.0f);
+
+        if (brdfpdf <= 0.0f || NDotL <= 0.0f || dot(geometricNormal, newRayDirection) <= 0.0f)
+        {
+            payload.depth = 0;
+            return;
+        }
+
+        float rrP = clamp(max(max(payload.throughput.x, payload.throughput.y), payload.throughput.z), 0.05f, 0.95f);
+        if (Rand(payload.randSeed) > rrP)
+        {
+            payload.depth = 0;
+            return;
+        }
+
+        payload.throughput /= rrP;
     }
-
-    float3 diffuseValue = kD * albedo * oneOverPi;
-
-    const float3 brdfValue = diffuseValue + evalResult.value;
-    const float NDotL = max(dot(hitNormal, newRayDirection), 0.0f);
-    float cosinePdf = NDotL * oneOverPi;
-    const float brdfpdf = diffuseWeight * cosinePdf + (1.0f - diffuseWeight) * evalResult.pdf;
 
     payload.newDirection = newRayDirection;
-
-    payload.throughput *= (brdfpdf > 0.0f) ? (brdfValue * NDotL / brdfpdf) : float3(0.0f);
-
-    if (brdfpdf <= 0.0f || NDotL <= 0.0f || dot(geometricNormal, newRayDirection) <= 0.0f)
-    {
-        payload.depth = 0;
-        return;
-    }
-
-    float rrP = clamp(max(max(payload.throughput.x, payload.throughput.y), payload.throughput.z), 0.05f, 0.95f);
-    if (Rand(payload.randSeed) > rrP)
-    {
-        payload.depth = 0;
-        return;
-    }
-
-    payload.throughput /= rrP;
-
     payload.depth--;
 }

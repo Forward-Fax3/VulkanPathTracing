@@ -59,6 +59,9 @@ namespace OWC::Graphics
 	private:
 		vma::raii::Buffer m_IndexBuffer = nullptr;
 		uSize m_NumOfIndices = 0;
+		AccessMask m_AccessMask{};
+		StageMask m_StageMask{};
+		ImageLayout m_ImageLayout{};
 	};
 
 	class VulkanUniformBuffer : public UniformBuffer
@@ -72,7 +75,7 @@ namespace OWC::Graphics
 		VulkanUniformBuffer(VulkanUniformBuffer&&) noexcept = delete;
 		VulkanUniformBuffer& operator=(VulkanUniformBuffer&&) noexcept = delete;
 
-		[[nodiscard]] vk::Buffer GetBuffer() const { return m_UniformBuffers[VulkanCore::GetConstInstance().GetCurrentFrameIndex()]; };
+		[[nodiscard]] vk::Buffer GetBuffer() const { return m_UniformBuffers[VulkanCore::GetInstance().GetCurrentFrameIndex()]; };
 		[[nodiscard]] uSize GetBufferSize() const { return m_UniformBuffers[0].getMemoryRequirements().size; }
 
 		[[nodiscard]] const std::vector<vma::raii::Buffer>& GetBuffers() const { return m_UniformBuffers; }
@@ -89,7 +92,7 @@ namespace OWC::Graphics
 	public:
 		VulkanStorageImage() = delete;
 		explicit VulkanStorageImage(const ImageLoader<f32, 4, glm::aligned_highp>& image);
-		explicit VulkanStorageImage(u32 width, u32 height, Format format);
+		explicit VulkanStorageImage(u32 width, u32 height, Format format, AccessMask accessMask, StageMask stageMask, ImageLayout imageLayout);
 		~VulkanStorageImage() override = default;
 		VulkanStorageImage(VulkanStorageImage&) = delete;
 		VulkanStorageImage& operator=(const VulkanStorageImage&) = delete;
@@ -122,9 +125,9 @@ namespace OWC::Graphics
 		u32 m_Width = 0;
 		u32 m_Height = 0;
 		vk::Format m_Format = vk::Format::eUndefined;
-		vk::AccessFlags2 m_CurrentAccessFlags = vk::AccessFlags2();
-		vk::PipelineStageFlags2 m_CurrentPipelineStageFlags = vk::PipelineStageFlags2();
-		vk::ImageLayout m_CurrentLayout = vk::ImageLayout();
+		vk::AccessFlags2 m_CurrentAccessFlags = vk::AccessFlagBits2::eNone;
+		vk::PipelineStageFlags2 m_CurrentPipelineStageFlags = vk::PipelineStageFlagBits2::eTopOfPipe;
+		vk::ImageLayout m_CurrentLayout = vk::ImageLayout::eUndefined;
 	};
 
 	class VulkanDynamicTextureBuffer : public DynamicTextureBuffer
@@ -139,8 +142,8 @@ namespace OWC::Graphics
 		VulkanDynamicTextureBuffer& operator=(VulkanDynamicTextureBuffer&&) noexcept = delete;
 		void UpdateBufferData(const std::vector<Vec4>& data) override;
 
-		[[nodiscard]] vk::Image GetImage() const { return m_TextureImage[VulkanCore::GetConstInstance().GetCurrentFrameIndex()]; }
-		[[nodiscard]] vk::ImageView GetImageView() const { return m_TextureImageView[VulkanCore::GetConstInstance().GetCurrentFrameIndex()]; }
+		[[nodiscard]] vk::Image GetImage() const { return m_TextureImage[VulkanCore::GetInstance().GetCurrentFrameIndex()]; }
+		[[nodiscard]] vk::ImageView GetImageView() const { return m_TextureImageView[VulkanCore::GetInstance().GetCurrentFrameIndex()]; }
 
 		[[nodiscard]] const std::vector<vma::raii::Image>& GetImages() const { return m_TextureImage; }
 		[[nodiscard]] const std::vector<vk::raii::ImageView>& GetImageViews() const { return m_TextureImageView; }
@@ -188,6 +191,28 @@ namespace OWC::Graphics
 		vma::raii::Buffer m_Buffer = nullptr;
 		vk::DeviceAddress m_BufferDeviceAddress = vk::DeviceAddress();
 		uSize m_BufferSize = 0;
+	};
+
+	class VulkanHostVisibleUniformBuffer : public HostVisibleUniformBuffer
+	{
+	public:
+		VulkanHostVisibleUniformBuffer() = delete;
+		VulkanHostVisibleUniformBuffer(uSize size, uSize alignment);
+		~VulkanHostVisibleUniformBuffer() override = default;
+		VulkanHostVisibleUniformBuffer(VulkanHostVisibleUniformBuffer&&) noexcept = delete;
+		VulkanHostVisibleUniformBuffer& operator=(VulkanHostVisibleUniformBuffer&&) noexcept = delete;
+
+		[[nodiscard]] vk::Buffer GetBuffer() const { return *m_Buffer; }
+		[[nodiscard]] uSize GetBufferSize() const { return m_BufferHostPtr.size(); }
+		[[nodiscard]] vk::DeviceAddress GetBufferDeviceAddress() const { return m_BufferDeviceAddress; }
+
+	private:
+		void UpdateBufferDataImpl(std::span<const std::byte> data, uSize offset) override;
+
+	private:
+		vma::raii::Buffer m_Buffer = nullptr;
+		vk::DeviceAddress m_BufferDeviceAddress = vk::DeviceAddress();
+		std::span<std::byte> m_BufferHostPtr;
 	};
 
 	class VulkanTextureArraySampler : public TextureArraySampler

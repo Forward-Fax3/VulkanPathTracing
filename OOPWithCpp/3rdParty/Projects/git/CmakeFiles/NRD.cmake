@@ -73,6 +73,9 @@ foreach (Target NRD_SSE4_2 NRD_AVX2 NRD_AVX512)
     if (NRD_BUILD_DEPS)
         add_dependencies(${Target} ${NRD_BUILD_DEPS})
     endif ()
+    if (NRD_LINK_LIBS)
+        target_link_libraries(${Target} PUBLIC ${NRD_LINK_LIBS})
+    endif ()
 endforeach ()
 
 target_compile_options(NRD_SSE4_2 PRIVATE

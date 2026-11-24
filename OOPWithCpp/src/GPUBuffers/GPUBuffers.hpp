@@ -102,7 +102,7 @@ namespace OWC::Graphics
 		virtual void UpdateBufferData(const std::span<const std::byte>& data) = 0;
 
 		static std::shared_ptr<TextureImage> CreateStorageImage(const ImageLoader<f32, 4, glm::aligned_highp>& image);
-		static std::shared_ptr<TextureImage> CreateStorageImage(u32 width, u32 height, Format format);
+		static std::shared_ptr<TextureImage> CreateStorageImage(u32 width, u32 height, Format format, AccessMask accessMask = AccessMask::None, StageMask stageMask = StageMask::TopOfPipe, ImageLayout imageLayout = ImageLayout::General);
 	};
 
 	class DynamicTextureBuffer // a texture that can be updated every frame
@@ -139,6 +139,29 @@ namespace OWC::Graphics
 		[[nodiscard]] virtual uSize GetDeviceBufferPtr() const = 0;
 
 		static std::shared_ptr<GeneralBuffer> CreateGeneralBuffer(uSize size, uSize alignment = 0);
+	};
+
+	class HostVisibleUniformBuffer
+	{
+	public:
+		virtual ~HostVisibleUniformBuffer() = default;
+		HostVisibleUniformBuffer(HostVisibleUniformBuffer&) = default;
+		HostVisibleUniformBuffer& operator=(const HostVisibleUniformBuffer&) = default;
+		HostVisibleUniformBuffer(HostVisibleUniformBuffer&&) noexcept = default;
+		HostVisibleUniformBuffer& operator=(HostVisibleUniformBuffer&&) noexcept = default;
+
+		/* offset is in bytes */
+		template<typename T>
+		void UpdateBufferData(const T* data, const uSize count, const uSize offset = 0) { UpdateBufferDataImpl(std::as_bytes(std::span(data, count)), offset); }
+		void UpdateBufferData(const std::span<const std::byte> data, const uSize offset = 0) { UpdateBufferDataImpl(data, offset); }
+
+		static std::shared_ptr<HostVisibleUniformBuffer> CreateHostVisibleBuffer(uSize size, uSize alignment = 0);
+
+	protected:
+		HostVisibleUniformBuffer() = default;
+
+	private:
+		virtual void UpdateBufferDataImpl(std::span<const std::byte> data, uSize offset) = 0;
 	};
 
 	class TextureArraySampler

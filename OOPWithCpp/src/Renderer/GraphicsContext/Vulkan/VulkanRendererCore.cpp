@@ -9,16 +9,95 @@ namespace OWC::Graphics
     {
         switch (format)
         {
-        case Format::R32G32_SFloat:
-            return vk::Format::eR32G32Sfloat;
-        case Format::R32G32B32A32_SFloat:
-            return vk::Format::eR32G32B32A32Sfloat;
+        case Format::R8_UNorm:
+            return vk::Format::eR8Unorm;
+        case Format::R8_SNorm:
+            return vk::Format::eR8Snorm;
+        case Format::R8_Uint:
+            return vk::Format::eR8Uint;
+        case Format::R8_Sint:
+            return vk::Format::eR8Sint;
+        case Format::R8G8_UNorm:
+            return vk::Format::eR8G8Unorm;
+        case Format::R8G8_SNorm:
+            return vk::Format::eR8G8Snorm;
+        case Format::R8G8_Uint:
+            return vk::Format::eR8G8Uint;
+        case Format::R8G8_Sint:
+            return vk::Format::eR8G8Sint;
         case Format::R8G8B8A8_UNorm:
             return vk::Format::eR8G8B8A8Unorm;
+        case Format::R8G8B8A8_SNorm:
+            return vk::Format::eR8G8B8A8Snorm;
+        case Format::R8G8B8A8_Uint:
+            return vk::Format::eR8G8B8A8Uint;
+        case Format::R8G8B8A8_Sint:
+            return vk::Format::eR8G8B8A8Sint;
         case Format::R8G8B8A8_Srgb:
             return vk::Format::eR8G8B8A8Srgb;
+        case Format::R16_UNorm:
+            return vk::Format::eR16Unorm;
+        case Format::R16_SNorm:
+            return vk::Format::eR16Snorm;
+        case Format::R16_Uint:
+            return vk::Format::eR16Uint;
+        case Format::R16_Sint:
+            return vk::Format::eR16Sint;
+        case Format::R16_SFloat:
+            return vk::Format::eR16Sfloat;
+        case Format::R16G16_UNorm:
+            return vk::Format::eR16G16Unorm;
+        case Format::R16G16_SNorm:
+            return vk::Format::eR16G16Snorm;
+        case Format::R16G16_Uint:
+            return vk::Format::eR16G16Uint;
+        case Format::R16G16_Sint:
+            return vk::Format::eR16G16Sint;
+        case Format::R16G16_SFloat:
+            return vk::Format::eR16G16Sfloat;
+        case Format::R16G16B16A16_UNorm:
+            return vk::Format::eR16G16B16A16Unorm;
+        case Format::R16G16B16A16_SNorm:
+            return vk::Format::eR16G16B16A16Snorm;
+        case Format::R16G16B16A16_Uint:
+            return vk::Format::eR16G16B16A16Uint;
+        case Format::R16G16B16A16_Sint:
+            return vk::Format::eR16G16B16A16Sint;
+        case Format::R16G16B16A16_SFloat:
+            return vk::Format::eR16G16B16A16Sfloat;
+        case Format::R32_Uint:
+            return vk::Format::eR32Uint;
+        case Format::R32_Sint:
+            return vk::Format::eR32Sint;
+        case Format::R32_SFloat:
+            return vk::Format::eR32Sfloat;
+        case Format::R32G32_Uint:
+            return vk::Format::eR32G32Uint;
+        case Format::R32G32_Sint:
+            return vk::Format::eR32G32Sint;
+        case Format::R32G32_SFloat:
+            return vk::Format::eR32G32Sfloat;
+        case Format::R32G32B32_Uint:
+            return vk::Format::eR32G32B32Uint;
+        case Format::R32G32B32_Sint:
+            return vk::Format::eR32G32B32Sint;
+        case Format::R32G32B32_SFloat:
+            return vk::Format::eR32G32B32Sfloat;
+        case Format::R32G32B32A32_Uint:
+            return vk::Format::eR32G32B32A32Uint;
+        case Format::R32G32B32A32_Sint:
+            return vk::Format::eR32G32B32A32Sint;
+        case Format::R32G32B32A32_SFloat:
+            return vk::Format::eR32G32B32A32Sfloat;
+        case Format::R10G10B10A2_UNorm:
+            return vk::Format::eA2B10G10R10UnormPack32;
         case Format::R10G10B10A2_Uint:
-            return vk::Format::eA2R10G10B10UintPack32;
+            return vk::Format::eA2B10G10R10UintPack32;
+        case Format::R11G11B10_UFloat:
+            return vk::Format::eB10G11R11UfloatPack32;
+        case Format::R9G9B9E5_UFloat:
+            return vk::Format::eE5B9G9R9UfloatPack32;
+        case Format::Undefined:
         default:
             return vk::Format::eUndefined;
         }

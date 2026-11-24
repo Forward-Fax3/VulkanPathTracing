@@ -33,7 +33,7 @@ namespace OWC
     {
         using namespace OWC::Graphics;
 
-        const auto& vkCore = VulkanCore::GetConstInstance();
+        const auto& vkCore = VulkanCore::GetInstance();
         const auto& device = vkCore.GetDevice();
         const auto& allocator = vkCore.GetVulkanMemoryAllocator();
         const auto& queueIndices = vkCore.GetAllUniqueQueuesIndices();

@@ -10,6 +10,7 @@
 #include "GPUBuffers.hpp"
 #include "InterLayerData.hpp"
 #include "BaseGPUScene.hpp"
+#include "NRDImpl.hpp"
 
 
 namespace OWC
@@ -34,50 +35,74 @@ namespace OWC
         void SetupPipeline();
         void CalculateCamera(const Vec3& movement = Vec3(0.0f));
 
-    // private: // structs
+    private: // structs
         struct UniformBufferObject
         {
-            f32 divider = 0.0f;
+            f32 denoisingRange = 0.0f;
+            u32 validationEnable = 0;
+            u32 SigmaOn = 0;
+            u32 fullscreenPanel = 0xFFFFFFFF;
         };
 
         struct GeneralGPUData
         {
             Mat4 InvProjection = 0.0f;
             Mat4 InvViewMatrix = 0.0f;
+            Mat4 WorldToClip = 0.0f;
+            Mat4 PreWorldToClip = 0.0f;
+            Mat4 WorldToView = 0.0f;
+            Mat4 PreWorldToView = 0.0f;
             u32 randSeed = 0;
-            u32 stratifiedGridPosition = 0;
-            u32 GPURefreshScreen = false;
+            u32 frameIndex = 0;
+            Vec2f32 camJit = {};
         };
 
-    // private: // attributes
+    private: // attributes
         std::unique_ptr<Graphics::BaseShader> m_RayTracingShader = nullptr;
         std::unique_ptr<Graphics::BaseShader> m_DisplayShader = nullptr;
         std::shared_ptr<Graphics::RenderPassData> m_RayTracingRenderPass = nullptr;
         std::shared_ptr<Graphics::RenderPassData> m_DisplayRenderPass = nullptr;
         std::shared_ptr<Graphics::UniformBuffer> m_UniformBuffer = nullptr;
-        std::shared_ptr<Graphics::TextureImage> m_RenderTarget = nullptr;
         std::shared_ptr<Graphics::UniformBuffer> m_RayTracingGPUDataBuffer = nullptr;
-        uSize m_NumberOfAccumulatedSamples = 0;
 
-        float m_HFOV = 60.0f;
+        std::unordered_map<nrd::ResourceType, std::shared_ptr<Graphics::TextureImage>> m_NRDInputsAndOutputs{};
+        std::vector<std::shared_ptr<Graphics::TextureImage>> m_DemodulatedTextures{};
+
         Vec3 m_CameraPosition = Vec3(1.0f, 0.2f, 0.0f);
         Vec3 m_CameraRotation = Vec3(0.0f, -90.0f, 0.0f);
+        Vec2u32 m_RayTracingResolution = { 0, 0 };
+
+        float m_HFOV = 60.0f;
         float m_MoveSpeed = 1.0f;
         i32 m_NumberOfBounces = 8;
-        Vec2u32 m_RayTracingResolution = { 0, 0 };
-        u32 m_StratifiedGridSize = 8;
         u32 m_StratifiedPosition = 0;
         i32 m_SceneIndex = 0;
         u32 m_NumberOfSamples = 1;
-        u8 m_CameraNeedsRefreshing = false;
-        bool m_ScreenNeedsRefreshing = false;
-        bool m_AccumulationOn = false;
 
-        bool m_UseWindowResolution = true;
-        bool m_FirstFrame = true;
+        Mat4 m_ViewToClip{};
+        Mat4 m_PreViewToClip{};
+        Mat4 m_WorldToView{};
+        Mat4 m_PreWorldToView{};
 
         Vec3 m_KeyPressedOnVec3 = Vec3(0.0f);
 
+        Vec2 m_CamJit = {};
+        Vec2 m_PreCamJit = {};
+
         std::shared_ptr<BaseGPUScene> m_Scene = nullptr;
+
+        std::unique_ptr<NRDImpl> m_NRDImpl{};
+
+        u32 m_FullscreenPanel = 0xFFFFFFFF;
+
+        u32 m_FrameIndex = 0;
+
+        u8 m_CameraNeedsRefreshing = false;
+        bool m_ScreenNeedsRefreshing = false;
+
+        bool m_ValidationOn = false;
+
+        bool m_UseWindowResolution = true;
+        bool m_FirstFrame = true;
     };
 } // OWC

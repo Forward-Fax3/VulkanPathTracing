@@ -1,3 +1,12 @@
-./../../Slang/bin/slangc RayTracing.slang -profile spirv_1_6 -capability spvRayQueryKHR+spvRayTracingPositionFetchKHR -O3 -target spirv -o RayTracing.spv
-./../../Slang/bin/slangc RayTracing.slang -profile spirv_1_6 -capability spvRayQueryKHR+spvRayTracingPositionFetchKHR+spvShaderInvocationReorderEXT -O3 -DSER -target spirv -o RayTracing_SER.spv
-./../../Slang/bin/slangc DisplayImage.slang -profile spirv_1_6 -O3 -target spirv -o DisplayImage.spv
+#!/usr/bin/env bash
+set -e
+
+common=(-profile spirv_1_6 -O3 -target spirv
+        -I ../GeneralHelperShaders
+        -I ../../OOPWithCpp/3rdParty/Projects/git/NRD/Shaders)
+
+slangc=./../../Slang/bin/slangc
+
+"$slangc" RayTracing.slang "${common[@]}" -capability spvRayQueryKHR+spvRayTracingPositionFetchKHR -o RayTracing.spv
+"$slangc" RayTracing.slang "${common[@]}" -capability spvRayQueryKHR+spvRayTracingPositionFetchKHR+spvShaderInvocationReorderEXT -DSER -o RayTracing_SER.spv
+"$slangc" DisplayImage.slang "${common[@]}" -o DisplayImage.spv

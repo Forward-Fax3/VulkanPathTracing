@@ -382,6 +382,9 @@ namespace OWC
             const std::string_view lightType{ light.type.data, light.type.len };
             const Vec3 colour = glm::make_vec3(light.color);
 
+            bool directionalSunlightChosen = false;
+            f64 currentIntensity = 0.0f;
+
             Log<LogLevel::Trace>("Found light of type {} with a range of {} and with intensity {} and colour ({}, {}, {})", lightType, light.range, light.intensity, colour.x, colour.y, colour.z);
 
             const Vec3 BT709Weights = { 0.2126f, 0.7152f, 0.0722 };
@@ -404,6 +407,16 @@ namespace OWC
                 //const auto radius = (glm::length(Vec3p(parentTransform[0])) + glm::length(Vec3p(parentTransform[1])) + glm::length(Vec3p(parentTransform[2]))) / 3.0f;
                 constexpr auto radius = 0.1f;
 
+                if (!directionalSunlightChosen)
+                {
+                    if (const auto newIntensity = glm::dot(BT709Weights, colour) * light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 10.0f;
+                        newIntensity > currentIntensity)
+                    {
+                        currentIntensity = newIntensity;
+                        m_SelectedSunLightIndex = lightData.size() + 1;
+                    }
+                }
+
                 lightData.emplace_back(
                     Vec3p(parentTransform[3]), // position
                     1, // type (1 for point)
@@ -417,6 +430,14 @@ namespace OWC
             }
             else if (tg3_str_equals_cstr(light.type, "directional"))
             {
+                if (const auto newIntensity = glm::dot(BT709Weights, colour) * light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 100.0f;
+                    newIntensity > currentIntensity)
+                {
+                    directionalSunlightChosen = true;
+                    currentIntensity = newIntensity;
+                    m_SelectedSunLightIndex = lightData.size() + 1;
+                }
+
                 lightData.emplace_back(
                     Vec3p(parentTransform[3]), // position
                     2, // type (2 for directional)

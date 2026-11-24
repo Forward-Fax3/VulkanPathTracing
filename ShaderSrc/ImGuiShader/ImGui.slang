@@ -1,4 +1,4 @@
-#include "../GeneralHelperShaders/HDR.slang"
+#include "../GeneralHelperShaders/HDR.slangh"
 
 
 struct PushConstants

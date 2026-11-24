@@ -1,4 +1,5 @@
-﻿#include "VulkanBuffers.hpp"
+﻿#include "Core.hpp"
+#include "VulkanBuffers.hpp"
 #include "VulkanCore.hpp"
 #include "VulkanRendererCore.hpp"
 
@@ -478,8 +479,8 @@ namespace OWC::Graphics
 		VulkanStorageImage::UpdateBufferData(image.GetImageData()); // using specifically VulkanTextureBuffer to remove static analysis warning
 	}
 
-	VulkanStorageImage::VulkanStorageImage(const u32 width, const u32 height, const Format format)
-		: m_Width(width), m_Height(height), m_Format(ConvertFormatToVulkanFormat(format))
+	VulkanStorageImage::VulkanStorageImage(const u32 width, const u32 height, const Format format, const AccessMask accessMask, const StageMask stageMask, const ImageLayout imageLayout)
+		: m_Width(width), m_Height(height), m_Format(ConvertFormatToVulkanFormat(format)), m_CurrentAccessFlags(GetVulkanAccessMask(accessMask)), m_CurrentPipelineStageFlags(GetVulkanPipelineStageMask(stageMask)), m_CurrentLayout(GetVulkanImageLayout(imageLayout))
 	{
 		InitializeTexture();
 	}
@@ -926,9 +927,47 @@ namespace OWC::Graphics
 			Log<LogLevel::Critical>("Failed to create Vulkan storage image sampler: {}", vk::to_string(samplerResult.error()));
 		m_TextureSampler = std::move(samplerResult).value();
 
-		SetCurrentAccessFlags(vk::AccessFlagBits2::eNone);
-		SetCurrentImageLayout(vk::ImageLayout::eUndefined);
-		SetCurrentPipelineStageFlags(vk::PipelineStageFlagBits2::eTopOfPipe);
+		const auto& cmd = vkCore.GetSingleTimeGraphicsCommandBuffer();
+		if (const auto cmdBeginResult = cmd.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit)); !cmdBeginResult)
+			Log<LogLevel::Critical>("Failed to begin Vulkan single-time graphics command buffer: {}", vk::to_string(cmdBeginResult.error()));
+
+
+		const std::array graphicsImageBuffer = {
+			vk::ImageMemoryBarrier2()
+				.setSrcStageMask(vk::PipelineStageFlagBits2::eNone)
+				.setDstStageMask(m_CurrentPipelineStageFlags)
+				.setSrcAccessMask(vk::AccessFlagBits2::eNone)
+				.setDstAccessMask(m_CurrentAccessFlags)
+				.setOldLayout(vk::ImageLayout::eUndefined)
+				.setNewLayout(m_CurrentLayout)
+				.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+				.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+				.setImage(*m_TextureImage)
+				.setSubresourceRange(vk::ImageSubresourceRange()
+					.setAspectMask(vk::ImageAspectFlagBits::eColor)
+					.setBaseMipLevel(0)
+					.setLevelCount(1)
+					.setBaseArrayLayer(0)
+					.setLayerCount(1)
+				)
+		};
+		cmd.pipelineBarrier2(vk::DependencyInfo()
+			.setImageMemoryBarriers(graphicsImageBuffer)
+		);
+
+		if (const auto cmdEndResult = cmd.end(); !cmdEndResult)
+			Log<LogLevel::Critical>("Failed to end Vulkan single-time graphics command buffer: {}", vk::to_string(cmdEndResult.error()));
+
+		const auto fence = device.createFence(vk::FenceCreateInfo());
+		if (!fence)
+			Log<LogLevel::Critical>("Failed to create fence for transfer command buffer submission. Error: {}", vk::to_string(fence.error()));
+		const auto cmdInfo = vk::CommandBufferSubmitInfo().setCommandBuffer(cmd);
+		const auto submitGraphicsInfo = vk::SubmitInfo2()
+			.setCommandBufferInfos(cmdInfo);
+		if (const auto submitGraphicsResult = vkCore.GetGraphicsQueue().submit2(submitGraphicsInfo, *fence.value()); !submitGraphicsResult)
+			Log<LogLevel::Critical>("Failed to submit transfer command buffer: {}", vk::to_string(submitGraphicsResult.error()));
+		if (device.waitForFences(*fence.value(), VK_TRUE, UINT64_MAX) != vk::Result::eSuccess)
+			Log<LogLevel::Critical>("Failed to wait for transfer finished fence");
 	}
 
 	//--------------------------------------------------------
@@ -938,7 +977,7 @@ namespace OWC::Graphics
 	VulkanDynamicTextureBuffer::VulkanDynamicTextureBuffer(const u32 width, const u32 height, const Format format, const AccessMask accessMask, const StageMask stageMask, const ImageLayout imageLayout)
 		: m_Width(width), m_Height(height), m_Format(ConvertFormatToVulkanFormat(format))
 	{
-		const auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& vkCore = VulkanCore::GetInstance();
 		const auto& device = vkCore.GetDevice();
 		const auto& allocator = vkCore.GetVulkanMemoryAllocator();
 
@@ -1391,9 +1430,55 @@ namespace OWC::Graphics
 		}
 	}
 
+	VulkanHostVisibleUniformBuffer::VulkanHostVisibleUniformBuffer(const uSize size, const uSize alignment)
+	{
+		const auto& vkCore = VulkanCore::GetInstance();
+		const auto& allocator = vkCore.GetVulkanMemoryAllocator();
+
+		const vk::DeviceSize bufferSize = size;
+
+		const auto& queueIndices = vkCore.GetAllUniqueQueuesIndices();
+
+		constexpr auto bufferUsageInfo2 = vk::BufferUsageFlags2CreateInfo().setUsage(vk::BufferUsageFlagBits2::eUniformBuffer | vk::BufferUsageFlagBits2::eShaderDeviceAddress);
+
+		const auto bufferInfo = vk::BufferCreateInfo()
+			.setPNext(&bufferUsageInfo2)
+			.setSize(bufferSize)
+			.setUsage(vk::BufferUsageFlagBits::eUniformBuffer)
+			.setSharingMode(vk::SharingMode::eConcurrent)
+			.setQueueFamilyIndices(queueIndices);
+
+		const vma::AllocationCreateInfo allocationCreateInfo = vma::AllocationCreateInfo()
+			.setMinAlignment(std::max(alignment, static_cast<uSize>(1)))
+			.setUsage(vma::MemoryUsage::eAutoPreferDevice)
+			.setFlags(vma::AllocationCreateFlagBits::eHostAccessSequentialWrite | vma::AllocationCreateFlagBits::eMapped);
+
+		vma::AllocationInfo allocInfo;
+		auto bufferResult = allocator.createBuffer(bufferInfo, allocationCreateInfo, vk::Optional(allocInfo));
+		if (!bufferResult)
+			Log<LogLevel::Critical>("Failed to create Vulkan Host Visible buffer: {}", vk::to_string(bufferResult.error()));
+		m_Buffer = std::move(bufferResult).value();
+		m_BufferHostPtr = std::span{ static_cast<std::byte*>(allocInfo.pMappedData), bufferSize };
+		m_BufferDeviceAddress = vkCore.GetDevice().getBufferAddress(vk::BufferDeviceAddressInfo().setBuffer(*m_Buffer));
+	}
+
+	void VulkanHostVisibleUniformBuffer::UpdateBufferDataImpl(const std::span<const std::byte> data, uSize offset)
+	{
+		if (offset + data.size() > m_BufferHostPtr.size())
+			Log<LogLevel::Critical>("Trying to update buffer with offset {} and size {} but buffer size is {}", offset, data.size(), m_BufferHostPtr.size());
+
+		const auto& vkCore = VulkanCore::GetInstance();
+		const auto& allocator = vkCore.GetVulkanMemoryAllocator();
+
+		std::ranges::copy(data, m_BufferHostPtr.subspan(offset, data.size()).begin());
+
+		if (const auto flushResult = allocator.flushAllocations(*m_Buffer.getAllocation(), offset, data.size()); !flushResult)
+			Log<LogLevel::Critical>("Failed to flush buffer allocation: {}", vk::to_string(flushResult.error()));
+	}
+
 	VulkanTextureArraySampler::VulkanTextureArraySampler()
 	{
-		const auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& vkCore = VulkanCore::GetInstance();
 		const auto& device = vkCore.GetDevice();
 		auto samplerResult = device.createSampler(vk::SamplerCreateInfo()
 			.setMagFilter(vk::Filter::eLinear)
@@ -1451,7 +1536,7 @@ namespace OWC::Graphics
 			}
 		};
 
-		const auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& vkCore = VulkanCore::GetInstance();
 		const auto& device = vkCore.GetDevice();
 		auto samplerResult = device.createSampler(vk::SamplerCreateInfo()
 			.setMagFilter(convertToVKFilter(sampler.mag_filter))
@@ -1476,7 +1561,7 @@ namespace OWC::Graphics
 
 	VulkanEmptyTextureArray::VulkanEmptyTextureArray()
 	{
-		const auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& vkCore = VulkanCore::GetInstance();
 		const auto& device = vkCore.GetDevice();
 		const auto& allocator = vkCore.GetVulkanMemoryAllocator();
 
@@ -1650,7 +1735,7 @@ namespace OWC::Graphics
 
 	VulkanColourTextureArray::VulkanColourTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf)
 	{
-		const auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& vkCore = VulkanCore::GetInstance();
 		const auto& device = vkCore.GetDevice();
 		const auto& allocator = vkCore.GetVulkanMemoryAllocator();
 
@@ -1883,7 +1968,7 @@ namespace OWC::Graphics
 
 	/*VulkanNormalTextureArray::VulkanNormalTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf)
 	{
-		const auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& vkCore = VulkanCore::GetInstance();
 		const auto& device = vkCore.GetDevice();
 		const auto& allocator = vkCore.GetVulkanMemoryAllocator();
 
@@ -2101,7 +2186,7 @@ namespace OWC::Graphics
 
 	VulkanNormalTextureArray::VulkanNormalTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf)
 	{
-		const auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& vkCore = VulkanCore::GetInstance();
 		const auto& device = vkCore.GetDevice();
 		const auto& allocator = vkCore.GetVulkanMemoryAllocator();
 
@@ -2335,7 +2420,7 @@ namespace OWC::Graphics
 
 	VulkanMetallicRoughnessTextureArray::VulkanMetallicRoughnessTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf)
 	{
-		const auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& vkCore = VulkanCore::GetInstance();
 		const auto& device = vkCore.GetDevice();
 		const auto& allocator = vkCore.GetVulkanMemoryAllocator();
 
@@ -2579,7 +2664,7 @@ namespace OWC::Graphics
 
 	VulkanEmissiveTextureArray::VulkanEmissiveTextureArray(const tg3_model& model, const std::vector<u32>& indexing, std::string_view pathToGltf)
 	{
-		const auto& vkCore = VulkanCore::GetConstInstance();
+		const auto& vkCore = VulkanCore::GetInstance();
 		const auto& device = vkCore.GetDevice();
 		const auto& allocator = vkCore.GetVulkanMemoryAllocator();
 
