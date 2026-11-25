@@ -16,7 +16,7 @@ namespace OWC
     {
     public:
         GLTFLayer() = delete;
-        GLTFLayer(const std::shared_ptr<Graphics::GeneralBuffer>& lightBuffer, uSize lightsOffset, std::vector<GPULightData>&& lightData, const std::string_view& layerName);
+        GLTFLayer(const std::shared_ptr<Graphics::GeneralBuffer>& lightBuffer, const std::optional<std::pair<u32, Vec3p>>& sunLight, uSize lightsOffset, std::vector<GPULightData>&& lightData, const std::string_view& layerName);
         ~GLTFLayer() override = default;
 
         void ImGuiRender() override;
@@ -25,6 +25,7 @@ namespace OWC
 
     private:
         std::shared_ptr<Graphics::GeneralBuffer> m_LightBuffer;
+        const std::optional<std::pair<u32, Vec3p>>& m_SunLight;
         std::vector<GPULightData> m_LightData;
         std::string m_LayerName;
         uSize m_LightBufferOffset;

@@ -50,10 +50,10 @@ namespace OWC
 			.identifier = static_cast<nrd::Identifier>(nrd::Denoiser::RELAX_DIFFUSE_SPECULAR),
 			.denoiser = nrd::Denoiser::RELAX_DIFFUSE_SPECULAR,
 		},
-		/*nrd::DenoiserDesc {
+		nrd::DenoiserDesc {
 			.identifier = static_cast<nrd::Identifier>(nrd::Denoiser::SIGMA_SHADOW),
 			.denoiser = nrd::Denoiser::SIGMA_SHADOW,
-		},*/
+		},
 	};
 
 	[[nodiscard]] static constexpr f32 Halton(u32 index, const u32 base) noexcept
@@ -85,7 +85,6 @@ namespace OWC
 		SetupPipeline();
 		SetupRenderPass();
 		CalculateCamera();
-		m_CameraNeedsRefreshing = Graphics::Renderer::GetNumberOfFramesInFlight();
 	}
 
 	void GPURayTracerRenderer::OnUpdate()
@@ -102,7 +101,6 @@ namespace OWC
 
 		const float deltaTime = app.GetDeltaTime();
 		const Vec3 movePos = m_KeyPressedOnVec3 * m_MoveSpeed * deltaTime;
-		m_CameraNeedsRefreshing = Renderer::GetNumberOfFramesInFlight() - 1;
 		CalculateCamera(movePos);
 
 		UniformBufferObject ubo {
@@ -114,10 +112,11 @@ namespace OWC
 
 		m_UniformBuffer->UpdateBufferData(std::as_bytes(std::span{ &ubo, 1 }));
 
-		static constexpr std::array rayTracerWaitSemaphoreNames = { std::string_view{ "PreviousFrameDisplayDone" }, };
+		//static constexpr std::array rayTracerWaitSemaphoreNames = { std::string_view{ "PreviousFrameDisplayDone" }, };
+		static constexpr std::array rayTracerWaitSemaphoreNames = { std::string_view{ "ImageReady" }, };
 		static constexpr std::array rayTracerSignalSemaphoreNames = { std::string_view{ "RayTracerDone" }, };
-		static constexpr std::array displayWaitSemaphoreNames = { std::string_view{ "ImageReady" }, std::string_view{ "RayTracerDone" }, };
-		static constexpr std::array displaySignalSemaphoreNames = { std::string_view{ "PreviousFrameDisplayDone" }, };
+		static constexpr std::array displayWaitSemaphoreNames = { std::string_view{ "RayTracerDone" }, };
+		//static constexpr std::array displaySignalSemaphoreNames = { std::string_view{ "PreviousFrameDisplayDone" }, };
 
 		static constexpr auto cpyMat4 = []<uSize N>(float (&dst)[N], const Mat4& src) noexcept
 		{
@@ -129,16 +128,23 @@ namespace OWC
 #endif
 		};
 
-		Renderer::SubmitRenderPass(m_RayTracingRenderPass, {}, {}, rayTracerWaitSemaphoreNames);
+		//Renderer::SubmitRenderPass(m_RayTracingRenderPass, {}, {}, rayTracerWaitSemaphoreNames);
+		Renderer::SubmitRenderPass(m_RayTracingRenderPass, rayTracerWaitSemaphoreNames);
 
 		nrd::CommonSettings commonSettings {};
-		cpyMat4(commonSettings.viewToClipMatrix, m_ViewToClip);
-		cpyMat4(commonSettings.viewToClipMatrixPrev, m_PreViewToClip);
+		Mat4 nrdViewToClip = m_ViewToClip;
+		nrdViewToClip[1][1] *= -1.0f;
+		Mat4 nrdViewToClipPrev = m_PreViewToClip;
+		nrdViewToClipPrev[1][1] *= -1.0f;
+		cpyMat4(commonSettings.viewToClipMatrix, nrdViewToClip);
+		cpyMat4(commonSettings.viewToClipMatrixPrev, nrdViewToClipPrev);
 		cpyMat4(commonSettings.worldToViewMatrix, m_WorldToView);
 		cpyMat4(commonSettings.worldToViewMatrixPrev, m_PreWorldToView);
 
 		commonSettings.frameIndex = m_FrameIndex;
-		
+
+		commonSettings.motionVectorScale[0] = 1.0f / static_cast<f32>(m_RayTracingResolution.x);
+		commonSettings.motionVectorScale[1] = 1.0f / static_cast<f32>(m_RayTracingResolution.y);
 		commonSettings.motionVectorScale[2] = 1.0f;
 
 		commonSettings.resourceSizePrev[0] = m_RayTracingResolution.x;
@@ -168,7 +174,8 @@ namespace OWC
 
 		m_NRDImpl->SetCommonSettings(commonSettings);
 		m_NRDImpl->Denoise(denoisers, m_NRDInputsAndOutputs, {}, rayTracerSignalSemaphoreNames);
-		Renderer::SubmitRenderPass(m_DisplayRenderPass, displayWaitSemaphoreNames, displaySignalSemaphoreNames);
+		Renderer::SubmitRenderPass(m_DisplayRenderPass, displayWaitSemaphoreNames);
+		//Renderer::SubmitRenderPass(m_DisplayRenderPass, displayWaitSemaphoreNames, displaySignalSemaphoreNames);
 	}
 
 	void GPURayTracerRenderer::ImGuiRender()
@@ -183,17 +190,19 @@ namespace OWC
 			NrdPanel{ .name = "Denoised diffuse", .id = 13 },
 			NrdPanel{ .name = "Noisy specular", .id = 15 },
 			NrdPanel{ .name = "Denoised specular", .id = 14 },
-			NrdPanel{ .name = "Diffuse factor", .id = 7  },
-			NrdPanel{ .name = "Specular factor", .id = 11 },
-			NrdPanel{ .name = "World units", .id = 0  },
-			NrdPanel{ .name = "Roughness", .id = 1  },
-			NrdPanel{ .name = "View Z", .id = 2  },
-			NrdPanel{ .name = "Motion vectors", .id = 3  },
-			NrdPanel{ .name = "Normals", .id = 4  },
-			NrdPanel{ .name = "History length", .id = 8  },
+			NrdPanel{ .name = "Diffuse factor", .id = 7 },
+			NrdPanel{ .name = "Specular factor", .id = 11},
+			NrdPanel{ .name = "World units", .id = 0 },
+			NrdPanel{ .name = "Roughness", .id = 1 },
+			NrdPanel{ .name = "View Z", .id = 2 },
+			NrdPanel{ .name = "Motion vectors", .id = 3 },
+			NrdPanel{ .name = "Normals", .id = 4 },
+			NrdPanel{ .name = "History length", .id = 8 },
+			NrdPanel{ .name = "SIGMA light", .id = 6 },
+			NrdPanel{ .name = "Noisy shadow", .id = 9 },
+			NrdPanel{ .name = "Denoised shadow", .id = 10 },
 		};
 
-		bool cameraMoved = false;
 		ImGui::Begin("GPU Renderer");
 		ImGui::Text("Number of samples: %u", m_NumberOfSamples);
 		ImGui::Text("Ray tracer");
@@ -254,16 +263,17 @@ namespace OWC
 			this->m_CameraPosition = newPosition;
 			this->SetupPipeline();
 			this->SetupRenderPass();
-			this->m_CameraNeedsRefreshing = Graphics::Renderer::GetNumberOfFramesInFlight();
+
+			this->m_ScreenNeedsRefreshing = true;
 		}
 
 		ImGui::Separator();
 		ImGui::Text("Use W, A, S, D, R and F to move camera.");
 		ImGui::Text("Camera Position: (%.2f, %.2f, %.2f)", m_CameraPosition.x, m_CameraPosition.y, m_CameraPosition.z);
 		ImGui::SliderFloat("Move Speed", &m_MoveSpeed, 0.1f, 10.0f);
-		cameraMoved |= ImGui::DragFloat3("Camera Rotation", glm::value_ptr(m_CameraRotation), 0.1f);
+		ImGui::DragFloat3("Camera Rotation", glm::value_ptr(m_CameraRotation), 0.1f);
 		ImGui::Separator();
-		cameraMoved |= ImGui::SliderFloat("Horizontal FOV", &m_HFOV, 1.0f, 179.0f);
+		ImGui::SliderFloat("Horizontal FOV", &m_HFOV, 1.0f, 179.0f);
 		if (ImGui::SliderInt("Number of Bounces", &m_NumberOfBounces, 0, 128))
 		{
 			Graphics::Renderer::AddToEndOfFrameCleanUp([RTRR = std::move(m_RayTracingRenderPass), DRR = std::move(m_DisplayRenderPass)](){});
@@ -314,9 +324,12 @@ namespace OWC
 				break;
 			}
 
+		bool sigmaEnabled = m_Scene->GetSelectedSunLightIndex().has_value();
+		std::span panels{ kNrdPanels.data(), kNrdPanels.size() - 3 * !sigmaEnabled };
+
 		if (ImGui::BeginCombo("View", preview))
 		{
-			for (const auto& [name, id] : kNrdPanels)
+			for (const auto& [name, id] : panels)
 			{
 				const bool selected = id == m_FullscreenPanel;
 				if (ImGui::Selectable(name, selected))
@@ -327,11 +340,11 @@ namespace OWC
 			ImGui::EndCombo();
 		}
 
+		if (!sigmaEnabled && (m_FullscreenPanel == 6 || m_FullscreenPanel == 9 || m_FullscreenPanel == 10))
+			m_FullscreenPanel = kNoPanel;
+
 		ImGui::EndDisabled();
 		ImGui::End();
-
-		if (cameraMoved)
-			m_CameraNeedsRefreshing = Graphics::Renderer::GetNumberOfFramesInFlight();
 	}
 
 	void GPURayTracerRenderer::OnEvent(BaseEvent& e)
@@ -461,13 +474,13 @@ namespace OWC
 		m_NRDInputsAndOutputs[nrd::ResourceType::IN_VIEWZ] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R32_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
 		m_NRDInputsAndOutputs[nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R16G16B16A16_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
 		m_NRDInputsAndOutputs[nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R16G16B16A16_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
-		m_NRDInputsAndOutputs[nrd::ResourceType::IN_PENUMBRA] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R16G16B16A16_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		m_NRDInputsAndOutputs[nrd::ResourceType::IN_PENUMBRA] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R16_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
 
 		m_NRDInputsAndOutputs[nrd::ResourceType::OUT_VALIDATION] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R16G16B16A16_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
 
 		m_NRDInputsAndOutputs[nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R16G16B16A16_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
 		m_NRDInputsAndOutputs[nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R16G16B16A16_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
-		m_NRDInputsAndOutputs[nrd::ResourceType::OUT_SHADOW_TRANSLUCENCY] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R16G16B16A16_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
+		m_NRDInputsAndOutputs[nrd::ResourceType::OUT_SHADOW_TRANSLUCENCY] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R16_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
 
 		m_DemodulatedTextures.clear();
 		m_DemodulatedTextures.reserve(4);
@@ -499,8 +512,18 @@ namespace OWC
 			.numberOfLights = m_Scene->GetNumberOfLights(),
 			.numberOfBounces = static_cast<u32>(m_NumberOfBounces),
 			.numberOfSamples = m_NumberOfSamples,
-			.SigmaLightIndex = m_Scene->GetSelectedSunLightIndex().has_value() ? static_cast<i32>(m_Scene->GetSelectedSunLightIndex().value()) : -1,
+			.SigmaLightIndex = m_Scene->GetSelectedSunLightIndex().has_value() ? static_cast<i32>(m_Scene->GetSelectedSunLightIndex().value().first) : -1,
 		};
+
+		if (m_Scene->GetSelectedSunLightIndex().has_value())
+		{
+			nrd::SigmaSettings relaxSettings;
+			const Vec3 toSun = glm::normalize(Vec3(m_Scene->GetSelectedSunLightIndex().value().second));
+			relaxSettings.lightDirection[0] = toSun.x;
+			relaxSettings.lightDirection[1] = toSun.y;
+			relaxSettings.lightDirection[2] = toSun.z;
+			m_NRDImpl->SetDenoiserSettings(static_cast<nrd::Identifier>(nrd::Denoiser::SIGMA_SHADOW), &relaxSettings);
+		}
 
 		using namespace OWC::Graphics;
 		m_RayTracingRenderPass = Renderer::GetStaticRayTracingPass();
@@ -525,10 +548,13 @@ namespace OWC
 		Renderer::TransitionImage(m_RayTracingRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_PENUMBRA), AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
 		Renderer::EndPass(m_RayTracingRenderPass);
 
+		// NRD pass
+
 		m_DisplayRenderPass = Renderer::GetStaticRenderPass();
 		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_VIEWZ), AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
 		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST), AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
 		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST), AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
+		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_PENUMBRA), AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
 		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST), AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
 		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST), AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
 		Renderer::TransitionImage(m_DisplayRenderPass, m_NRDInputsAndOutputs.at(nrd::ResourceType::OUT_SHADOW_TRANSLUCENCY), AccessMask::ShaderRead, StageMask::FragmentShader, ImageLayout::ShaderReadOnlyOptimal);
@@ -833,6 +859,12 @@ namespace OWC
 					.descriptorType = DescriptorType::CombinedImageSampler,
 					.stageFlags = ShaderType::Fragment,
 				},
+				BindingDescription {
+					.descriptorCount = 1,
+					.binding = 13,
+					.descriptorType = DescriptorType::CombinedImageSampler,
+					.stageFlags = ShaderType::Fragment,
+				},
 			};
 
 #if defined(__has_embed) && __has_embed("../../../ShaderSrc/GPURayTracerShaders/DisplayImage.spv") == __STDC_EMBED_FOUND__ && DIST
@@ -904,6 +936,7 @@ namespace OWC
 			m_DisplayShader->BindTexture(10, m_NRDInputsAndOutputs.at(nrd::ResourceType::OUT_VALIDATION), DescriptorType::CombinedImageSampler);
 			m_DisplayShader->BindTexture(11, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST), DescriptorType::CombinedImageSampler);
 			m_DisplayShader->BindTexture(12, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST), DescriptorType::CombinedImageSampler);
+			m_DisplayShader->BindTexture(13, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_PENUMBRA), DescriptorType::CombinedImageSampler);
 		}
 	}
 
@@ -933,6 +966,7 @@ namespace OWC
 		m_WorldToView = glm::inverse(invView);
 		m_ViewToClip = projectionMatrix;
 		m_StratifiedPosition += m_NumberOfSamples;
+		const f32 sunAngularRadius = glm::radians(0.2665f);
 		const GeneralGPUData generalGPUData {
 			.InvProjection = glm::inverseTranspose(projectionMatrix),
 			.InvViewMatrix = glm::transpose(invView),
@@ -943,6 +977,8 @@ namespace OWC
 			.randSeed = Rand::LinearFastRandValue(0u, std::numeric_limits<u32>::max()),
 			.frameIndex = m_FrameIndex,
 			.camJit = m_CamJit,
+			.tanSunAngularRadius = std::tan(sunAngularRadius),
+			.cosSunAngularRadius = std::cos(sunAngularRadius),
 		};
 
 		m_RayTracingGPUDataBuffer->UpdateBufferData(std::as_bytes(std::span(&generalGPUData, 1)), sizeof(GeneralGPUData));

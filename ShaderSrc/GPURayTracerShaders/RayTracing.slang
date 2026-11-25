@@ -2,8 +2,6 @@
 #include "gltfData.slangh"
 #include "BRDF.slangh"
 
-// NRD.hlsli pulls in NRDConfig.hlsli, which NRD's CMake generates. Its NRD_NORMAL_ENCODING /
-// NRD_ROUGHNESS_ENCODING must match the NRD library you link (defaults: 2 = R10G10B10A2, 1 = linear).
 #include "NRD.hlsli"
 
 
@@ -40,7 +38,9 @@ struct GeneralData
 // Path flags carried in the payload
 static const uint PATH_FLAG_DIFFUSE      = 1u << 0; // lobe picked at the primary hit was diffuse -> rest of the path feeds the diffuse signal
 static const uint PATH_FLAG_WRITE_GUIDES = 1u << 1; // this path writes the NRD guide buffers at the primary hit
-static const uint PATH_INDEX_SHIFT       = 8u;      // upper bits: path index within the pixel
+static const uint PATH_INDEX_SHIFT       = 8u;      // bits 8-15: path index within the pixel
+static const uint PATH_INDEX_MASK        = 0xFFu;
+static const uint PATH_RR_SCALE_SHIFT    = 16u;     // bits 16-31: half, max component of the primary demodulation factor (Russian roulette)
 
 // NRD material IDs (2 bits with R10G10B10A2 normal encoding).
 // Host side: relaxSettings.minMaterialForDiffuse = 0, relaxSettings.minMaterialForSpecular = 1
@@ -49,12 +49,12 @@ static const float MATERIAL_ID_METAL   = 1.0f;
 
 struct [raypayload] RayPayload
 {
-    float3 diffRadiance : read(caller, closesthit, miss) : write(caller, closesthit, miss); // demodulated diffuse signal
-    float3 specRadiance : read(caller, closesthit, miss) : write(caller, closesthit, miss); // demodulated specular signal
+    float3 diffRadiance : read(caller, closesthit, miss) : write(caller, closesthit, miss);
+    float3 specRadiance : read(caller, closesthit, miss) : write(caller, closesthit, miss);
     float3 throughput : read(caller, closesthit, miss) : write(caller, closesthit);
     float3 newOrigin : read(caller) : write(caller, closesthit);
     float3 newDirection : read(caller) : write(caller, closesthit);
-    float hitT : read(caller) : write(caller, closesthit, miss);                               // RayTCurrent() of the last trace
+    float hitT : read(caller) : write(caller, closesthit, miss);
     uint randSeed : read(caller, closesthit) : write(caller, closesthit);
     uint depth : read(caller, closesthit, miss) : write(caller, closesthit, miss);
     uint flags : read(caller, closesthit, miss) : write(caller, closesthit);
@@ -157,6 +157,12 @@ void AddPathRadiance(inout RayPayload payload, float3 radiance)
         payload.diffRadiance += radiance;
     else
         payload.specRadiance += radiance;
+}
+
+// Russian roulette scale, stored as a half in the upper bits of the path flags (keeps the payload size unchanged)
+void SetPathRRScale(inout RayPayload payload, float scale)
+{
+    payload.flags = (payload.flags & ((1u << PATH_RR_SCALE_SHIFT) - 1u)) | (f32tof16(scale) << PATH_RR_SCALE_SHIFT);
 }
 
 float3 DiffuseReflection(float3 normal, float3 tangent, float3 bitangent, inout uint rngState)
@@ -460,7 +466,10 @@ float TraceShadowHitDist(float3 origin, float3 dir, float tMax, inout uint rngSt
 {
     RayQuery<RAY_FLAG_NONE> q;
     RayDesc ray;
-    ray.Origin = origin; ray.Direction = dir; ray.TMin = 0.0f; ray.TMax = tMax;
+    ray.Origin = origin;
+    ray.Direction = dir;
+    ray.TMin = 0.0f;
+    ray.TMax = tMax;
 
     q.TraceRayInline(sceneBVH, RAY_FLAG_NONE, 0xFF, ray);
     while (q.Proceed())
@@ -532,7 +541,7 @@ void RayGenShader()
         payload.hitT = 0.0f;
         payload.randSeed = randVal;
         payload.depth = PC.numberOfBounces;
-        payload.flags = (path << PATH_INDEX_SHIFT) | (path == 0 ? PATH_FLAG_WRITE_GUIDES : 0u);
+        payload.flags = ((path & PATH_INDEX_MASK) << PATH_INDEX_SHIFT) | (path == 0 ? PATH_FLAG_WRITE_GUIDES : 0u) | (f32tof16(1.0f) << PATH_RR_SCALE_SHIFT);
         payload.newOrigin = cameraOrigin;
         payload.newDirection = cameraDirection;
 
@@ -874,6 +883,8 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
 
         if (PC.sigmaLightIndex >= 0)
         {
+            shadowHitDist = 0.0f; // occluded unless proven otherwise (back-facing / out of range / outside cone)
+
             const LightData sl = PC.lightsBuffer[PC.sigmaLightIndex];
 
             float3 L;           // direction to the light's centre
@@ -896,9 +907,7 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
                 lightRadiance = c.radiance;
             }
 
-            const float NdotL = dot(hitNormal, L);
-
-            if (NdotL > 0.0f && dot(geometricNormal, L) > 0.0f && any(lightRadiance > 0.0f))
+            if (dot(geometricNormal, L) > 0.0f && any(lightRadiance > 0.0f))
             {
                 float3 Ls = L;
                 float  tMax = lightDist;
@@ -916,12 +925,16 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
 
                 shadowHitDist = TraceShadowHitDist(payload.newOrigin, Ls, tMax - 1e-3f, payload.randSeed);
 
-                const GGXResult spec = EvalGGXSpecular(hitNormal, negRayDir, L, roughness, F0);
-                unshadowed = lightRadiance * NdotL * (kD * albedo * oneOverPi + spec.value);
+                const float NdotL = dot(hitNormal, L);
+                if (NdotL > 0.0f)
+                {
+                    const GGXResult spec = EvalGGXSpecular(hitNormal, negRayDir, L, roughness, F0);
+                    unshadowed = lightRadiance * NdotL * (kD * albedo * oneOverPi + spec.value);
+                }
             }
         }
 
-        gOutPenumbra[pixel]   = SIGMA_FrontEnd_PackPenumbra(shadowHitDist, tanRadius);
+        gOutPenumbra[pixel] = SIGMA_FrontEnd_PackPenumbra(shadowHitDist, tanRadius);
         gOutSigmaLight[pixel] = float4(unshadowed, 0.0f);
 
         // NRD: choose ONE lobe here; the rest of the path then feeds that lobe's signal only.
@@ -930,7 +943,7 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
         float diffuseProbability = diffuseLum / max(diffuseLum + specularLum, 1e-4f);
         diffuseProbability = diffuseProbability > 0.0f ? clamp(diffuseProbability, 0.25f, 0.75f) : 0.0f;
 
-        const uint pathIndex = payload.flags >> PATH_INDEX_SHIFT;
+        const uint pathIndex = (payload.flags >> PATH_INDEX_SHIFT) & PATH_INDEX_MASK;
         const float lobeRand = frac(Bayer4x4(pixel, PerFrameData.frameIndex)  + Weyl1D(rsqrt(7.0f), PerFrameData.frameIndex) + float(pathIndex) * 0.6180339887f);
 
         float3 lobeWeight; // (BRDF * cos / pdf) of the chosen lobe / selection probability / demodulation factor
@@ -942,6 +955,7 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
             // cosine sampling: (kD * albedo / pi) * cos / (cos / pi) = kD * albedo
             lobeWeight = kD * albedo / (diffFactor * diffuseProbability);
             payload.flags |= PATH_FLAG_DIFFUSE;
+            SetPathRRScale(payload, max(max(diffFactor.x, diffFactor.y), diffFactor.z));
         }
         else
         {
@@ -950,6 +964,7 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
             NDotL = max(dot(hitNormal, newRayDirection), 0.0f);
 
             lobeWeight = gs.ggx.pdf > 0.0f ? gs.ggx.value * NDotL / (gs.ggx.pdf * specFactor * (1.0f - diffuseProbability)) : float3(0.0f);
+            SetPathRRScale(payload, max(max(specFactor.x, specFactor.y), specFactor.z));
         }
 
         payload.throughput *= lobeWeight;
@@ -994,7 +1009,10 @@ void ClosestHitShader(inout RayPayload payload, in BuiltInTriangleIntersectionAt
             return;
         }
 
-        float rrP = clamp(max(max(payload.throughput.x, payload.throughput.y), payload.throughput.z), 0.05f, 0.95f);
+        // Roulette on what the path is worth in the FINAL image. The demodulated throughput alone is ~1 / lobe probability
+        // (>= 1.33) after the primary hit, which pins rrP at 0.95 and lets almost every path run to numberOfBounces.
+        const float rrScale = f16tof32(payload.flags >> PATH_RR_SCALE_SHIFT);
+        float rrP = clamp(max(max(payload.throughput.x, payload.throughput.y), payload.throughput.z) * rrScale, 0.05f, 0.95f);
         if (Rand(payload.randSeed) > rrP)
         {
             payload.depth = 0;

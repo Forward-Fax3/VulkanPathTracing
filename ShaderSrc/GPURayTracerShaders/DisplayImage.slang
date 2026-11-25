@@ -34,16 +34,17 @@ static const uint kNoPanel = 0xFFFFFFFF;
 [[vk::binding(2, 0)]] Sampler2D<float4> diffFactorTexture;
 [[vk::binding(3, 0)]] Sampler2D<float4> specFactorTexture;
 [[vk::binding(4, 0)]] Sampler2D<float4> emissionTexture;
-[[vk::binding(5, 0)]] Sampler2D<float4> shadow;
+[[vk::binding(5, 0)]] Sampler2D<float4> sigmaLight;
 [[vk::binding(6, 0)]] Sampler2D<float>  viewZTexture;
 [[vk::binding(7, 0)]] Sampler2D<float4> diffuseTexture;
 [[vk::binding(8, 0)]] Sampler2D<float4> specularTexture;
-[[vk::binding(9, 0)]] Sampler2D<float4> sigmaLight;
+[[vk::binding(9, 0)]] Sampler2D<float> shadow;
 
 // Debugging
 [[vk::binding(10, 0)]] Sampler2D<float4> validationTexture;
-[[vk::binding(11, 0)]]  Sampler2D<float4> noisyDiffuseTexture;
+[[vk::binding(11, 0)]] Sampler2D<float4> noisyDiffuseTexture;
 [[vk::binding(12, 0)]] Sampler2D<float4> noisySpecularTexture;
+[[vk::binding(13, 0)]] Sampler2D<float>  penumbraTexture;
 
 struct VertexStageOutput
 {
@@ -76,6 +77,23 @@ float3 DenoisedSpecular(float2 uv)
 	return InDenoisingRange(uv) ? RELAX_BackEnd_UnpackRadiance(specularTexture.Sample(uv)).rgb : 0.0;
 }
 
+bool SigmaEnabled()
+{
+	return imageInfo.sigmaEnabled == 1;
+}
+
+// SIGMA's lit test (SIGMA_Common.hlsli): IN_PENUMBRA == NRD_FP16_MAX means the shadow ray missed
+float NoisyShadow(float2 uv)
+{
+	return InDenoisingRange(uv) ? float(penumbraTexture.Sample(uv) >= NRD_FP16_MAX) : 0.0;
+}
+
+// SIGMA skips pixels outside the denoising range, so its output there is stale
+float DenoisedShadow(float2 uv)
+{
+	return InDenoisingRange(uv) ? SIGMA_BackEnd_UnpackShadow(shadow.Sample(uv)).x : 0.0;
+}
+
 float3 CompositeNRD(float2 uv)
 {
 	float3 colour = emissionTexture.Sample(uv).rgb;
@@ -83,8 +101,8 @@ float3 CompositeNRD(float2 uv)
 	colour += DenoisedDiffuse(uv)  * diffFactorTexture.Sample(uv).rgb;
 	colour += DenoisedSpecular(uv) * specFactorTexture.Sample(uv).rgb;
 
-	if (imageInfo.sigmaEnabled == 1)
-		colour += sigmaLight.Sample(uv).rgb * SIGMA_BackEnd_UnpackShadow(shadow.Sample(uv)).x;
+	if (SigmaEnabled())
+		colour += sigmaLight.Sample(uv).rgb * DenoisedShadow(uv);
 
 	return colour;
 }
@@ -129,6 +147,17 @@ float3 NrdPanel(uint idx, float2 panelUv)
 
 float3 PanelToDisplay(uint idx, float2 panelUv)
 {
+	if (SigmaEnabled())
+	{
+		switch (idx)
+		{
+			case 6:  return SceneToDisplay(shadow.Sample(panelUv));
+			case 9:  return OverlayToDisplay(float3(NoisyShadow(panelUv)));
+			case 10: return OverlayToDisplay(float3(DenoisedShadow(panelUv)));
+			default: break;
+		}
+	}
+
 	switch (idx)
 	{
 		case 5:
@@ -167,10 +196,10 @@ float4 fragmentMain(float2 uv: UV) : SV_Target
 		return float4(PanelToDisplay(imageInfo.fullscreenPanel, uv), 1.0f);
 
 	const float2 cell = min(floor(uv * 4.0), 3.0);
-	const uint   idx  = uint(cell.y) * 4 + uint(cell.x);
+	const uint idx = uint(cell.y) * 4 + uint(cell.x);
 
-	// 5, 6, 9, 10 share one 2x2 block, so they use the block's UV, not the cell's
-	const bool   inBlock = all(cell >= 1.0) && all(cell <= 2.0);
+	// Without SIGMA, 5, 6, 9, 10 share one 2x2 block, so they use the block's UV, not the cell's
+	const bool inBlock = !SigmaEnabled() && all(cell >= 1.0) && all(cell <= 2.0);
 	const float2 panelUv = inBlock ? (uv - 0.25) * 2.0 : frac(uv * 4.0);
 
 	return float4(PanelToDisplay(idx, panelUv), 1.0f);

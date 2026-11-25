@@ -55,6 +55,8 @@ namespace OWC
             u32 randSeed = 0;
             u32 frameIndex = 0;
             Vec2f32 camJit = {};
+            f32 tanSunAngularRadius = 0.0f;
+            f32 cosSunAngularRadius = 0.0f;
         };
 
     private: // attributes
@@ -97,7 +99,6 @@ namespace OWC
 
         u32 m_FrameIndex = 0;
 
-        u8 m_CameraNeedsRefreshing = false;
         bool m_ScreenNeedsRefreshing = false;
 
         bool m_ValidationOn = false;

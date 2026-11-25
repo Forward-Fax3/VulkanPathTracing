@@ -10,8 +10,8 @@
 
 namespace OWC
 {
-    GLTFLayer::GLTFLayer(const std::shared_ptr<Graphics::GeneralBuffer>& lightBuffer, uSize lightsOffset, std::vector<GPULightData>&& lightData, const std::string_view& layerName)
-        : m_LightBuffer(lightBuffer), m_LightData(std::move(lightData)), m_LayerName(layerName), m_LightBufferOffset(lightsOffset) {}
+    GLTFLayer::GLTFLayer(const std::shared_ptr<Graphics::GeneralBuffer>& lightBuffer, const std::optional<std::pair<u32, Vec3p>>& sunLight, uSize lightsOffset, std::vector<GPULightData>&& lightData, const std::string_view& layerName)
+        : m_LightBuffer(lightBuffer), m_SunLight(sunLight), m_LightData(std::move(lightData)), m_LayerName(layerName), m_LightBufferOffset(lightsOffset) {}
 
     void GLTFLayer::ImGuiRender()
     {
@@ -24,6 +24,15 @@ namespace OWC
         if (m_ShowLights)
         {
             ImGui::TextUnformatted("Light Data:");
+
+            if (m_SunLight.has_value())
+            {
+                ImGui::TextUnformatted("Sun Light:");
+                ImGui::Text("Light index: %u", m_SunLight->first);
+                ImGui::Text("Direction: %.1f, %.1f, %.1f", m_SunLight->second.x, m_SunLight->second.y, m_SunLight->second.z);
+            }
+            else
+                ImGui::TextUnformatted("No Sun Light");
 
             for (uSize i = 0; i != m_LightData.size(); i++)
             {

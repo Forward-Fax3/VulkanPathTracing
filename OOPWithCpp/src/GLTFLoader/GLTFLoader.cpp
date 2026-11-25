@@ -248,9 +248,10 @@ namespace OWC
 
         std::map<u32, std::unique_ptr<SceneMesh>> meshMap;
         std::vector<std::pair<Mat4, u32>> meshIndexes;
+        bool directionalSunlightChosen = false;
 
         for (u32 i = 0; i < scene.nodes_count; i++)
-            IterateThroughNodes(model, scene.nodes[i], gltfBufferPosToIndicesOffset, verticesPosBufferOffset, Mat4(1.0f), customInstancesIndex, GPUDatas, verticesPos, verticesData, lightData, meshMap, meshIndexes);
+            IterateThroughNodes(model, scene.nodes[i], gltfBufferPosToIndicesOffset, verticesPosBufferOffset, Mat4(1.0f), customInstancesIndex, GPUDatas, verticesPos, verticesData, lightData, meshMap, meshIndexes, directionalSunlightChosen);
 
         if (verticesPosDataSize > 0)
             m_GPUBuffer->UpdateBufferData(std::bit_cast<u8*>(verticesPos.data()), verticesPosDataSize, verticesPosBufferOffset);
@@ -264,7 +265,7 @@ namespace OWC
         m_TLAS = BaseTLAS::CreateTopLevelAccelerationStructure(meshMap, meshIndexes);
         m_NumberOfLights = static_cast<u32>(lightData.size());
 
-        m_Layer = std::make_shared<GLTFLayer>(m_GPUBuffer, m_LightBufferOffset, std::move(lightData), layerName);
+        m_Layer = std::make_shared<GLTFLayer>(m_GPUBuffer, m_SelectedSunLightIndex, m_LightBufferOffset, std::move(lightData), layerName);
         Application::GetInstance().PushLayer(m_Layer);
 
         for (auto& thread : threads)
@@ -281,7 +282,7 @@ namespace OWC
         Application::GetInstance().PopLayer(m_Layer);
     }
 
-    void GLTFLoader::IterateThroughNodes(const tg3_model& model, u32 nodeIndex, const std::unordered_map<uSize, uSize>& gltfBufferPosToIndicesOffset, uSize verticesBufferOffset, Mat4 parentTransform, u32& customInstancesIndex, std::vector<GPUData>& GPUDatas, std::vector<Vec3p>& verticesPos, std::vector<VertexData>& verticesData, std::vector<GPULightData>& lightData, std::map<u32, std::unique_ptr<SceneMesh>>& meshes, std::vector<std::pair<Mat4, u32>>& meshIndexes)
+    void GLTFLoader::IterateThroughNodes(const tg3_model& model, u32 nodeIndex, const std::unordered_map<uSize, uSize>& gltfBufferPosToIndicesOffset, uSize verticesBufferOffset, Mat4 parentTransform, u32& customInstancesIndex, std::vector<GPUData>& GPUDatas, std::vector<Vec3p>& verticesPos, std::vector<VertexData>& verticesData, std::vector<GPULightData>& lightData, std::map<u32, std::unique_ptr<SceneMesh>>& meshes, std::vector<std::pair<Mat4, u32>>& meshIndexes, bool& directionalSunlightChosen)
     {
         const tg3_node& node = model.nodes[nodeIndex];
 
@@ -382,7 +383,6 @@ namespace OWC
             const std::string_view lightType{ light.type.data, light.type.len };
             const Vec3 colour = glm::make_vec3(light.color);
 
-            bool directionalSunlightChosen = false;
             f64 currentIntensity = 0.0f;
 
             Log<LogLevel::Trace>("Found light of type {} with a range of {} and with intensity {} and colour ({}, {}, {})", lightType, light.range, light.intensity, colour.x, colour.y, colour.z);
@@ -413,7 +413,7 @@ namespace OWC
                         newIntensity > currentIntensity)
                     {
                         currentIntensity = newIntensity;
-                        m_SelectedSunLightIndex = lightData.size() + 1;
+                        m_SelectedSunLightIndex = { lightData.size(), Vec3p(0.0f) };
                     }
                 }
 
@@ -431,11 +431,11 @@ namespace OWC
             else if (tg3_str_equals_cstr(light.type, "directional"))
             {
                 if (const auto newIntensity = glm::dot(BT709Weights, colour) * light.intensity != 0.0 ? static_cast<f32>(light.intensity) : 100.0f;
-                    newIntensity > currentIntensity)
+                    newIntensity > currentIntensity || !directionalSunlightChosen)
                 {
                     directionalSunlightChosen = true;
                     currentIntensity = newIntensity;
-                    m_SelectedSunLightIndex = lightData.size() + 1;
+                    m_SelectedSunLightIndex = { lightData.size(), Vec3p(parentTransform[2]) };
                 }
 
                 lightData.emplace_back(
@@ -453,7 +453,7 @@ namespace OWC
         }
 
         for (u32 i = 0; i < node.children_count; i++)
-            IterateThroughNodes(model, node.children[i], gltfBufferPosToIndicesOffset, verticesBufferOffset, parentTransform, customInstancesIndex, GPUDatas, verticesPos, verticesData, lightData, meshes, meshIndexes);
+            IterateThroughNodes(model, node.children[i], gltfBufferPosToIndicesOffset, verticesBufferOffset, parentTransform, customInstancesIndex, GPUDatas, verticesPos, verticesData, lightData, meshes, meshIndexes, directionalSunlightChosen);
     }
 
     void GLTFLoader::FindNumberOfLightsInScene(const tg3_model& model, const u32 nodeIndex, u32& numberOfLights)

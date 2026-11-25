@@ -32,7 +32,7 @@ namespace OWC
         [[nodiscard]] uSize GetDeviceMaterialBufferPtr() const { return m_GPUBuffer->GetDeviceBufferPtr() + m_MaterialBufferOffset; }
         [[nodiscard]] uSize GetLightBufferPtr() const { return m_GPUBuffer->GetDeviceBufferPtr() + m_LightBufferOffset; }
         [[nodiscard]] u32 GetNumberOfLights() const { return m_NumberOfLights; }
-        [[nodiscard]] std::optional<u32> GetSelectedSunLightIndex() const { return m_SelectedSunLightIndex; }
+        [[nodiscard]] std::optional<std::pair<u32, Vec3p>> GetSelectedSunLightIndex() const { return m_SelectedSunLightIndex; }
 
         [[nodiscard]] const std::shared_ptr<Graphics::TextureArraySampler>& GetTextureArraySampler() const { return m_TextureArraySampler; }
         [[nodiscard]] const std::shared_ptr<Graphics::TextureArray>& GetColourTextureArray() const { return m_ColourTextureArray; }
@@ -43,7 +43,7 @@ namespace OWC
         [[nodiscard]] bool GetNeedScreenRefresh() const { return m_Layer->GetNeedScreenRefresh(); }
 
     private:
-        void IterateThroughNodes(const tg3_model& model, u32 nodeIndex, const std::unordered_map<uSize, uSize>& gltfBufferPosToIndicesOffset, uSize verticesBufferOffset, Mat4 parentTransform, u32& customInstancesIndex, std::vector<GPUData>& gpuData, std::vector<Vec3p>& verticesPos, std::vector<VertexData>& verticesData, std::vector<GPULightData>& lightData, std::map<u32, std::unique_ptr<SceneMesh>>& meshes, std::vector<std::pair<Mat4, u32>>& meshIndexes);
+        void IterateThroughNodes(const tg3_model& model, u32 nodeIndex, const std::unordered_map<uSize, uSize>& gltfBufferPosToIndicesOffset, uSize verticesBufferOffset, Mat4 parentTransform, u32& customInstancesIndex, std::vector<GPUData>& gpuData, std::vector<Vec3p>& verticesPos, std::vector<VertexData>& verticesData, std::vector<GPULightData>& lightData, std::map<u32, std::unique_ptr<SceneMesh>>& meshes, std::vector<std::pair<Mat4, u32>>& meshIndexes, bool& directionalSunlightChosen);
         static void FindNumberOfLightsInScene(const tg3_model& model, u32 nodeIndex, u32& numberOfLights);
 
     private:
@@ -55,7 +55,7 @@ namespace OWC
         std::shared_ptr<Graphics::TextureArray> m_NormalTextureArray;
         std::shared_ptr<Graphics::TextureArray> m_MetallicRoughnessTextureArray;
         std::shared_ptr<Graphics::TextureArray> m_EmissiveTextureArray;
-        std::optional<u32> m_SelectedSunLightIndex = std::nullopt;
+        std::optional<std::pair<u32, Vec3p>> m_SelectedSunLightIndex = std::nullopt;
         uSize m_LightBufferOffset = 0;
         uSize m_GeometryBufferOffset = 0;
         uSize m_MaterialBufferOffset = 0;
