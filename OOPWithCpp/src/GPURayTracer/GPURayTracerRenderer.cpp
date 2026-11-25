@@ -313,7 +313,7 @@ namespace OWC
 			m_ScreenNeedsRefreshing = true;
 			SetupRenderPass();
 		}
-		ImGui::Checkbox("Validation Layers", &m_ValidationOn);
+		ImGui::Checkbox("Debug View", &m_ValidationOn);
 		ImGui::BeginDisabled(!m_ValidationOn);
 
 		const char* preview = kNrdPanels[0].name;

@@ -117,17 +117,14 @@ float3 SceneToDisplay(float3 hdrColour)
 	return ApplySaturation(pow(hdrColour, rangeData.invGamma), rangeData.saturation);
 }
 
-float3 SrgbToLinear(float3 c)
-{
-	return select(c <= 0.04045, c / 12.92, pow((c + 0.055) / 1.055, 2.4));
-}
-
 float3 OverlayToDisplay(float3 c)
 {
 	if (rangeData.hasHDR == 1)
 	{
-		const float sdrWhiteNits = 203.0;
-		return linearToPQ(mul(REC709_TO_REC2020, SrgbToLinear(c)) * sdrWhiteNits);
+		DynamicRangeData localRangeData = rangeData;
+		localRangeData.toneMappingSelector = 1; // Force ACES tone mapping
+        localRangeData.paperWhiteNits = rangeData.paperWhiteUINits;
+		return TonemapToHDR10(c, localRangeData);
 	}
 
 	return c;
