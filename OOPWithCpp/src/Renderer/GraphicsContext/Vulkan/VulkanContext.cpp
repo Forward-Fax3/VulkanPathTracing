@@ -370,7 +370,7 @@ namespace OWC::Graphics
 
 	void VulkanContext::WaitForIdle()
 	{
-		if (const auto result = VulkanCore::GetConstInstance().GetDevice().waitIdle(); result.error() != vk::Result::eSuccess)
+		if (const auto result = VulkanCore::GetConstInstance().GetDevice().waitIdle(); !result)
 			Log<LogLevel::Critical>("Failed to wait for idle: {}", vk::to_string(result.error()));
 	}
 
