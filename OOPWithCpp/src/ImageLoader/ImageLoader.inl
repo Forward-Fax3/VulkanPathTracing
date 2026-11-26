@@ -55,7 +55,7 @@ namespace OWC
 
 			if (!imageDataPtr)
 			{
-				Log<LogLevel::Error>("Failed to load image from path: {}", path);
+				Log<LogLevel::Error>("Failed to load image from path: {}. Error: {}", path, stbi_failure_reason());
 				return;
 			}
 		}
@@ -130,7 +130,7 @@ namespace OWC
 
 		if (!imageDataPtr)
 		{
-			Log<LogLevel::Error>("Failed to load image from data");
+			Log<LogLevel::Error>("Failed to load image from data. Error: {}", stbi_failure_reason());
 			return;
 		}
 
