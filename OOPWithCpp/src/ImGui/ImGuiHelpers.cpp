@@ -8,7 +8,7 @@
 
 namespace ImGui::OWC
 {
-    bool SliderScalerNWithAlignedText(const char* label, const ImGuiDataType data_type, const char* const* text, void* values, const int components, const void* v_min, const void* v_max, const char* format, const ImGuiSliderFlags flags)
+    bool SliderScalarNWithAlignedText(const char* label, const ImGuiDataType data_type, const char* const* text, void* values, const int components, const void* v_min, const void* v_max, const char* format, const ImGuiSliderFlags flags)
     {
         ImGuiWindow* window = GetCurrentWindow();
         if (window->SkipItems)

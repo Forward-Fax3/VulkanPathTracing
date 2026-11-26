@@ -41,21 +41,6 @@
 
 namespace OWC
 {
-	static constexpr std::array denoisers = {
-		/*nrd::DenoiserDesc {
-			.identifier = static_cast<nrd::Identifier>(nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR),
-			.denoiser = nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR,
-		},*/
-		nrd::DenoiserDesc {
-			.identifier = static_cast<nrd::Identifier>(nrd::Denoiser::RELAX_DIFFUSE_SPECULAR),
-			.denoiser = nrd::Denoiser::RELAX_DIFFUSE_SPECULAR,
-		},
-		nrd::DenoiserDesc {
-			.identifier = static_cast<nrd::Identifier>(nrd::Denoiser::SIGMA_SHADOW),
-			.denoiser = nrd::Denoiser::SIGMA_SHADOW,
-		},
-	};
-
 	[[nodiscard]] static constexpr f32 Halton(u32 index, const u32 base) noexcept
 	{
 		f32 f = 1.0f, result = 0.0f;
@@ -83,6 +68,7 @@ namespace OWC
 	{
 		SetUpRenderImage();
 		SetupPipeline();
+		m_NRDImpl = std::make_unique<NRDImpl>(m_RayTracingResolution, m_Scene->GetSelectedSunLightIndex().has_value());
 		SetupRenderPass();
 		CalculateCamera();
 	}
@@ -112,11 +98,9 @@ namespace OWC
 
 		m_UniformBuffer->UpdateBufferData(std::as_bytes(std::span{ &ubo, 1 }));
 
-		//static constexpr std::array rayTracerWaitSemaphoreNames = { std::string_view{ "PreviousFrameDisplayDone" }, };
 		static constexpr std::array rayTracerWaitSemaphoreNames = { std::string_view{ "ImageReady" }, };
 		static constexpr std::array rayTracerSignalSemaphoreNames = { std::string_view{ "RayTracerDone" }, };
 		static constexpr std::array displayWaitSemaphoreNames = { std::string_view{ "RayTracerDone" }, };
-		//static constexpr std::array displaySignalSemaphoreNames = { std::string_view{ "PreviousFrameDisplayDone" }, };
 
 		static constexpr auto cpyMat4 = []<uSize N>(float (&dst)[N], const Mat4& src) noexcept
 		{
@@ -128,7 +112,6 @@ namespace OWC
 #endif
 		};
 
-		//Renderer::SubmitRenderPass(m_RayTracingRenderPass, {}, {}, rayTracerWaitSemaphoreNames);
 		Renderer::SubmitRenderPass(m_RayTracingRenderPass, rayTracerWaitSemaphoreNames);
 
 		nrd::CommonSettings commonSettings {};
@@ -173,14 +156,14 @@ namespace OWC
 		}
 
 		m_NRDImpl->SetCommonSettings(commonSettings);
-		m_NRDImpl->Denoise(denoisers, m_NRDInputsAndOutputs, {}, rayTracerSignalSemaphoreNames);
+		m_NRDImpl->UpdateAccumulation(app.GetDeltaTime());
+		m_NRDImpl->Denoise(m_NRDInputsAndOutputs, {}, rayTracerSignalSemaphoreNames);
 		Renderer::SubmitRenderPass(m_DisplayRenderPass, displayWaitSemaphoreNames);
-		//Renderer::SubmitRenderPass(m_DisplayRenderPass, displayWaitSemaphoreNames, displaySignalSemaphoreNames);
 	}
 
 	void GPURayTracerRenderer::ImGuiRender()
 	{
-		constexpr std::array scenes = { "mesh Reuse Instancing Example", "EXT_mesh_gpu_instancing Example", "Sponza Palace", "Bistro Exterior", "Bistro Interior" };
+		static constexpr std::array scenes = { "mesh Reuse Instancing Example", "EXT_mesh_gpu_instancing Example", "Sponza Palace", "Bistro Exterior", "Bistro Interior" };
 
 		static constexpr u32 kNoPanel = 0xFFFFFFFF;
 		struct NrdPanel { const char* name; u32 id; };
@@ -263,6 +246,7 @@ namespace OWC
 			this->m_CameraPosition = newPosition;
 			this->SetupPipeline();
 			this->SetupRenderPass();
+			this->m_NRDImpl->SetSigma(m_Scene->GetSelectedSunLightIndex().has_value());
 
 			this->m_ScreenNeedsRefreshing = true;
 		}
@@ -285,12 +269,13 @@ namespace OWC
         {
 			if (m_UseWindowResolution == true)
 			{
-				Graphics::Renderer::AddToEndOfFrameCleanUp([NRDIAO = std::move(m_NRDInputsAndOutputs), DT = std::move(m_DemodulatedTextures), RTS = std::move(m_RayTracingShader), DTS = std::move(m_DisplayShader), RTRR = std::move(m_RayTracingRenderPass), DRR = std::move(m_DisplayRenderPass)](){});
+				Graphics::Renderer::AddToEndOfFrameCleanUp([NRDIAO = std::move(m_NRDInputsAndOutputs), DT = std::move(m_DemodulatedTextures), RTS = std::move(m_RayTracingShader), DTS = std::move(m_DisplayShader), RTRR = std::move(m_RayTracingRenderPass), DRR = std::move(m_DisplayRenderPass), NRD = std::move(m_NRDImpl)](){});
 				m_RayTracingResolution.x = Application::GetConstInstance().GetPixelWidth();
 				m_RayTracingResolution.y = Application::GetConstInstance().GetPixelHeight();
 				m_ScreenNeedsRefreshing = true;
 				SetUpRenderImage();
 				SetupPipeline();
+				m_NRDImpl = std::make_unique<NRDImpl>(m_RayTracingResolution, m_Scene->GetSelectedSunLightIndex().has_value());
 				SetupRenderPass();
 			}
         }
@@ -298,10 +283,11 @@ namespace OWC
 		{
 			if (ImGui::OWC::SliderInt2WithAlignedText("Ray Tracing Resolution", "Width", "Height", glm::value_ptr(m_RayTracingResolution), 1, 8192, ImGuiSliderFlags_ClampOnInput))
 			{
-				Graphics::Renderer::AddToEndOfFrameCleanUp([NRDIAO = std::move(m_NRDInputsAndOutputs), DT = std::move(m_DemodulatedTextures), RTS = std::move(m_RayTracingShader), DTS = std::move(m_DisplayShader), RTRR = std::move(m_RayTracingRenderPass), DRR = std::move(m_DisplayRenderPass)](){});
+				Graphics::Renderer::AddToEndOfFrameCleanUp([NRDIAO = std::move(m_NRDInputsAndOutputs), DT = std::move(m_DemodulatedTextures), RTS = std::move(m_RayTracingShader), DTS = std::move(m_DisplayShader), RTRR = std::move(m_RayTracingRenderPass), DRR = std::move(m_DisplayRenderPass), NRD = std::move(m_NRDImpl)](){});
 				m_ScreenNeedsRefreshing = true;
 				SetUpRenderImage();
 				SetupPipeline();
+				m_NRDImpl = std::make_unique<NRDImpl>(m_RayTracingResolution, m_Scene->GetSelectedSunLightIndex().has_value());
 				SetupRenderPass();
 			}
 		}
@@ -345,6 +331,8 @@ namespace OWC
 
 		ImGui::EndDisabled();
 		ImGui::End();
+
+		m_NRDImpl->ImGUIRender();
 	}
 
 	void GPURayTracerRenderer::OnEvent(BaseEvent& e)
@@ -354,6 +342,7 @@ namespace OWC
 		dispatcher.Dispatch<WindowRestore>([this](const WindowRestore& /*event*/) {
 			this->SetUpRenderImage();
 			this->SetupPipeline();
+			m_NRDImpl = std::make_unique<NRDImpl>(m_RayTracingResolution, m_Scene->GetSelectedSunLightIndex().has_value());
 			this->SetupRenderPass();
 			this->SetActiveState(true);
 			m_ScreenNeedsRefreshing = true;
@@ -379,6 +368,7 @@ namespace OWC
 			m_RayTracingResolution.y = Application::GetConstInstance().GetPixelHeight();
 			this->SetUpRenderImage();
 			this->SetupPipeline();
+			m_NRDImpl = std::make_unique<NRDImpl>(m_RayTracingResolution, m_Scene->GetSelectedSunLightIndex().has_value());
 			this->SetupRenderPass();
 			m_ScreenNeedsRefreshing = true;
 			return false;
@@ -462,13 +452,6 @@ namespace OWC
 	{
 		using namespace Graphics;
 
-		Renderer::AddToEndOfFrameCleanUp([NRD = std::move(m_NRDImpl)](){});
-
-		m_NRDImpl = std::make_unique<NRDImpl>(denoisers, m_RayTracingResolution);
-		nrd::RelaxSettings relaxSettings;
-		relaxSettings.enableAntiFirefly = true;
-		m_NRDImpl->SetDenoiserSettings(static_cast<nrd::Identifier>(nrd::Denoiser::RELAX_DIFFUSE_SPECULAR), &relaxSettings);
-
 		m_NRDInputsAndOutputs[nrd::ResourceType::IN_MV] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R16G16B16A16_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
 		m_NRDInputsAndOutputs[nrd::ResourceType::IN_NORMAL_ROUGHNESS] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R10G10B10A2_UNorm, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
 		m_NRDInputsAndOutputs[nrd::ResourceType::IN_VIEWZ] = TextureImage::CreateStorageImage(m_RayTracingResolution.x, m_RayTracingResolution.y, Format::R32_SFloat, AccessMask::ShaderRead, StageMask::ComputeShader, ImageLayout::General);
@@ -515,15 +498,7 @@ namespace OWC
 			.SigmaLightIndex = m_Scene->GetSelectedSunLightIndex().has_value() ? static_cast<i32>(m_Scene->GetSelectedSunLightIndex().value().first) : -1,
 		};
 
-		if (m_Scene->GetSelectedSunLightIndex().has_value())
-		{
-			nrd::SigmaSettings relaxSettings;
-			const Vec3 toSun = glm::normalize(Vec3(m_Scene->GetSelectedSunLightIndex().value().second));
-			relaxSettings.lightDirection[0] = toSun.x;
-			relaxSettings.lightDirection[1] = toSun.y;
-			relaxSettings.lightDirection[2] = toSun.z;
-			m_NRDImpl->SetDenoiserSettings(static_cast<nrd::Identifier>(nrd::Denoiser::SIGMA_SHADOW), &relaxSettings);
-		}
+		SetSigmaLightDirection();
 
 		using namespace OWC::Graphics;
 		m_RayTracingRenderPass = Renderer::GetStaticRayTracingPass();
@@ -937,6 +912,15 @@ namespace OWC
 			m_DisplayShader->BindTexture(11, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST), DescriptorType::CombinedImageSampler);
 			m_DisplayShader->BindTexture(12, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST), DescriptorType::CombinedImageSampler);
 			m_DisplayShader->BindTexture(13, m_NRDInputsAndOutputs.at(nrd::ResourceType::IN_PENUMBRA), DescriptorType::CombinedImageSampler);
+		}
+	}
+
+	void GPURayTracerRenderer::SetSigmaLightDirection() const
+	{
+		if (m_Scene->GetSelectedSunLightIndex().has_value())
+		{
+			const Vec3p toSun = glm::normalize(m_Scene->GetSelectedSunLightIndex().value().second);
+			m_NRDImpl->SetSigmaLightDirection(toSun);
 		}
 	}
 

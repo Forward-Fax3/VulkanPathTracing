@@ -28,16 +28,43 @@ namespace OWC
 
     public:
         NRDImpl() = delete;
-        explicit NRDImpl(std::span<const nrd::DenoiserDesc> denoiserDescs, Vec2u32 resolution);
+        explicit NRDImpl(Vec2u32 resolution, bool enableSIGMA);
         ~NRDImpl() = default;
 
-        void Denoise(std::span<const nrd::Identifier>, const std::unordered_map<nrd::ResourceType, std::shared_ptr<Graphics::TextureImage>>& userImages, std::span<const std::string_view> waitSemaphoreNames = {}, std::span<const std::string_view> startSemaphoreNames = {}, std::span<const std::string_view> waitPreviousFrameSemaphoreNames = {}) const;
-        void Denoise(std::span<const nrd::DenoiserDesc>, const std::unordered_map<nrd::ResourceType, std::shared_ptr<Graphics::TextureImage>>& userImages, std::span<const std::string_view> waitSemaphoreNames = {}, std::span<const std::string_view> startSemaphoreNames = {}, std::span<const std::string_view> waitPreviousFrameSemaphoreNames = {}) const;
+        void Denoise(const std::unordered_map<nrd::ResourceType, std::shared_ptr<Graphics::TextureImage>>& userImages, std::span<const std::string_view> waitSemaphoreNames = {}, std::span<const std::string_view> startSemaphoreNames = {}, std::span<const std::string_view> waitPreviousFrameSemaphoreNames = {}) const;
 
         void SetCommonSettings(const nrd::CommonSettings& commonSettings) const;
-        void SetDenoiserSettings(nrd::Identifier identifier, const void* denoiserSettings) const;
+        OWC_FORCE_INLINE void SetSigmaLightDirection(const Vec3p& sigmaLightDirection)
+        {
+            if (m_EnabledSIGMA)
+            {
+                std::memcpy(&m_SigmaSettings.lightDirection, &sigmaLightDirection, std::min(sizeof(Vec3p), sizeof(m_SigmaSettings.lightDirection)));
+                nrd::SetDenoiserSettings(*m_Instance, static_cast<nrd::Identifier>(nrd::Denoiser::SIGMA_SHADOW), &m_SigmaSettings);
+            }
+            else
+                Log<LogLevel::Warn>("SIGMA is disabled, cannot set light direction");
+        }
+
+        void SetSigma(bool enableSIGMA);
+
+        // Converts accumulation times (seconds) into frame counts using a smoothed FPS; call once per frame
+        void UpdateAccumulation(f32 deltaTimeMs);
+
+        void ImGUIRender();
 
     private:
+        void RecreateInstance();
+
+    private:
+        // NRD recommends accumulating in "seconds" not "frames" (see nrd::GetMaxAccumulatedFrameNum)
+        struct RelaxAccumulationTime
+        {
+            f32 diffuse = 0.5f;
+            f32 specular = 0.5f;
+            f32 diffuseFast = 0.1f;
+            f32 specularFast = 0.1f;
+        };
+
         [[nodiscard]] static Graphics::Format ConvertNRDFormatToFormat(nrd::Format format) noexcept;
 
     private:
@@ -47,5 +74,16 @@ namespace OWC
         std::shared_ptr<Graphics::HostVisibleUniformBuffer> m_UniformBuffer{};
         std::vector<std::shared_ptr<Graphics::TextureImage>> m_PermanentTextures{};
         std::vector<std::shared_ptr<Graphics::TextureImage>> m_TransientTextures{};
+
+        std::vector<nrd::DenoiserDesc> m_DenoiserDescs{};
+
+        nrd::RelaxSettings m_RelaxSettings{};
+        nrd::SigmaSettings m_SigmaSettings{};
+
+        f32 m_SmoothedFPS = 60.0f;
+        RelaxAccumulationTime m_RelaxAccumulationTime{};
+        Vec2u32 m_Resolution{};
+
+        bool m_EnabledSIGMA = false;
     };
 } // OWC

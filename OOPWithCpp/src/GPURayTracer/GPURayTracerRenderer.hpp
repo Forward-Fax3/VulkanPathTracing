@@ -33,6 +33,7 @@ namespace OWC
         void SetUpRenderImage();
         void SetupRenderPass();
         void SetupPipeline();
+        void SetSigmaLightDirection() const;
         void CalculateCamera(const Vec3& movement = Vec3(0.0f));
 
     private: // structs

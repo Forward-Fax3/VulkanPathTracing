@@ -124,9 +124,9 @@ namespace OWC::Graphics
 
         // Point it at the ring buffer once. The range is one slot; the dynamic offset picks which slot.
         const auto bufferInfo = vk::DescriptorBufferInfo{}
-        .setBuffer(vulkanConstantBuffer->GetBuffer()) // your vk::Buffer getter
-        .setOffset(0)
-        .setRange(instanceDesc.constantBufferMaxDataSize);
+            .setBuffer(vulkanConstantBuffer->GetBuffer()) // your vk::Buffer getter
+            .setOffset(0)
+            .setRange(instanceDesc.constantBufferMaxDataSize);
 
         device.updateDescriptorSets(vk::WriteDescriptorSet{}
             .setDstSet(*m_ConstantBufferSet)
