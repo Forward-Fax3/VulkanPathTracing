@@ -245,8 +245,8 @@ namespace OWC
 			this->m_CameraRotation = newRotation;
 			this->m_CameraPosition = newPosition;
 			this->SetupPipeline();
-			this->SetupRenderPass();
 			this->m_NRDImpl->SetSigma(m_Scene->GetSelectedSunLightIndex().has_value());
+			this->SetupRenderPass();
 
 			this->m_ScreenNeedsRefreshing = true;
 		}

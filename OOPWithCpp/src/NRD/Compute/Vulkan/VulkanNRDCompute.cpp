@@ -9,6 +9,8 @@
 #include "VulkanNRDShader.hpp"
 #include "VulkanNRDCompute.hpp"
 
+#include <utility>
+
 
 namespace OWC::Compute
 {
@@ -64,8 +66,19 @@ namespace OWC::Compute
         if (const auto beginResult = cmdBuf.begin(vk::CommandBufferBeginInfo{}.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit)); !beginResult)
             Log<LogLevel::Error>("Failed to begin command buffer. Error code: {}", vk::to_string(beginResult.error()));
 
+        constexpr auto computeToComputeBarrier = vk::MemoryBarrier2{}
+            .setSrcStageMask(vk::PipelineStageFlagBits2::eComputeShader)
+            .setSrcAccessMask(vk::AccessFlagBits2::eShaderStorageWrite)
+            .setDstStageMask(vk::PipelineStageFlagBits2::eComputeShader)
+            .setDstAccessMask(vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderSampledRead | vk::AccessFlagBits2::eShaderStorageWrite);
+        const auto barrierDependency = vk::DependencyInfo().setMemoryBarriers(computeToComputeBarrier);
+
+        bool firstDispatch = true;
         for (const auto& dispatch : dispatchDescs)
         {
+            if (!std::exchange(firstDispatch, false))
+                cmdBuf.pipelineBarrier2(barrierDependency);
+
             const auto pipeline = vulkanShader->GetPipeline(dispatch);
 
             imageInfos.resize(dispatch.resourcesNum);
